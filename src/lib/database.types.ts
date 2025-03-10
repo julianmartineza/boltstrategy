@@ -174,6 +174,59 @@ export interface Database {
           activity_data?: Json | null
         }
       }
+      user_profiles: {
+        Row: {
+          id: string
+          is_admin: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          is_admin?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          is_admin?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      viewed_contents: {
+        Row: {
+          id: string
+          user_id: string
+          content_id: string
+          viewed_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          content_id: string
+          viewed_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          content_id?: string
+          viewed_at?: string
+        }
+      }
+    }
+    Functions: {
+      is_admin: {
+        Args: Record<string, never>
+        Returns: boolean
+      }
+      set_user_admin: {
+        Args: {
+          user_id: string
+          admin_status: boolean
+        }
+        Returns: undefined
+      }
     }
   }
 }

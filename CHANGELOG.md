@@ -1,5 +1,28 @@
 # Registro de Cambios
 
+## 2025-03-12
+
+### Implementación del Módulo de Administración
+- [x] Creado el componente AdminDashboard para la gestión de programas y contenido
+- [x] Implementado ProgramsManager para crear, editar y eliminar programas
+- [x] Implementado ContentManager para gestionar el contenido de las etapas
+- [x] Creados componentes UI necesarios (tabs.tsx) para la interfaz de administración
+- [x] Añadida función de utilidad cn() para combinar clases de Tailwind
+- [x] Implementada navegación entre pestañas en el panel de administración
+- [x] Añadida validación de permisos de administrador en todos los componentes
+- [x] Mejorada la interfaz de usuario con iconos de Lucide React
+- [x] Implementada funcionalidad para expandir/colapsar etapas en el gestor de contenido
+- [x] Añadida capacidad para ordenar contenido dentro de las etapas
+
+### Correcciones de Errores
+- [x] Corregidos errores de importación en los componentes de administración
+- [x] Simplificada la implementación de pestañas en el componente AdminDashboard
+- [x] Implementada solución temporal para evitar dependencias externas en los componentes UI
+- [x] Corregida la ruta de importación del componente AdminDashboard en Dashboard.tsx
+- [x] Corregido error de recursión infinita en las políticas RLS para la tabla user_profiles
+- [x] Creada función check_is_admin para evitar consultas recursivas en las políticas de seguridad
+- [x] Actualizadas todas las políticas RLS para usar la nueva función check_is_admin
+
 ## 2025-03-11
 
 ### Implementación de Base de Datos Vectorial para Chat
