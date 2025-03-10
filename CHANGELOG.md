@@ -1,5 +1,19 @@
 # Registro de Cambios
 
+## 2025-03-14
+
+### Implementación de Campos para Actividades
+- [x] Implementada funcionalidad para gestionar contenido de tipo "Actividad" en ContentManager
+- [x] Añadidos campos específicos para actividades:
+  - [x] prompt: Instrucciones para el asistente IA
+  - [x] max_exchanges: Número máximo de intercambios permitidos
+  - [x] initial_message: Mensaje inicial mostrado al usuario
+  - [x] system_instructions: Instrucciones para el sistema IA
+- [x] Modificada la función handleCreateContent para validar y guardar los datos de actividad
+- [x] Modificada la función handleUpdateContent para actualizar los datos de actividad
+- [x] Implementada la carga de datos de actividad existentes al editar contenido
+- [x] Mejorada la interfaz de usuario para mostrar campos específicos según el tipo de contenido
+
 ## 2025-03-13
 
 ### Refactorización del Módulo de Administración

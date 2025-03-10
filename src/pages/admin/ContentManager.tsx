@@ -48,7 +48,15 @@ const ContentManager: React.FC = () => {
     content_type: 'text',
     title: '',
     content: '',
-    order_num: 0
+    order_num: 0,
+    activity_data: null
+  });
+  // Estado para los campos de actividad
+  const [activityData, setActivityData] = useState({
+    prompt: '',
+    max_exchanges: 5,
+    initial_message: '',
+    system_instructions: ''
   });
   const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
 
@@ -189,10 +197,30 @@ const ContentManager: React.FC = () => {
         return;
       }
 
+      // Validar campos de actividad si el tipo es 'activity'
+      if (newContent.content_type === 'activity') {
+        if (!activityData.prompt || !activityData.initial_message || !activityData.system_instructions) {
+          setError('Por favor completa todos los campos de la actividad.');
+          setContentLoading(false);
+          return;
+        }
+      }
+
+      // Crear objeto de contenido
       const contentToCreate = {
         ...newContent,
         stage_id: selectedStage
       };
+
+      // Añadir datos de actividad si es necesario
+      if (newContent.content_type === 'activity') {
+        contentToCreate.activity_data = {
+          prompt: activityData.prompt,
+          max_exchanges: activityData.max_exchanges,
+          initial_message: activityData.initial_message,
+          system_instructions: activityData.system_instructions
+        };
+      }
 
       const { data, error } = await supabase
         .from('stage_content')
@@ -229,14 +257,34 @@ const ContentManager: React.FC = () => {
       clearError();
       setContentLoading(true);
       
+      // Preparar datos para actualizar
+      const updateData: any = {
+        title: editingContent.title,
+        content: editingContent.content,
+        content_type: editingContent.content_type,
+        order_num: editingContent.order_num
+      };
+      
+      // Si es una actividad, actualizar también los datos de actividad
+      if (editingContent.content_type === 'activity') {
+        // Validar que todos los campos de actividad estén completos
+        if (!activityData.prompt || !activityData.initial_message || !activityData.system_instructions) {
+          setError('Por favor completa todos los campos de la actividad.');
+          setContentLoading(false);
+          return;
+        }
+        
+        updateData.activity_data = {
+          prompt: activityData.prompt,
+          max_exchanges: activityData.max_exchanges,
+          initial_message: activityData.initial_message,
+          system_instructions: activityData.system_instructions
+        };
+      }
+      
       const { error } = await supabase
         .from('stage_content')
-        .update({
-          title: editingContent.title,
-          content: editingContent.content,
-          content_type: editingContent.content_type,
-          order_num: editingContent.order_num
-        })
+        .update(updateData)
         .eq('id', editingContent.id);
 
       if (error) throw error;
@@ -419,16 +467,80 @@ const ContentManager: React.FC = () => {
                             <label className="block text-xs font-medium text-gray-700 mb-1">
                               {newContent.content_type === 'video' ? 'URL del Video' : 'Contenido'}
                             </label>
-                            {newContent.content_type === 'text' || newContent.content_type === 'activity' ? (
+                            {newContent.content_type === 'text' ? (
                               <textarea
                                 value={newContent.content || ''}
                                 onChange={(e) => setNewContent({ ...newContent, content: e.target.value })}
                                 className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 rows={4}
-                                placeholder={newContent.content_type === 'text' ? 'Ingresa el texto del contenido' : 'Ingresa los detalles de la actividad'}
+                                placeholder="Ingresa el texto del contenido"
                                 disabled={contentLoading}
                                 required
                               />
+                            ) : newContent.content_type === 'activity' ? (
+                              <div className="space-y-3 border border-gray-200 p-3 rounded-md bg-gray-50">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Descripción de la Actividad</label>
+                                  <textarea
+                                    value={newContent.content || ''}
+                                    onChange={(e) => setNewContent({ ...newContent, content: e.target.value })}
+                                    className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    rows={2}
+                                    placeholder="Breve descripción de la actividad"
+                                    disabled={contentLoading}
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Prompt para el Asistente IA</label>
+                                  <textarea
+                                    value={activityData.prompt}
+                                    onChange={(e) => setActivityData({ ...activityData, prompt: e.target.value })}
+                                    className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    rows={3}
+                                    placeholder="Instrucciones para el asistente IA sobre cómo evaluar las respuestas del usuario"
+                                    disabled={contentLoading}
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Mensaje Inicial</label>
+                                  <textarea
+                                    value={activityData.initial_message}
+                                    onChange={(e) => setActivityData({ ...activityData, initial_message: e.target.value })}
+                                    className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    rows={3}
+                                    placeholder="Mensaje inicial que verá el usuario al comenzar la actividad"
+                                    disabled={contentLoading}
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Instrucciones del Sistema</label>
+                                  <textarea
+                                    value={activityData.system_instructions}
+                                    onChange={(e) => setActivityData({ ...activityData, system_instructions: e.target.value })}
+                                    className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    rows={3}
+                                    placeholder="Instrucciones para el sistema sobre el comportamiento del asistente IA"
+                                    disabled={contentLoading}
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Máximo de Intercambios</label>
+                                  <input
+                                    type="number"
+                                    value={activityData.max_exchanges}
+                                    onChange={(e) => setActivityData({ ...activityData, max_exchanges: parseInt(e.target.value) || 5 })}
+                                    className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    min="1"
+                                    max="10"
+                                    disabled={contentLoading}
+                                    required
+                                  />
+                                </div>
+                              </div>
                             ) : (
                               <input
                                 type="text"
@@ -585,6 +697,70 @@ const ContentManager: React.FC = () => {
                                           disabled={contentLoading}
                                           required
                                         />
+                                      ) : editingContent.content_type === 'activity' ? (
+                                        <div className="space-y-3 border border-gray-200 p-3 rounded-md bg-gray-50">
+                                          <div>
+                                            <label className="block text-xs font-medium text-gray-700 mb-1">Descripción de la Actividad</label>
+                                            <textarea
+                                              value={editingContent.content}
+                                              onChange={(e) => setEditingContent({ ...editingContent, content: e.target.value })}
+                                              className="w-full p-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                              rows={2}
+                                              placeholder="Breve descripción de la actividad"
+                                              disabled={contentLoading}
+                                              required
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-medium text-gray-700 mb-1">Prompt para el Asistente IA</label>
+                                            <textarea
+                                              value={activityData.prompt}
+                                              onChange={(e) => setActivityData({ ...activityData, prompt: e.target.value })}
+                                              className="w-full p-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                              rows={3}
+                                              placeholder="Instrucciones para el asistente IA sobre cómo evaluar las respuestas del usuario"
+                                              disabled={contentLoading}
+                                              required
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-medium text-gray-700 mb-1">Mensaje Inicial</label>
+                                            <textarea
+                                              value={activityData.initial_message}
+                                              onChange={(e) => setActivityData({ ...activityData, initial_message: e.target.value })}
+                                              className="w-full p-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                              rows={3}
+                                              placeholder="Mensaje inicial que verá el usuario al comenzar la actividad"
+                                              disabled={contentLoading}
+                                              required
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-medium text-gray-700 mb-1">Instrucciones del Sistema</label>
+                                            <textarea
+                                              value={activityData.system_instructions}
+                                              onChange={(e) => setActivityData({ ...activityData, system_instructions: e.target.value })}
+                                              className="w-full p-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                              rows={3}
+                                              placeholder="Instrucciones para el sistema sobre el comportamiento del asistente IA"
+                                              disabled={contentLoading}
+                                              required
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-medium text-gray-700 mb-1">Máximo de Intercambios</label>
+                                            <input
+                                              type="number"
+                                              value={activityData.max_exchanges}
+                                              onChange={(e) => setActivityData({ ...activityData, max_exchanges: parseInt(e.target.value) || 5 })}
+                                              className="w-full p-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                              min="1"
+                                              max="10"
+                                              disabled={contentLoading}
+                                              required
+                                            />
+                                          </div>
+                                        </div>
                                       ) : (
                                         <textarea
                                           value={editingContent.content}
@@ -632,7 +808,26 @@ const ContentManager: React.FC = () => {
                                     ) : (
                                       <div className="flex justify-end space-x-2">
                                         <button
-                                          onClick={() => setEditingContent(content)}
+                                          onClick={() => {
+                                            setEditingContent(content);
+                                            // Si es una actividad, cargar los datos de actividad existentes
+                                            if (content.content_type === 'activity' && content.activity_data) {
+                                              setActivityData({
+                                                prompt: content.activity_data.prompt || '',
+                                                max_exchanges: content.activity_data.max_exchanges || 5,
+                                                initial_message: content.activity_data.initial_message || '',
+                                                system_instructions: content.activity_data.system_instructions || ''
+                                              });
+                                            } else {
+                                              // Reiniciar los datos de actividad si no es una actividad
+                                              setActivityData({
+                                                prompt: '',
+                                                max_exchanges: 5,
+                                                initial_message: '',
+                                                system_instructions: ''
+                                              });
+                                            }
+                                          }}
                                           className="text-blue-600 hover:text-blue-900"
                                           title="Editar contenido"
                                         >
