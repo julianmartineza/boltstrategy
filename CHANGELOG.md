@@ -8,6 +8,13 @@
 - [x] Modificado el componente Chat para cargar y persistir conversaciones entre sesiones
 - [x] Optimizado el contexto para OpenAI utilizando solo mensajes relevantes en lugar de todo el historial
 - [x] Mejorada la eficiencia de las consultas al limitar el número de mensajes enviados a la API
+- [x] Corregidos errores de tipos en el componente Chat.tsx relacionados con la interfaz SimilarMessage
+- [x] Exportada la interfaz SimilarMessage desde openai.ts para su uso en otros componentes
+
+### Correcciones en la Estructura de la Base de Datos
+- [x] Creado script de migración para modificar la tabla activity_interactions existente y añadir soporte vectorial
+- [x] Añadida verificación para comprobar si las columnas de embeddings ya existen antes de crearlas
+- [x] Mejorada la función search_similar_interactions para manejar valores nulos en los embeddings
 
 ## 2025-03-10
 

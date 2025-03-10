@@ -3,7 +3,7 @@ import { Send, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { useProgramStore } from '../store/programStore';
-import { generateEmbedding, findSimilarMessages, saveInteractionWithEmbeddings } from '../lib/openai';
+import { findSimilarMessages, saveInteractionWithEmbeddings, SimilarMessage } from '../lib/openai';
 
 // Acceder a la clave API de OpenAI desde las variables de entorno
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
@@ -383,8 +383,10 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
         try {
           console.log('Llamando a la API de OpenAI con la clave:', OPENAI_API_KEY ? 'API Key disponible' : 'API Key no disponible');
           
+          // Importar la interfaz SimilarMessage de openai.ts
+          
           // Buscar mensajes similares usando embeddings vectoriales
-          let relevantMessages = [];
+          let relevantMessages: SimilarMessage[] = [];
           if (user?.id) {
             try {
               relevantMessages = await findSimilarMessages(

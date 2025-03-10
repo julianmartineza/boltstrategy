@@ -14,7 +14,7 @@ interface ChatContext {
   context?: any;
 }
 
-interface SimilarMessage {
+export interface SimilarMessage {
   id: string;
   user_message: string;
   ai_response: string;
