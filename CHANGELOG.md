@@ -1,5 +1,29 @@
 # Registro de Cambios
 
+## 2025-03-13
+
+### Refactorización del Módulo de Administración
+- [x] Simplificado el componente AdminDashboard para mejorar la mantenibilidad
+- [x] Separada la lógica de gestión de programas y contenido en componentes independientes
+- [x] Eliminados enlaces duplicados en la navegación lateral para mejorar la experiencia de usuario
+- [x] Mejorada la estructura de archivos del módulo de administración
+- [x] Corregidos problemas de navegación entre componentes administrativos
+- [x] Refactorizado el componente ProgramsManager para mejorar la interfaz de usuario y el manejo de errores
+- [x] Refactorizado el componente ContentManager con las siguientes mejoras:
+  - [x] Añadidos mensajes de éxito para creación, actualización y eliminación de contenido
+  - [x] Mejorado el manejo de errores con mensajes más descriptivos
+  - [x] Añadidos indicadores de carga para operaciones asíncronas
+  - [x] Mejorada la interfaz de usuario con tooltips y estilos de enfoque
+  - [x] Optimizada la experiencia de usuario durante la creación y edición de contenido
+- [x] Corregido problema de navegación en AdminDashboard:
+  - [x] Solucionado error que impedía cargar las pestañas de Contenido y Configuración
+  - [x] Mejorado el sistema de detección de rutas para sincronizar correctamente la pestaña activa
+  - [x] Corregidos errores de tipado para mayor robustez del código
+  - [x] Corregida la configuración de rutas en el componente Dashboard para permitir la navegación a todas las secciones
+  - [x] Añadida ruta para la sección de configuración en el panel de administración
+  - [x] Corregidas las rutas de navegación en AdminDashboard para usar el prefijo '/dashboard/admin/' en lugar de '/admin/'
+  - [x] Actualizada la función getTabFromUrl para detectar correctamente las rutas con el prefijo '/dashboard/admin/'
+
 ## 2025-03-12
 
 ### Implementación del Módulo de Administración

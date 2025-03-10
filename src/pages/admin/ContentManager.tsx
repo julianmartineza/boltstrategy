@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { PlusCircle, Edit, Trash2, Save, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, Save, X, ChevronDown, ChevronUp, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 
 interface StageContent {
   id: string;
@@ -27,11 +27,19 @@ interface Program {
 }
 
 const ContentManager: React.FC = () => {
+  // Estados para datos
   const [stages, setStages] = useState<Stage[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [contents, setContents] = useState<StageContent[]>([]);
+  
+  // Estados para UI
   const [loading, setLoading] = useState(true);
+  const [stageLoading, setStageLoading] = useState(false);
+  const [contentLoading, setContentLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
+  // Estados para selección y edición
   const [selectedProgram, setSelectedProgram] = useState<string | null>(null);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState<StageContent | null>(null);
@@ -44,10 +52,26 @@ const ContentManager: React.FC = () => {
   });
   const [expandedStages, setExpandedStages] = useState<Record<string, boolean>>({});
 
+  // Función para mostrar mensajes de éxito temporales
+  const showSuccessMessage = (message: string) => {
+    setSuccessMessage(message);
+    setTimeout(() => {
+      setSuccessMessage(null);
+    }, 3000); // Desaparece después de 3 segundos
+  };
+
+  // Limpiar mensaje de error
+  const clearError = () => {
+    setError(null);
+  };
+
   // Cargar programas
   useEffect(() => {
     const fetchPrograms = async () => {
       try {
+        setLoading(true);
+        clearError();
+        
         const { data, error } = await supabase
           .from('programs')
           .select('id, name')
@@ -58,9 +82,11 @@ const ContentManager: React.FC = () => {
         if (data && data.length > 0) {
           setSelectedProgram(data[0].id);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error al cargar programas:', err);
-        setError('Error al cargar los programas. Por favor, inténtalo de nuevo.');
+        setError(`Error al cargar los programas: ${err.message || 'Inténtalo de nuevo'}`);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -73,7 +99,9 @@ const ContentManager: React.FC = () => {
       if (!selectedProgram) return;
 
       try {
-        setLoading(true);
+        setStageLoading(true);
+        clearError();
+        
         const { data, error } = await supabase
           .from('strategy_stages')
           .select('id, name, order_num, program_id')
@@ -92,11 +120,11 @@ const ContentManager: React.FC = () => {
         
         setSelectedStage(null);
         setContents([]);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error al cargar etapas:', err);
-        setError('Error al cargar las etapas. Por favor, inténtalo de nuevo.');
+        setError(`Error al cargar las etapas: ${err.message || 'Inténtalo de nuevo'}`);
       } finally {
-        setLoading(false);
+        setStageLoading(false);
       }
     };
 
@@ -106,7 +134,9 @@ const ContentManager: React.FC = () => {
   // Cargar contenido cuando se expande una etapa
   const loadStageContent = async (stageId: string) => {
     try {
-      setLoading(true);
+      setContentLoading(true);
+      clearError();
+      
       const { data, error } = await supabase
         .from('stage_content')
         .select('*')
@@ -120,11 +150,11 @@ const ContentManager: React.FC = () => {
         // Añadir los nuevos contenidos
         return [...filteredContents, ...(data || [])];
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error al cargar contenido:', err);
-      setError('Error al cargar el contenido. Por favor, inténtalo de nuevo.');
+      setError(`Error al cargar el contenido: ${err.message || 'Inténtalo de nuevo'}`);
     } finally {
-      setLoading(false);
+      setContentLoading(false);
     }
   };
 
@@ -150,8 +180,12 @@ const ContentManager: React.FC = () => {
     }
 
     try {
+      clearError();
+      setContentLoading(true);
+      
       if (!newContent.title || !newContent.content) {
         setError('El título y el contenido son obligatorios.');
+        setContentLoading(false);
         return;
       }
 
@@ -169,6 +203,7 @@ const ContentManager: React.FC = () => {
 
       if (data && data.length > 0) {
         setContents([...contents, data[0]]);
+        showSuccessMessage('Contenido creado exitosamente');
       }
       
       setNewContent({
@@ -178,10 +213,11 @@ const ContentManager: React.FC = () => {
         order_num: 0
       });
       setIsCreating(false);
-      setError(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error al crear contenido:', err);
-      setError('Error al crear el contenido. Por favor, inténtalo de nuevo.');
+      setError(`Error al crear el contenido: ${err.message || 'Inténtalo de nuevo'}`);
+    } finally {
+      setContentLoading(false);
     }
   };
 
@@ -190,6 +226,9 @@ const ContentManager: React.FC = () => {
     if (!editingContent) return;
 
     try {
+      clearError();
+      setContentLoading(true);
+      
       const { error } = await supabase
         .from('stage_content')
         .update({
@@ -206,10 +245,12 @@ const ContentManager: React.FC = () => {
         c.id === editingContent.id ? editingContent : c
       ));
       setEditingContent(null);
-      setError(null);
-    } catch (err) {
+      showSuccessMessage('Contenido actualizado exitosamente');
+    } catch (err: any) {
       console.error('Error al actualizar contenido:', err);
-      setError('Error al actualizar el contenido. Por favor, inténtalo de nuevo.');
+      setError(`Error al actualizar el contenido: ${err.message || 'Inténtalo de nuevo'}`);
+    } finally {
+      setContentLoading(false);
     }
   };
 
@@ -220,6 +261,9 @@ const ContentManager: React.FC = () => {
     }
 
     try {
+      clearError();
+      setContentLoading(true);
+      
       const { error } = await supabase
         .from('stage_content')
         .delete()
@@ -228,17 +272,19 @@ const ContentManager: React.FC = () => {
       if (error) throw error;
 
       setContents(contents.filter(c => c.id !== id));
-      setError(null);
-    } catch (err) {
+      showSuccessMessage('Contenido eliminado exitosamente');
+    } catch (err: any) {
       console.error('Error al eliminar contenido:', err);
-      setError('Error al eliminar el contenido. Por favor, inténtalo de nuevo.');
+      setError(`Error al eliminar el contenido: ${err.message || 'Inténtalo de nuevo'}`);
+    } finally {
+      setContentLoading(false);
     }
   };
 
   if (loading && programs.length === 0) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <Loader2 className="h-12 w-12 animate-spin text-blue-500" />
       </div>
     );
   }
@@ -249,30 +295,57 @@ const ContentManager: React.FC = () => {
         <h2 className="text-xl font-semibold">Gestión de Contenido</h2>
       </div>
 
+      {/* Mensajes de error y éxito */}
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex items-center">
+          <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+          <span>{error}</span>
+          <button 
+            onClick={clearError} 
+            className="ml-auto text-red-700 hover:text-red-900"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+      
+      {successMessage && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex items-center">
+          <CheckCircle className="h-5 w-5 mr-2 flex-shrink-0" />
+          <span>{successMessage}</span>
         </div>
       )}
 
       {/* Selección de programa */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-gray-700 mb-1">Programa</label>
-        <select
-          value={selectedProgram || ''}
-          onChange={(e) => setSelectedProgram(e.target.value)}
-          className="w-full p-2 border border-gray-300 rounded-md"
-        >
-          {programs.map((program) => (
-            <option key={program.id} value={program.id}>
-              {program.name}
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <select
+            value={selectedProgram || ''}
+            onChange={(e) => setSelectedProgram(e.target.value)}
+            className="w-full p-2 border border-gray-300 rounded-md"
+            disabled={loading}
+          >
+            {programs.map((program) => (
+              <option key={program.id} value={program.id}>
+                {program.name}
+              </option>
+            ))}
+          </select>
+          {loading && (
+            <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Lista de etapas */}
-      {stages.length > 0 ? (
+      {stageLoading ? (
+        <div className="flex justify-center items-center h-32">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+        </div>
+      ) : stages.length > 0 ? (
         <div className="mb-6">
           <h3 className="text-lg font-medium mb-4">Etapas del Programa</h3>
           <div className="space-y-2">
@@ -283,9 +356,14 @@ const ContentManager: React.FC = () => {
                   onClick={() => toggleStageExpansion(stage.id)}
                 >
                   <div className="font-medium">{stage.name}</div>
-                  <button className="text-gray-500">
-                    {expandedStages[stage.id] ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-                  </button>
+                  <div className="flex items-center">
+                    {expandedStages[stage.id] && contentLoading && (
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-500 mr-2" />
+                    )}
+                    <button className="text-gray-500">
+                      {expandedStages[stage.id] ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                    </button>
+                  </div>
                 </div>
                 
                 {expandedStages[stage.id] && (
@@ -317,7 +395,8 @@ const ContentManager: React.FC = () => {
                                 ...newContent, 
                                 content_type: e.target.value as 'text' | 'video' | 'activity' 
                               })}
-                              className="w-full p-2 text-sm border border-gray-300 rounded-md"
+                              className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              disabled={contentLoading}
                             >
                               <option value="text">Texto</option>
                               <option value="video">Video</option>
@@ -330,7 +409,10 @@ const ContentManager: React.FC = () => {
                               type="text"
                               value={newContent.title || ''}
                               onChange={(e) => setNewContent({ ...newContent, title: e.target.value })}
-                              className="w-full p-2 text-sm border border-gray-300 rounded-md"
+                              className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="Ingresa el título del contenido"
+                              disabled={contentLoading}
+                              required
                             />
                           </div>
                           <div>
@@ -341,16 +423,21 @@ const ContentManager: React.FC = () => {
                               <textarea
                                 value={newContent.content || ''}
                                 onChange={(e) => setNewContent({ ...newContent, content: e.target.value })}
-                                className="w-full p-2 text-sm border border-gray-300 rounded-md"
+                                className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 rows={4}
+                                placeholder={newContent.content_type === 'text' ? 'Ingresa el texto del contenido' : 'Ingresa los detalles de la actividad'}
+                                disabled={contentLoading}
+                                required
                               />
                             ) : (
                               <input
                                 type="text"
                                 value={newContent.content || ''}
                                 onChange={(e) => setNewContent({ ...newContent, content: e.target.value })}
-                                className="w-full p-2 text-sm border border-gray-300 rounded-md"
+                                className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 placeholder="https://player.vimeo.com/video/123456789"
+                                disabled={contentLoading}
+                                required
                               />
                             )}
                           </div>
@@ -363,7 +450,9 @@ const ContentManager: React.FC = () => {
                                 ...newContent, 
                                 order_num: parseInt(e.target.value) || 0 
                               })}
-                              className="w-full p-2 text-sm border border-gray-300 rounded-md"
+                              className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              disabled={contentLoading}
+                              min="0"
                             />
                           </div>
                           <div className="flex justify-end space-x-2">
@@ -378,14 +467,23 @@ const ContentManager: React.FC = () => {
                                 });
                               }}
                               className="px-3 py-1 text-xs border border-gray-300 rounded-md hover:bg-gray-100"
+                              disabled={contentLoading}
                             >
                               Cancelar
                             </button>
                             <button
                               onClick={handleCreateContent}
-                              className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                              className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center"
+                              disabled={contentLoading}
                             >
-                              Guardar
+                              {contentLoading ? (
+                                <>
+                                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                  Guardando...
+                                </>
+                              ) : (
+                                'Guardar'
+                              )}
                             </button>
                           </div>
                         </div>
@@ -426,7 +524,9 @@ const ContentManager: React.FC = () => {
                                           ...editingContent, 
                                           order_num: parseInt(e.target.value) || 0 
                                         })}
-                                        className="w-16 p-1 text-xs border border-gray-300 rounded-md"
+                                        className="w-16 p-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        disabled={contentLoading}
+                                        min="0"
                                       />
                                     ) : (
                                       <div className="text-xs text-gray-900">{content.order_num}</div>
@@ -440,7 +540,8 @@ const ContentManager: React.FC = () => {
                                           ...editingContent, 
                                           content_type: e.target.value as 'text' | 'video' | 'activity' 
                                         })}
-                                        className="w-full p-1 text-xs border border-gray-300 rounded-md"
+                                        className="w-full p-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        disabled={contentLoading}
                                       >
                                         <option value="text">Texto</option>
                                         <option value="video">Video</option>
@@ -464,7 +565,9 @@ const ContentManager: React.FC = () => {
                                         type="text"
                                         value={editingContent.title}
                                         onChange={(e) => setEditingContent({ ...editingContent, title: e.target.value })}
-                                        className="w-full p-1 text-xs border border-gray-300 rounded-md"
+                                        className="w-full p-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        disabled={contentLoading}
+                                        required
                                       />
                                     ) : (
                                       <div className="text-xs font-medium text-gray-900">{content.title}</div>
@@ -477,14 +580,19 @@ const ContentManager: React.FC = () => {
                                           type="text"
                                           value={editingContent.content}
                                           onChange={(e) => setEditingContent({ ...editingContent, content: e.target.value })}
-                                          className="w-full p-1 text-xs border border-gray-300 rounded-md"
+                                          className="w-full p-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                          placeholder="https://player.vimeo.com/video/123456789"
+                                          disabled={contentLoading}
+                                          required
                                         />
                                       ) : (
                                         <textarea
                                           value={editingContent.content}
                                           onChange={(e) => setEditingContent({ ...editingContent, content: e.target.value })}
-                                          className="w-full p-1 text-xs border border-gray-300 rounded-md"
+                                          className="w-full p-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                           rows={3}
+                                          disabled={contentLoading}
+                                          required
                                         />
                                       )
                                     ) : (
@@ -502,13 +610,21 @@ const ContentManager: React.FC = () => {
                                       <div className="flex justify-end space-x-2">
                                         <button
                                           onClick={handleUpdateContent}
-                                          className="text-green-600 hover:text-green-900"
+                                          className="text-green-600 hover:text-green-900 flex items-center"
+                                          disabled={contentLoading}
+                                          title="Guardar cambios"
                                         >
-                                          <Save className="h-4 w-4" />
+                                          {contentLoading ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                          ) : (
+                                            <Save className="h-4 w-4" />
+                                          )}
                                         </button>
                                         <button
                                           onClick={() => setEditingContent(null)}
                                           className="text-gray-600 hover:text-gray-900"
+                                          disabled={contentLoading}
+                                          title="Cancelar edición"
                                         >
                                           <X className="h-4 w-4" />
                                         </button>
@@ -518,14 +634,21 @@ const ContentManager: React.FC = () => {
                                         <button
                                           onClick={() => setEditingContent(content)}
                                           className="text-blue-600 hover:text-blue-900"
+                                          title="Editar contenido"
                                         >
                                           <Edit className="h-4 w-4" />
                                         </button>
                                         <button
                                           onClick={() => handleDeleteContent(content.id)}
                                           className="text-red-600 hover:text-red-900"
+                                          disabled={contentLoading}
+                                          title="Eliminar contenido"
                                         >
-                                          <Trash2 className="h-4 w-4" />
+                                          {contentLoading ? (
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                          ) : (
+                                            <Trash2 className="h-4 w-4" />
+                                          )}
                                         </button>
                                       </div>
                                     )}

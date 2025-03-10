@@ -164,16 +164,20 @@ export default function Dashboard() {
             {isAdmin && (
               <>
                 <Route 
-                  path="/admin" 
+                  path="admin" 
+                  element={<Navigate to="/dashboard/admin/programs" />} 
+                />
+                <Route 
+                  path="admin/programs" 
                   element={<AdminDashboard />} 
                 />
                 <Route 
-                  path="/admin/programs" 
-                  element={<AdminDashboard activeTab="programs" />} 
+                  path="admin/content" 
+                  element={<AdminDashboard />} 
                 />
                 <Route 
-                  path="/admin/content" 
-                  element={<AdminDashboard activeTab="content" />} 
+                  path="admin/settings" 
+                  element={<AdminDashboard />} 
                 />
               </>
             )}
