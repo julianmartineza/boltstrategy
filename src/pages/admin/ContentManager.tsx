@@ -39,6 +39,12 @@ const ContentManager: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   
+  // Estados para gestión de etapas
+  const [isCreatingStage, setIsCreatingStage] = useState(false);
+  const [isEditingStage, setIsEditingStage] = useState(false);
+  const [newStage, setNewStage] = useState<Partial<Stage>>({ name: '', order_num: 0 });
+  const [editingStage, setEditingStage] = useState<Stage | null>(null);
+  
   // Estados para selección y edición
   const [selectedProgram, setSelectedProgram] = useState<string | null>(null);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
@@ -128,6 +134,11 @@ const ContentManager: React.FC = () => {
         
         setSelectedStage(null);
         setContents([]);
+        
+        // Resetear estados de edición de etapas
+        setIsCreatingStage(false);
+        setIsEditingStage(false);
+        setEditingStage(null);
       } catch (err: any) {
         console.error('Error al cargar etapas:', err);
         setError(`Error al cargar las etapas: ${err.message || 'Inténtalo de nuevo'}`);
@@ -178,6 +189,157 @@ const ContentManager: React.FC = () => {
       
       return newState;
     });
+  };
+
+  // Crear nueva etapa
+  const handleCreateStage = async () => {
+    if (!selectedProgram) {
+      setError('Debes seleccionar un programa para añadir una etapa.');
+      return;
+    }
+
+    try {
+      clearError();
+      setStageLoading(true);
+      
+      if (!newStage.name) {
+        setError('El nombre de la etapa es obligatorio.');
+        setStageLoading(false);
+        return;
+      }
+
+      // Determinar el orden para la nueva etapa (último + 1)
+      const orderNum = stages.length > 0 
+        ? Math.max(...stages.map(s => s.order_num)) + 1 
+        : 1;
+
+      const { data, error } = await supabase
+        .from('strategy_stages')
+        .insert({
+          name: newStage.name,
+          program_id: selectedProgram,
+          order_num: orderNum
+        })
+        .select();
+
+      if (error) throw error;
+
+      // Actualizar la lista de etapas
+      if (data && data.length > 0) {
+        setStages([...stages, data[0]]);
+        
+        // Inicializar el estado expandido para la nueva etapa
+        setExpandedStages(prev => ({
+          ...prev,
+          [data[0].id]: false
+        }));
+
+        // Limpiar el formulario
+        setNewStage({ name: '', order_num: 0 });
+        setIsCreatingStage(false);
+        
+        showSuccessMessage('Etapa creada correctamente.');
+      }
+    } catch (err: any) {
+      console.error('Error al crear etapa:', err);
+      setError(`Error al crear la etapa: ${err.message || 'Inténtalo de nuevo'}`);
+    } finally {
+      setStageLoading(false);
+    }
+  };
+
+  // Actualizar etapa existente
+  const handleUpdateStage = async () => {
+    if (!editingStage) {
+      setError('No hay etapa seleccionada para editar.');
+      return;
+    }
+
+    try {
+      clearError();
+      setStageLoading(true);
+      
+      if (!editingStage.name) {
+        setError('El nombre de la etapa es obligatorio.');
+        setStageLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('strategy_stages')
+        .update({
+          name: editingStage.name,
+          order_num: editingStage.order_num
+        })
+        .eq('id', editingStage.id)
+        .select();
+
+      if (error) throw error;
+
+      // Actualizar la lista de etapas
+      if (data && data.length > 0) {
+        setStages(stages.map(stage => 
+          stage.id === editingStage.id ? data[0] : stage
+        ));
+        
+        // Limpiar el formulario de edición
+        setEditingStage(null);
+        setIsEditingStage(false);
+        
+        showSuccessMessage('Etapa actualizada correctamente.');
+      }
+    } catch (err: any) {
+      console.error('Error al actualizar etapa:', err);
+      setError(`Error al actualizar la etapa: ${err.message || 'Inténtalo de nuevo'}`);
+    } finally {
+      setStageLoading(false);
+    }
+  };
+
+  // Eliminar etapa
+  const handleDeleteStage = async (stageId: string) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar esta etapa? Esta acción eliminará también todo el contenido asociado a la etapa.')) {
+      return;
+    }
+
+    try {
+      clearError();
+      setStageLoading(true);
+      
+      // Primero eliminar todo el contenido asociado a la etapa
+      const { error: contentError } = await supabase
+        .from('stage_content')
+        .delete()
+        .eq('stage_id', stageId);
+
+      if (contentError) throw contentError;
+
+      // Luego eliminar la etapa
+      const { error } = await supabase
+        .from('strategy_stages')
+        .delete()
+        .eq('id', stageId);
+
+      if (error) throw error;
+
+      // Actualizar la lista de etapas
+      setStages(stages.filter(stage => stage.id !== stageId));
+      
+      // Eliminar del estado expandido
+      const newExpandedStages = { ...expandedStages };
+      delete newExpandedStages[stageId];
+      setExpandedStages(newExpandedStages);
+      
+      // Limpiar contenidos de la etapa eliminada
+      setContents(contents.filter(content => content.stage_id !== stageId));
+      
+      showSuccessMessage('Etapa eliminada correctamente.');
+    } catch (err: any) {
+      console.error('Error al eliminar etapa:', err);
+      setError(`Error al eliminar la etapa: ${err.message || 'Inténtalo de nuevo'}`);
+    } finally {
+      setStageLoading(false);
+    }
   };
 
   // Crear nuevo contenido
@@ -395,20 +557,146 @@ const ContentManager: React.FC = () => {
         </div>
       ) : stages.length > 0 ? (
         <div className="mb-6">
-          <h3 className="text-lg font-medium mb-4">Etapas del Programa</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-medium">Etapas del Programa</h3>
+            <button
+              onClick={() => {
+                setIsCreatingStage(true);
+                setIsEditingStage(false);
+                setEditingStage(null);
+                setNewStage({ name: '', order_num: 0 });
+              }}
+              className="flex items-center text-sm bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700"
+              disabled={isCreatingStage}
+            >
+              <PlusCircle className="h-4 w-4 mr-1" />
+              Añadir Etapa
+            </button>
+          </div>
+          
+          {/* Formulario para crear nueva etapa */}
+          {isCreatingStage && (
+            <div className="bg-green-50 p-4 rounded-md mb-4 border border-green-200">
+              <h5 className="text-sm font-medium mb-3 text-green-800">Nueva Etapa</h5>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Nombre de la Etapa</label>
+                  <input
+                    type="text"
+                    value={newStage.name || ''}
+                    onChange={(e) => setNewStage({ ...newStage, name: e.target.value })}
+                    className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    placeholder="Ingresa el nombre de la etapa"
+                    disabled={stageLoading}
+                    required
+                  />
+                </div>
+                <div className="flex justify-end space-x-2 mt-3">
+                  <button
+                    onClick={() => setIsCreatingStage(false)}
+                    className="px-3 py-1 text-xs text-gray-700 border border-gray-300 rounded-md hover:bg-gray-100"
+                    disabled={stageLoading}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleCreateStage}
+                    className="px-3 py-1 text-xs bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center"
+                    disabled={stageLoading}
+                  >
+                    {stageLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Save className="h-3 w-3 mr-1" />}
+                    Guardar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Formulario para editar etapa */}
+          {isEditingStage && editingStage && (
+            <div className="bg-blue-50 p-4 rounded-md mb-4 border border-blue-200">
+              <h5 className="text-sm font-medium mb-3 text-blue-800">Editar Etapa</h5>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Nombre de la Etapa</label>
+                  <input
+                    type="text"
+                    value={editingStage.name || ''}
+                    onChange={(e) => setEditingStage({ ...editingStage, name: e.target.value })}
+                    className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Ingresa el nombre de la etapa"
+                    disabled={stageLoading}
+                    required
+                  />
+                </div>
+                <div className="flex justify-end space-x-2 mt-3">
+                  <button
+                    onClick={() => {
+                      setIsEditingStage(false);
+                      setEditingStage(null);
+                    }}
+                    className="px-3 py-1 text-xs text-gray-700 border border-gray-300 rounded-md hover:bg-gray-100"
+                    disabled={stageLoading}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleUpdateStage}
+                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center"
+                    disabled={stageLoading}
+                  >
+                    {stageLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Save className="h-3 w-3 mr-1" />}
+                    Actualizar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          
           <div className="space-y-2">
             {stages.map((stage) => (
               <div key={stage.id} className="border border-gray-200 rounded-md overflow-hidden">
-                <div 
-                  className="flex justify-between items-center p-3 bg-gray-50 cursor-pointer"
-                  onClick={() => toggleStageExpansion(stage.id)}
-                >
-                  <div className="font-medium">{stage.name}</div>
-                  <div className="flex items-center">
+                <div className="flex justify-between items-center p-3 bg-gray-50">
+                  <div 
+                    className="font-medium flex-grow cursor-pointer"
+                    onClick={() => toggleStageExpansion(stage.id)}
+                  >
+                    {stage.name}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsEditingStage(true);
+                        setIsCreatingStage(false);
+                        setEditingStage(stage);
+                      }}
+                      className="text-blue-600 hover:text-blue-800 p-1"
+                      title="Editar etapa"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteStage(stage.id);
+                      }}
+                      className="text-red-600 hover:text-red-800 p-1"
+                      title="Eliminar etapa"
+                      disabled={stageLoading}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                     {expandedStages[stage.id] && contentLoading && (
-                      <Loader2 className="h-4 w-4 animate-spin text-blue-500 mr-2" />
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                     )}
-                    <button className="text-gray-500">
+                    <button 
+                      className="text-gray-500 p-1"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleStageExpansion(stage.id);
+                      }}
+                    >
                       {expandedStages[stage.id] ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
                     </button>
                   </div>

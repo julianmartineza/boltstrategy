@@ -2,6 +2,23 @@
 
 ## 2025-03-14
 
+### Implementación de Gestión de Etapas en ContentManager
+- [x] Añadida funcionalidad para gestionar etapas directamente desde el gestor de contenido
+- [x] Implementado botón para añadir nuevas etapas con formulario dedicado
+- [x] Añadidos botones para editar y eliminar etapas existentes
+- [x] Implementada validación de datos al crear y editar etapas
+- [x] Añadida confirmación de seguridad al eliminar etapas
+- [x] Mejorada la interfaz de usuario para la gestión de etapas
+- [x] Implementada eliminación en cascada de contenido al eliminar una etapa
+
+### Mejora de la Interfaz del Panel de Administración
+- [x] Rediseñada la navegación del panel de administración
+- [x] Reemplazada la barra lateral por botones tipo thumbnails en la parte superior
+- [x] Mejorada la experiencia de usuario con diseño más intuitivo y visual
+- [x] Añadidas descripciones breves a cada sección para mejorar la usabilidad
+- [x] Optimizada la interfaz para todos los tamaños de pantalla
+
+
 ### Implementación de Campos para Actividades
 - [x] Implementada funcionalidad para gestionar contenido de tipo "Actividad" en ContentManager
 - [x] Añadidos campos específicos para actividades:
