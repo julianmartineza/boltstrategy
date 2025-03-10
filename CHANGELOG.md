@@ -21,11 +21,18 @@
 - [x] Eliminada la sección de "Próximos Pasos" para una interfaz más limpia
 - [x] Corregidos errores de tipos y variables no utilizadas en los componentes
 - [x] Creado nuevo componente ProgramOutline para mostrar el contenido del programa y las etapas
-- [x] Reorganizado el layout para mostrar el contenido principal a la izquierda y el índice del programa a la derecha
+- [x] Reorganizado el layout para mostrar el contenido principal a la izquierda (75%) y el índice del programa a la derecha (25%)
 - [x] Mejorada la navegación entre etapas y contenidos del programa
 - [x] Mejorado el componente ProgramOutline para cargar dinámicamente el contenido de cada etapa
 - [x] Añadidos iconos visuales para distinguir entre tipos de contenido (texto, video, actividad)
 - [x] Asegurado que el ProgramOutline esté siempre visible junto a cualquier tipo de contenido
+- [x] Optimizada la distribución de la pantalla para mejorar la experiencia de usuario
+- [x] Mejorado el componente StageContent para que ocupe el ancho completo del contenedor (75% de la pantalla)
+- [x] Modificado el componente VideoPlayer para aceptar la propiedad className y mejorar su adaptabilidad
+- [x] Cambiado el sistema de grid por flexbox para un mejor control del espacio y posicionamiento de los componentes
+- [x] Fijado el ancho mínimo del ProgramOutline para garantizar su usabilidad en diferentes tamaños de pantalla
+- [x] Eliminado el botón "Iniciar Actividad" y toda su funcionalidad relacionada
+- [x] Simplificada la interfaz al remover la vista de actividades
 
 ## 2025-03-10
 

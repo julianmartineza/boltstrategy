@@ -15,7 +15,7 @@ export default function StageContent({ content }: StageContentProps) {
 
   if (!content.length) {
     return (
-      <div className="bg-white rounded-lg shadow-sm p-6">
+      <div className="bg-white rounded-lg shadow-sm p-6 w-full">
         <p className="text-gray-500 text-center">No content available for this stage.</p>
       </div>
     );
@@ -38,7 +38,7 @@ export default function StageContent({ content }: StageContentProps) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full">
       {/* Navigation Progress */}
       <div className="bg-white rounded-lg shadow-sm p-4">
         <div className="flex items-center justify-between">
@@ -80,22 +80,23 @@ export default function StageContent({ content }: StageContentProps) {
       </div>
 
       {/* Content Display */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden w-full">
         <div className="p-6">
           <h3 className="text-xl font-semibold text-gray-900 mb-4">
             {currentContent.title}
           </h3>
           
           {currentContent.content_type === 'video' ? (
-            <div className="relative">
+            <div className="relative w-full">
               {currentContent.content ? (
                 <VideoPlayer 
                   src={currentContent.content} 
                   poster={typeof currentContent.metadata === 'object' && currentContent.metadata ? 
                     (currentContent.metadata as any).poster_url : undefined} 
+                  className="w-full"
                 />
               ) : (
-                <div className="aspect-video rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center">
+                <div className="aspect-video rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center w-full">
                   <div className="text-center p-4">
                     <p className="text-gray-400 mb-2">Video content not available</p>
                     <p className="text-gray-500 text-sm">Please check the content source</p>
@@ -104,11 +105,11 @@ export default function StageContent({ content }: StageContentProps) {
               )}
             </div>
           ) : currentContent.content_type === 'activity' ? (
-            <div className="mt-6">
-              <div className="prose max-w-none mb-6">
+            <div className="mt-6 w-full">
+              <div className="prose max-w-none mb-6 w-full">
                 <p>{currentContent.content}</p>
               </div>
-              <div className="border rounded-lg overflow-hidden shadow-sm">
+              <div className="border rounded-lg overflow-hidden shadow-sm w-full">
                 {/* Verificar que activity_data tenga la estructura correcta antes de pasarlo al componente Chat */}
                 {currentContent.activity_data && typeof currentContent.activity_data === 'object' ? (
                   <Chat 
@@ -130,7 +131,7 @@ export default function StageContent({ content }: StageContentProps) {
               </div>
             </div>
           ) : (
-            <div className="prose max-w-none">
+            <div className="prose max-w-none w-full">
               {currentContent.content.split('\n').map((line, index) => {
                 if (line.startsWith('# ')) {
                   return <h1 key={index} className="text-3xl font-bold mt-6 mb-4">{line.slice(2)}</h1>;

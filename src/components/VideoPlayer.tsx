@@ -1,11 +1,12 @@
-import React from 'react';
+
 
 interface VideoPlayerProps {
   src: string;
   poster?: string;
+  className?: string;
 }
 
-export default function VideoPlayer({ src, poster }: VideoPlayerProps) {
+export default function VideoPlayer({ src, poster, className }: VideoPlayerProps) {
   if (!src) {
     return (
       <div className="aspect-video rounded-lg overflow-hidden bg-gray-900 flex items-center justify-center">
@@ -15,7 +16,7 @@ export default function VideoPlayer({ src, poster }: VideoPlayerProps) {
   }
 
   return (
-    <div className="aspect-video rounded-lg overflow-hidden bg-gray-900">
+    <div className={`aspect-video rounded-lg overflow-hidden bg-gray-900 ${className || ''}`}>
       <video
         className="w-full h-full"
         controls
