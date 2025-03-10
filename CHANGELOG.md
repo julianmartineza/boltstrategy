@@ -20,6 +20,12 @@
 - [x] Simplificado el componente StrategyProgress para mostrar solo la sección de "Progreso General"
 - [x] Eliminada la sección de "Próximos Pasos" para una interfaz más limpia
 - [x] Corregidos errores de tipos y variables no utilizadas en los componentes
+- [x] Creado nuevo componente ProgramOutline para mostrar el contenido del programa y las etapas
+- [x] Reorganizado el layout para mostrar el contenido principal a la izquierda y el índice del programa a la derecha
+- [x] Mejorada la navegación entre etapas y contenidos del programa
+- [x] Mejorado el componente ProgramOutline para cargar dinámicamente el contenido de cada etapa
+- [x] Añadidos iconos visuales para distinguir entre tipos de contenido (texto, video, actividad)
+- [x] Asegurado que el ProgramOutline esté siempre visible junto a cualquier tipo de contenido
 
 ## 2025-03-10
 

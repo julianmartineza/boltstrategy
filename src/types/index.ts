@@ -59,7 +59,7 @@ export interface StageContent {
       min_responses?: number;
       required_topics?: string[];
     };
-  };
+  } | null; // Permitimos que activity_data pueda ser null
 }
 
 // Activity Types

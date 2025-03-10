@@ -1,14 +1,16 @@
 import React, { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
 import { useProgramStore } from '../../../store/programStore';
 import StrategyProgress from './StrategyProgress';
 import ActivityView from './ActivityView';
-import StageContent from './StageContent';
+import StageContentComponent from './StageContent';
+import ProgramOutline from './ProgramOutline';
 import { supabase } from '../../../lib/supabase';
 import type { Database } from '../../../lib/database.types';
 import { AlertCircle } from 'lucide-react';
+// Eliminamos importaciones no utilizadas
 
-type StageContent = Database['public']['Tables']['stage_content']['Row'];
+// Tipo para los datos de contenido de etapa que vienen de la base de datos
+type DBStageContent = Database['public']['Tables']['stage_content']['Row'];
 
 export default function StrategyProgram() {
   const { 
@@ -18,11 +20,12 @@ export default function StrategyProgram() {
     loading,
     error,
     loadProgram,
-    startStage,
+    // Eliminamos startStage ya que no se utiliza
     startActivity 
   } = useProgramStore();
 
-  const [stageContent, setStageContent] = React.useState<StageContent[]>([]);
+  const [stageContent, setStageContent] = React.useState<DBStageContent[]>([]);
+  const [allStagesContent, setAllStagesContent] = React.useState<Record<string, DBStageContent[]>>({});
   const [loadingContent, setLoadingContent] = React.useState(false);
   const [startingActivity, setStartingActivity] = React.useState(false);
   const [localError, setLocalError] = React.useState<string | null>(null);
@@ -55,20 +58,32 @@ export default function StrategyProgram() {
     initializeProgram();
   }, [loadProgram]);
 
+  // Cargar el contenido de la etapa actual
   useEffect(() => {
     const loadStageContent = async () => {
       if (!currentStage) return;
 
       setLoadingContent(true);
       try {
-        const { data, error } = await supabase
-          .from('stage_content')
-          .select('*')
-          .eq('stage_id', currentStage.id)
-          .order('order_num');
+        // Si ya tenemos el contenido de esta etapa en caché, usarlo
+        if (allStagesContent[currentStage.id]) {
+          setStageContent(allStagesContent[currentStage.id]);
+        } else {
+          const { data, error } = await supabase
+            .from('stage_content')
+            .select('*')
+            .eq('stage_id', currentStage.id)
+            .order('order_num');
 
-        if (error) throw error;
-        setStageContent(data || []);
+          if (error) throw error;
+          setStageContent(data || []);
+          
+          // Actualizar la caché de contenido
+          setAllStagesContent(prev => ({
+            ...prev,
+            [currentStage.id]: data || []
+          }));
+        }
         setLocalError(null);
       } catch (error) {
         console.error('Error loading stage content:', error);
@@ -79,10 +94,49 @@ export default function StrategyProgram() {
     };
 
     loadStageContent();
-  }, [currentStage]);
+  }, [currentStage, allStagesContent]);
+  
+  // Cargar el contenido de todas las etapas para el ProgramOutline
+  useEffect(() => {
+    const loadAllStagesContent = async () => {
+      if (!currentProgram) return;
+      
+      try {
+        // Para cada etapa, cargar su contenido si aún no lo tenemos
+        for (const stage of currentProgram.stages) {
+          if (!allStagesContent[stage.id]) {
+            const { data, error } = await supabase
+              .from('stage_content')
+              .select('*')
+              .eq('stage_id', stage.id)
+              .order('order_num');
+              
+            if (error) throw error;
+            
+            // Actualizar la caché de contenido
+            setAllStagesContent(prev => ({
+              ...prev,
+              [stage.id]: data || []
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading all stages content:', error);
+      }
+    };
+    
+    loadAllStagesContent();
+  }, [currentProgram]);
 
   const handleStartActivity = async () => {
-    if (!currentStage?.activities?.[0]) {
+    // Verificamos si hay actividades disponibles
+    const { data: activities } = await supabase
+      .from('activities')
+      .select('id')
+      .eq('stage_id', currentStage?.id || '')
+      .limit(1);
+    
+    if (!activities || activities.length === 0) {
       setLocalError('No activity available to start');
       return;
     }
@@ -90,7 +144,7 @@ export default function StrategyProgram() {
     setStartingActivity(true);
     setLocalError(null);
     try {
-      await startActivity(currentStage.activities[0].id);
+      await startActivity(activities[0].id);
     } catch (error) {
       console.error('Error starting activity:', error);
       setLocalError(error instanceof Error ? error.message : 'Failed to start activity');
@@ -138,43 +192,64 @@ export default function StrategyProgram() {
         currentPhase={currentPhase}
       />
 
-      {/* Main Content Area */}
-      {currentStage && (
-        <div className="mt-8">
-          {/* Stage Content */}
-          <StageContent content={stageContent} />
+      {/* Main Content Area con ProgramOutline siempre visible */}
+      <div className="mt-8 grid grid-cols-3 gap-6">
+        {/* Contenido principal - 2/3 del ancho */}
+        <div className="col-span-2">
+          {currentStage ? (
+            <>
+              {/* Stage Content */}
+              <StageContentComponent content={stageContent} />
 
-          {/* Activity View */}
-          {currentActivity && (
-            <div className="mt-8 h-[600px]">
-              <ActivityView 
-                activity={currentActivity}
-                stage={currentStage}
-              />
-            </div>
-          )}
-
-          {/* Start Activity Button */}
-          {!currentActivity && currentStage.activities?.length > 0 && (
-            <div className="mt-8 flex justify-center">
-              <button
-                onClick={handleStartActivity}
-                disabled={startingActivity}
-                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {startingActivity ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                    Starting Activity...
-                  </>
-                ) : (
-                  'Start Activity'
-                )}
-              </button>
+              {/* Activity View */}
+              {currentActivity && (
+                <div className="mt-8 h-[600px]">
+                  <ActivityView 
+                    activity={currentActivity}
+                    stage={currentStage}
+                  />
+                </div>
+              )}
+              
+              {/* Start Activity Button */}
+              {!currentActivity && (
+                <div className="mt-8 flex justify-center">
+                  <button
+                    onClick={handleStartActivity}
+                    disabled={startingActivity}
+                    className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {startingActivity ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                        Iniciando Actividad...
+                      </>
+                    ) : (
+                      'Iniciar Actividad'
+                    )}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="bg-white rounded-lg shadow-sm p-6 flex items-center justify-center">
+              <p className="text-gray-500">Selecciona una etapa para ver su contenido</p>
             </div>
           )}
         </div>
-      )}
+        
+        {/* Program Outline - 1/3 del ancho, siempre visible */}
+        <div className="col-span-1">
+          <ProgramOutline 
+            program={currentProgram} 
+            currentStage={currentStage} 
+            onSelectStage={(stageId) => {
+              // Aquí podríamos implementar la navegación entre etapas
+              console.log(`Seleccionada etapa: ${stageId}`);
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
