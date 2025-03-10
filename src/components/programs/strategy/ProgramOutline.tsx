@@ -10,11 +10,24 @@ type DBStageContent = Database['public']['Tables']['stage_content']['Row'];
 interface ProgramOutlineProps {
   program: Program;
   currentStage: Stage | null;
+  currentContentId?: string;
+  viewedContents?: Record<string, boolean>;
   onSelectStage?: (stageId: string) => void;
+  onSelectContent?: (stageId: string, contentId: string) => void;
 }
 
-export default function ProgramOutline({ program, currentStage, onSelectStage }: ProgramOutlineProps) {
-  const [expandedStages, setExpandedStages] = React.useState<Record<string, boolean>>({});
+export default function ProgramOutline({ 
+  program, 
+  currentStage, 
+  currentContentId,
+  viewedContents = {},
+  onSelectStage,
+  onSelectContent
+}: ProgramOutlineProps) {
+  // Inicializar con la etapa actual expandida
+  const [expandedStages, setExpandedStages] = React.useState<Record<string, boolean>>(
+    currentStage ? { [currentStage.id]: true } : {}
+  );
   const [stageContents, setStageContents] = React.useState<Record<string, DBStageContent[]>>({});
   const [loading, setLoading] = React.useState<Record<string, boolean>>({});
 
@@ -140,27 +153,41 @@ export default function ProgramOutline({ program, currentStage, onSelectStage }:
                   ) : stageContents[stage.id] ? (
                     stageContents[stage.id].length > 0 ? (
                       <ul className="space-y-2">
-                        {stageContents[stage.id].map((content, index) => (
-                          <li key={content.id} className="text-sm pl-7 py-1">
-                            <div className="flex items-start">
-                              <span className="text-xs bg-gray-200 text-gray-700 rounded-full h-5 w-5 flex items-center justify-center mr-2">
-                                {index + 1}
-                              </span>
-                              <div className="flex items-center">
-                                {content.content_type === 'text' && (
-                                  <FileText className="h-4 w-4 text-blue-500 mr-2" />
-                                )}
-                                {content.content_type === 'video' && (
-                                  <Video className="h-4 w-4 text-red-500 mr-2" />
-                                )}
-                                {content.content_type === 'activity' && (
-                                  <MessageSquare className="h-4 w-4 text-green-500 mr-2" />
-                                )}
-                                <span className="text-gray-700">{content.title}</span>
-                              </div>
-                            </div>
-                          </li>
-                        ))}
+                        {stageContents[stage.id].map((content, index) => {
+                          const isCurrentContent = content.id === currentContentId;
+                          const isViewed = viewedContents[content.id] === true;
+                          
+                          return (
+                            <li key={content.id} className="text-sm pl-7 py-1">
+                              <button 
+                                onClick={() => onSelectContent && onSelectContent(stage.id, content.id)}
+                                className={`w-full flex items-start ${isCurrentContent ? 'bg-blue-50 rounded-md p-1' : 'p-1'}`}
+                              >
+                                <span className={`text-xs ${isViewed ? 'bg-green-200 text-green-700' : 'bg-gray-200 text-gray-700'} rounded-full h-5 w-5 flex items-center justify-center mr-2`}>
+                                  {isViewed ? (
+                                    <CheckCircle className="h-3 w-3" />
+                                  ) : (
+                                    index + 1
+                                  )}
+                                </span>
+                                <div className="flex items-center">
+                                  {content.content_type === 'text' && (
+                                    <FileText className={`h-4 w-4 ${isCurrentContent ? 'text-blue-600' : 'text-blue-500'} mr-2`} />
+                                  )}
+                                  {content.content_type === 'video' && (
+                                    <Video className={`h-4 w-4 ${isCurrentContent ? 'text-red-600' : 'text-red-500'} mr-2`} />
+                                  )}
+                                  {content.content_type === 'activity' && (
+                                    <MessageSquare className={`h-4 w-4 ${isCurrentContent ? 'text-green-600' : 'text-green-500'} mr-2`} />
+                                  )}
+                                  <span className={`${isCurrentContent ? 'text-blue-700 font-medium' : isViewed ? 'text-green-700' : 'text-gray-700'}`}>
+                                    {content.title}
+                                  </span>
+                                </div>
+                              </button>
+                            </li>
+                          );
+                        })}
                       </ul>
                     ) : (
                       <p className="text-sm text-gray-500 pl-7">No hay contenido disponible para esta etapa</p>

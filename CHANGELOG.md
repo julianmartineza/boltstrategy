@@ -45,6 +45,11 @@
 - [x] Mejorada la navegación inferior en el componente StageContent con una interfaz más moderna y textos en español
 - [x] Añadido indicador de progreso en la navegación inferior que muestra la posición actual dentro del contenido
 - [x] Ajustada la altura del componente ProgramOutline para que llegue hasta el límite inferior de la sección de navegación
+- [x] Implementada la apertura automática de la etapa actual en el ProgramOutline
+- [x] Añadido resaltado visual para el contenido que se está mostrando actualmente
+- [x] Implementada navegación entre contenidos desde el ProgramOutline
+- [x] Añadidos indicadores visuales (checkmarks) para contenidos que han sido completados
+- [x] Mejorada la interfaz de navegación con indicadores de progreso interactivos
 
 ## 2025-03-10
 

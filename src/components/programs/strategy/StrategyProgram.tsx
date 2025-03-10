@@ -17,13 +17,16 @@ export default function StrategyProgram() {
     currentStage,
     loading,
     error,
-    loadProgram
+    loadProgram,
+    startStage
   } = useProgramStore();
 
   const [stageContent, setStageContent] = React.useState<DBStageContent[]>([]);
   const [allStagesContent, setAllStagesContent] = React.useState<Record<string, DBStageContent[]>>({});
   const [loadingContent, setLoadingContent] = React.useState(false);
   const [localError, setLocalError] = React.useState<string | null>(null);
+  const [currentContentIndex, setCurrentContentIndex] = React.useState<number>(0);
+  const [viewedContents, setViewedContents] = React.useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const initializeProgram = async () => {
@@ -63,6 +66,8 @@ export default function StrategyProgram() {
         // Si ya tenemos el contenido de esta etapa en caché, usarlo
         if (allStagesContent[currentStage.id]) {
           setStageContent(allStagesContent[currentStage.id]);
+          // Resetear el índice de contenido al cambiar de etapa
+          setCurrentContentIndex(0);
         } else {
           const { data, error } = await supabase
             .from('stage_content')
@@ -78,6 +83,9 @@ export default function StrategyProgram() {
             ...prev,
             [currentStage.id]: data || []
           }));
+          
+          // Resetear el índice de contenido al cambiar de etapa
+          setCurrentContentIndex(0);
         }
         setLocalError(null);
       } catch (error) {
@@ -115,8 +123,34 @@ export default function StrategyProgram() {
             }));
           }
         }
+        
+        // Cargar los contenidos vistos desde la base de datos
+        loadViewedContents();
       } catch (error) {
         console.error('Error loading all stages content:', error);
+      }
+    };
+    
+    // Función para cargar los contenidos vistos
+    const loadViewedContents = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('viewed_contents')
+          .select('content_id');
+          
+        if (error) throw error;
+        
+        // Crear un objeto con los IDs de contenidos vistos
+        const viewedMap: Record<string, boolean> = {};
+        if (data) {
+          data.forEach(item => {
+            viewedMap[item.content_id] = true;
+          });
+        }
+        
+        setViewedContents(viewedMap);
+      } catch (error) {
+        console.error('Error loading viewed contents:', error);
       }
     };
     
@@ -171,7 +205,35 @@ export default function StrategyProgram() {
           {currentStage ? (
             <>
               {/* Stage Content */}
-              <StageContentComponent content={stageContent} />
+              <StageContentComponent 
+                content={stageContent} 
+                currentIndex={currentContentIndex}
+                onChangeContent={(index: number) => {
+                  setCurrentContentIndex(index);
+                  
+                  // Marcar el contenido como visto
+                  if (stageContent[index]) {
+                    const contentId = stageContent[index].id;
+                    
+                    // Actualizar el estado local
+                    setViewedContents(prev => ({
+                      ...prev,
+                      [contentId]: true
+                    }));
+                    
+                    // Guardar en la base de datos que el contenido ha sido visto
+                    supabase
+                      .from('viewed_contents')
+                      .upsert({ content_id: contentId, viewed_at: new Date().toISOString() })
+                      .then(({ error }) => {
+                        if (error) {
+                          console.error('Error al guardar contenido visto:', error);
+                        }
+                      });
+                  }
+                }}
+                viewedContents={viewedContents}
+              />
 
 
             </>
@@ -187,9 +249,40 @@ export default function StrategyProgram() {
           <ProgramOutline 
             program={currentProgram} 
             currentStage={currentStage} 
+            currentContentId={stageContent[currentContentIndex]?.id}
+            viewedContents={viewedContents}
             onSelectStage={(stageId) => {
-              // Aquí podríamos implementar la navegación entre etapas
-              console.log(`Seleccionada etapa: ${stageId}`);
+              // Implementar la navegación entre etapas
+              const stage = currentProgram.stages.find(s => s.id === stageId);
+              if (stage) {
+                // Actualizar el estado en el store
+                startStage(stageId);
+              }
+            }}
+            onSelectContent={(stageId: string, contentId: string) => {
+              // Implementar la navegación entre contenidos
+              if (currentStage?.id === stageId && allStagesContent[stageId]) {
+                const contentIndex = allStagesContent[stageId].findIndex(content => content.id === contentId);
+                if (contentIndex >= 0) {
+                  setCurrentContentIndex(contentIndex);
+                  
+                  // Marcar el contenido como visto
+                  setViewedContents(prev => ({
+                    ...prev,
+                    [contentId]: true
+                  }));
+                  
+                  // Guardar en la base de datos
+                  supabase
+                    .from('viewed_contents')
+                    .upsert({ content_id: contentId, viewed_at: new Date().toISOString() })
+                    .then(({ error }) => {
+                      if (error) {
+                        console.error('Error al guardar contenido visto:', error);
+                      }
+                    });
+                }
+              }
             }}
           />
         </div>

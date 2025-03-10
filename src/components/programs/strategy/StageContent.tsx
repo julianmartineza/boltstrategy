@@ -8,10 +8,18 @@ type StageContent = Database['public']['Tables']['stage_content']['Row'];
 
 interface StageContentProps {
   content: StageContent[];
+  currentIndex?: number;
+  onChangeContent?: (index: number) => void;
+  viewedContents?: Record<string, boolean>;
 }
 
-export default function StageContent({ content }: StageContentProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+export default function StageContent({ content, currentIndex: externalIndex, onChangeContent, viewedContents = {} }: StageContentProps) {
+  // Usar el viewedContents para mostrar indicadores visuales
+  // Usar el índice externo si se proporciona, o mantener un estado interno
+  const [internalIndex, setInternalIndex] = useState(0);
+  
+  // Determinar qué índice usar (externo o interno)
+  const currentIndex = externalIndex !== undefined ? externalIndex : internalIndex;
   
   if (!content.length) {
     return (
@@ -27,13 +35,23 @@ export default function StageContent({ content }: StageContentProps) {
 
   const handlePrevious = () => {
     if (!isFirstContent) {
-      setCurrentIndex(currentIndex - 1);
+      const newIndex = currentIndex - 1;
+      if (onChangeContent) {
+        onChangeContent(newIndex);
+      } else {
+        setInternalIndex(newIndex);
+      }
     }
   };
 
   const handleNext = () => {
     if (!isLastContent) {
-      setCurrentIndex(currentIndex + 1);
+      const newIndex = currentIndex + 1;
+      if (onChangeContent) {
+        onChangeContent(newIndex);
+      } else {
+        setInternalIndex(newIndex);
+      }
     }
   };
 
@@ -126,8 +144,31 @@ export default function StageContent({ content }: StageContentProps) {
               <span>Anterior</span>
             </button>
             
-            <div className="text-sm text-gray-500">
-              {currentIndex + 1} de {content.length}
+            <div className="flex flex-col items-center space-y-2">
+              {/* Indicadores de progreso */}
+              <div className="flex items-center space-x-1">
+                {content.map((item, idx) => {
+                  const isActive = idx === currentIndex;
+                  const isViewed = viewedContents[item.id] === true;
+                  return (
+                    <button 
+                      key={idx}
+                      onClick={() => {
+                        if (onChangeContent) {
+                          onChangeContent(idx);
+                        } else {
+                          setInternalIndex(idx);
+                        }
+                      }}
+                      className={`h-2 rounded-full transition-all ${isActive ? 'w-4 bg-blue-600' : isViewed ? 'w-2 bg-green-500' : 'w-2 bg-gray-300'}`}
+                      aria-label={`Ir al contenido ${idx + 1}`}
+                    />
+                  );
+                })}
+              </div>
+              <div className="text-sm text-gray-500">
+                {currentIndex + 1} de {content.length}
+              </div>
             </div>
             
             <button
