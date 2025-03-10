@@ -3,6 +3,7 @@ import { Send, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { useProgramStore } from '../store/programStore';
+import { generateEmbedding, findSimilarMessages, saveInteractionWithEmbeddings } from '../lib/openai';
 
 // Acceder a la clave API de OpenAI desde las variables de entorno
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
@@ -136,24 +137,89 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
     });
   }, [user]);
 
+  // Efecto para cargar mensajes previos de la actividad
+  useEffect(() => {
+    const loadPreviousMessages = async () => {
+      if (!user || !activityContent) return;
+      
+      console.log('Cargando mensajes previos para la actividad:', activityContent.id);
+      
+      // Obtener interacciones previas para esta actividad
+      const { data, error } = await supabase
+        .from('activity_interactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('activity_id', activityContent.id)
+        .order('timestamp', { ascending: true });
+      
+      if (error) {
+        console.error('Error al cargar mensajes previos:', error);
+        return;
+      }
+      
+      if (data && data.length > 0) {
+        console.log(`Se encontraron ${data.length} mensajes previos`);
+        
+        // Convertir las interacciones a mensajes
+        const previousMessages: Message[] = [];
+        
+        // Si hay un mensaje inicial en la actividad, agregarlo primero
+        if (activityContent.activity_data?.initial_message) {
+          previousMessages.push({
+            id: 'initial-message',
+            content: activityContent.activity_data.initial_message,
+            sender: 'ai',
+            timestamp: new Date(data[0].timestamp) // Usar la fecha del primer mensaje como referencia
+          });
+        }
+        
+        // Agregar los mensajes de las interacciones
+        data.forEach(interaction => {
+          // Mensaje del usuario
+          previousMessages.push({
+            id: `user-${interaction.id}`,
+            content: interaction.user_message,
+            sender: 'user',
+            timestamp: new Date(interaction.timestamp)
+          });
+          
+          // Respuesta de la IA
+          previousMessages.push({
+            id: `ai-${interaction.id}`,
+            content: interaction.ai_response,
+            sender: 'ai',
+            timestamp: new Date(interaction.timestamp)
+          });
+        });
+        
+        // Actualizar el estado de mensajes
+        setMessages(previousMessages);
+      } else {
+        console.log('No se encontraron mensajes previos');
+        
+        // Si no hay mensajes previos pero hay un mensaje inicial en la actividad, agregarlo
+        if (activityContent.activity_data?.initial_message) {
+          const initialMessage: Message = {
+            id: Date.now().toString(),
+            content: activityContent.activity_data.initial_message,
+            sender: 'ai',
+            timestamp: new Date()
+          };
+          
+          setMessages([initialMessage]);
+        }
+      }
+    };
+    
+    loadPreviousMessages();
+  }, [user, activityContent]);
+  
   // Efecto para cargar la actividad actual
   useEffect(() => {
     // Si se proporciona la actividad como prop, la usamos directamente
     if (activityContentProp) {
       console.log('Usando actividad proporcionada como prop:', activityContentProp);
       setActivityContent(activityContentProp);
-      
-      // Si hay un mensaje inicial, agregarlo como mensaje del AI
-      if (activityContentProp.activity_data?.initial_message) {
-        const initialMessage: Message = {
-          id: Date.now().toString(),
-          content: activityContentProp.activity_data.initial_message,
-          sender: 'ai',
-          timestamp: new Date()
-        };
-        
-        setMessages([initialMessage]);
-      }
       return;
     }
     
@@ -317,6 +383,23 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
         try {
           console.log('Llamando a la API de OpenAI con la clave:', OPENAI_API_KEY ? 'API Key disponible' : 'API Key no disponible');
           
+          // Buscar mensajes similares usando embeddings vectoriales
+          let relevantMessages = [];
+          if (user?.id) {
+            try {
+              relevantMessages = await findSimilarMessages(
+                userMessage.content,
+                user.id,
+                activityContent.id,
+                0.7, // umbral de similitud
+                5    // número máximo de resultados
+              );
+              console.log(`Se encontraron ${relevantMessages.length} mensajes relevantes usando embeddings`);
+            } catch (searchError) {
+              console.error('Error al buscar mensajes similares:', searchError);
+            }
+          }
+          
           // Preparar los mensajes para OpenAI en formato correcto
           const messagesForAPI = [
             {
@@ -328,8 +411,15 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
               role: 'system',
               content: `Prompt de la actividad: ${promptText}\n\nInformación de contexto:\n${JSON.stringify(contextData, null, 2)}`
             },
-            // Incluir todos los mensajes previos de la conversación
-            ...messages.map(m => ({
+            // Incluir mensajes relevantes de conversaciones anteriores si existen
+            ...(relevantMessages.length > 0 ? [{
+              role: 'system',
+              content: `Mensajes relevantes de conversaciones anteriores:\n${relevantMessages
+                .map(m => `Usuario: ${m.user_message}\nAsistente: ${m.ai_response}`)
+                .join('\n\n')}`
+            }] : []),
+            // Incluir mensajes de la conversación actual (limitados a los últimos 10 para no sobrecargar)
+            ...messages.slice(-10).map(m => ({
               role: m.sender === 'user' ? 'user' : 'assistant',
               content: m.content
             })),
@@ -370,19 +460,19 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
           // Extraer la respuesta del modelo
           aiResponse = data.choices[0].message.content;
           
-          // Guardar la interacción en la base de datos para futuras referencias
-          const { error: saveError } = await supabase
-            .from('activity_interactions')
-            .insert({
-              user_id: user?.id,
-              activity_id: activityContent.id,
-              user_message: userMessage.content,
-              ai_response: aiResponse,
-              timestamp: new Date().toISOString()
-            });
-            
-          if (saveError) {
-            console.error('Error al guardar la interacción:', saveError);
+          // Guardar la interacción con embeddings vectoriales
+          try {
+            if (user?.id) {
+              await saveInteractionWithEmbeddings(
+                user.id,
+                activityContent.id,
+                userMessage.content,
+                aiResponse
+              );
+              console.log('Interacción guardada con embeddings vectoriales');
+            }
+          } catch (saveError) {
+            console.error('Error al guardar la interacción con embeddings:', saveError);
           }
         } catch (openAiError) {
           console.error('Error al llamar a la API de OpenAI:', openAiError);

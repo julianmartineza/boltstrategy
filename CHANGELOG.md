@@ -1,5 +1,14 @@
 # Registro de Cambios
 
+## 2025-03-11
+
+### Implementación de Base de Datos Vectorial para Chat
+- [x] Añadida funcionalidad para generar y almacenar embeddings vectoriales de mensajes
+- [x] Implementada búsqueda semántica de mensajes similares utilizando vectores
+- [x] Modificado el componente Chat para cargar y persistir conversaciones entre sesiones
+- [x] Optimizado el contexto para OpenAI utilizando solo mensajes relevantes en lugar de todo el historial
+- [x] Mejorada la eficiencia de las consultas al limitar el número de mensajes enviados a la API
+
 ## 2025-03-10
 
 ### Integración de la API de OpenAI
