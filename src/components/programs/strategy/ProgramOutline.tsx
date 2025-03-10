@@ -18,20 +18,23 @@ export default function ProgramOutline({ program, currentStage, onSelectStage }:
   const [stageContents, setStageContents] = React.useState<Record<string, DBStageContent[]>>({});
   const [loading, setLoading] = React.useState<Record<string, boolean>>({});
 
-  // Inicializar la etapa actual como expandida
+  // Inicializar la etapa actual como expandida y cargar el contenido de todas las etapas
   React.useEffect(() => {
+    // Expandir la etapa actual
     if (currentStage) {
       setExpandedStages(prev => ({
         ...prev,
         [currentStage.id]: true
       }));
-      
-      // Cargar el contenido de la etapa actual si aún no lo tenemos
-      if (!stageContents[currentStage.id]) {
-        loadStageContent(currentStage.id);
-      }
     }
-  }, [currentStage?.id]);
+    
+    // Cargar el contenido de todas las etapas
+    program.stages.forEach(stage => {
+      if (!stageContents[stage.id] && !loading[stage.id]) {
+        loadStageContent(stage.id);
+      }
+    });
+  }, [currentStage?.id, program.stages]);
   
   // Función para cargar el contenido de una etapa
   const loadStageContent = async (stageId: string) => {
@@ -48,12 +51,18 @@ export default function ProgramOutline({ program, currentStage, onSelectStage }:
         
       if (error) throw error;
       
+      // Siempre guardar el resultado, incluso si es un array vacío
       setStageContents(prev => ({
         ...prev,
         [stageId]: data || []
       }));
     } catch (error) {
       console.error(`Error cargando contenido para la etapa ${stageId}:`, error);
+      // En caso de error, establecer un array vacío para evitar intentos repetidos
+      setStageContents(prev => ({
+        ...prev,
+        [stageId]: []
+      }));
     } finally {
       setLoading(prev => ({ ...prev, [stageId]: false }));
     }
@@ -79,10 +88,10 @@ export default function ProgramOutline({ program, currentStage, onSelectStage }:
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm p-4 h-full">
+    <div className="bg-white rounded-lg shadow-sm p-4 h-full flex flex-col">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Contenido del Programa</h3>
       
-      <div className="space-y-2">
+      <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 180px)' }}>
         {program.stages.map((stage) => {
           const isCurrentStage = currentStage?.id === stage.id;
           const isExpanded = expandedStages[stage.id];
@@ -128,32 +137,36 @@ export default function ProgramOutline({ program, currentStage, onSelectStage }:
                     <div className="flex justify-center py-2">
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500" />
                     </div>
-                  ) : stageContents[stage.id] && stageContents[stage.id].length > 0 ? (
-                    <ul className="space-y-2">
-                      {stageContents[stage.id].map((content, index) => (
-                        <li key={content.id} className="text-sm pl-7 py-1">
-                          <div className="flex items-start">
-                            <span className="text-xs bg-gray-200 text-gray-700 rounded-full h-5 w-5 flex items-center justify-center mr-2">
-                              {index + 1}
-                            </span>
-                            <div className="flex items-center">
-                              {content.content_type === 'text' && (
-                                <FileText className="h-4 w-4 text-blue-500 mr-2" />
-                              )}
-                              {content.content_type === 'video' && (
-                                <Video className="h-4 w-4 text-red-500 mr-2" />
-                              )}
-                              {content.content_type === 'activity' && (
-                                <MessageSquare className="h-4 w-4 text-green-500 mr-2" />
-                              )}
-                              <span className="text-gray-700">{content.title}</span>
+                  ) : stageContents[stage.id] ? (
+                    stageContents[stage.id].length > 0 ? (
+                      <ul className="space-y-2">
+                        {stageContents[stage.id].map((content, index) => (
+                          <li key={content.id} className="text-sm pl-7 py-1">
+                            <div className="flex items-start">
+                              <span className="text-xs bg-gray-200 text-gray-700 rounded-full h-5 w-5 flex items-center justify-center mr-2">
+                                {index + 1}
+                              </span>
+                              <div className="flex items-center">
+                                {content.content_type === 'text' && (
+                                  <FileText className="h-4 w-4 text-blue-500 mr-2" />
+                                )}
+                                {content.content_type === 'video' && (
+                                  <Video className="h-4 w-4 text-red-500 mr-2" />
+                                )}
+                                {content.content_type === 'activity' && (
+                                  <MessageSquare className="h-4 w-4 text-green-500 mr-2" />
+                                )}
+                                <span className="text-gray-700">{content.title}</span>
+                              </div>
                             </div>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-gray-500 pl-7">No hay contenido disponible para esta etapa</p>
+                    )
                   ) : (
-                    <p className="text-sm text-gray-500 pl-7">No hay contenido disponible</p>
+                    <p className="text-sm text-gray-500 pl-7">Cargando contenido...</p>
                   )}
                 </div>
               )}

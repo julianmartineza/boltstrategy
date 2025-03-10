@@ -1,11 +1,32 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
-import type { Program, Stage, Activity } from '../types';
+import type { Program, Stage } from '../types/index';
+
+// Definimos un tipo para las actividades que vienen de la base de datos
+type DBActivity = {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  stage_id: string;
+  stage_content_id?: string; // Añadida para compatibilidad con el componente Chat
+};
+
+// Definimos un tipo para las etapas que vienen de la base de datos
+type DBStage = {
+  id: string;
+  name: string;
+  order_num: number;
+  required_content: string;
+  prompt_template: string;
+  status: string;
+  activities?: DBActivity[];
+};
 
 interface ProgramState {
   currentProgram: Program | null;
   currentStage: Stage | null;
-  currentActivity: Activity | null;
+  currentActivity: DBActivity | null;
   loading: boolean;
   error: string | null;
   
@@ -36,12 +57,12 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
 
       if (programError) throw programError;
 
-      // Then get the stages for this program with their activities
+      // Then get the stages for this program (sin filtrar por actividades)
       const { data: stages, error: stagesError } = await supabase
         .from('strategy_stages')
         .select(`
           *,
-          activities!inner (
+          activities (
             id,
             name,
             description,
@@ -54,10 +75,21 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
 
       if (stagesError) throw stagesError;
 
-      // Combine program with its stages
-      const programWithStages = {
+      // Convertir las etapas de la base de datos al tipo Stage
+      const typedStages: Stage[] = (stages || []).map((dbStage: DBStage) => ({
+        id: dbStage.id,
+        name: dbStage.name,
+        order_num: dbStage.order_num,
+        required_content: dbStage.required_content,
+        prompt_template: dbStage.prompt_template,
+        status: dbStage.status as 'locked' | 'active' | 'completed',
+        content: [] // Inicializamos con un array vacío ya que se cargará después
+      }));
+      
+      // Combine program with stages
+      const programWithStages: Program = {
         ...program,
-        stages: stages || []
+        stages: typedStages
       };
 
       set({ 
@@ -85,8 +117,8 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
       if (error) throw error;
       if (!data) throw new Error('Stage not found');
 
-      // Then get the activities for this stage
-      const { data: activities, error: activitiesError } = await supabase
+      // Verificamos si hay error al obtener la etapa
+      const { error: activitiesError } = await supabase
         .from('activities')
         .select('*')
         .eq('stage_id', stageId)
@@ -98,11 +130,23 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
       const currentProgram = get().currentProgram;
       if (currentProgram) {
         const updatedStages = currentProgram.stages.map(s => 
-          s.id === stageId ? { ...s, status: 'active', activities: activities || [] } : s
+          s.id === stageId ? { ...s, status: 'active' as const } : s
         );
+        
+        // Crear una versión tipada de la etapa actual
+        const typedStage: Stage = {
+          id: data.id,
+          name: data.name,
+          order_num: data.order_num,
+          required_content: data.required_content,
+          prompt_template: data.prompt_template,
+          status: 'active',
+          content: []
+        };
+        
         set({ 
           currentProgram: { ...currentProgram, stages: updatedStages },
-          currentStage: { ...data, activities: activities || [] },
+          currentStage: typedStage,
           error: null
         });
       }
@@ -147,12 +191,10 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
       if (updateError) throw updateError;
       if (!updatedActivity) throw new Error('Failed to update activity status');
 
-      // Update the activities list in the current stage
-      const updatedStage = {
+      // Actualizar la etapa actual
+      const updatedStage: Stage = {
         ...currentStage,
-        activities: currentStage.activities.map(a =>
-          a.id === activityId ? updatedActivity : a
-        )
+        content: currentStage.content
       };
 
       // Update the store
@@ -203,14 +245,12 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
       if (activityError) throw activityError;
       if (!updatedActivity) throw new Error('Activity not found');
 
-      // Update the current stage's activities
+      // Actualizar la etapa actual
       const currentStage = get().currentStage;
       if (currentStage) {
-        const updatedStage = {
+        const updatedStage: Stage = {
           ...currentStage,
-          activities: currentStage.activities.map(a =>
-            a.id === activityId ? updatedActivity : a
-          )
+          content: currentStage.content
         };
         set({ currentStage: updatedStage });
       }
@@ -225,7 +265,7 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
 
       if (activitiesError) throw activitiesError;
 
-      const allCompleted = activities?.every(a => a.status === 'completed');
+      const allCompleted = activities?.every(activity => activity.status === 'completed');
       if (allCompleted && currentStage) {
         await get().completeStage(currentStage.id);
       }
@@ -262,7 +302,7 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
         }
 
         const updatedStages = currentProgram.stages.map(s => 
-          s.id === stageId ? { ...s, status: 'completed' } : s
+          s.id === stageId ? { ...s, status: 'completed' as const } : s
         );
         
         set({ 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Database } from '../../../lib/database.types';
 import VideoPlayer from '../../VideoPlayer';
 import Chat from '../../Chat';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 
 type StageContent = Database['public']['Tables']['stage_content']['Row'];
 
@@ -12,11 +12,11 @@ interface StageContentProps {
 
 export default function StageContent({ content }: StageContentProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-
+  
   if (!content.length) {
     return (
       <div className="bg-white rounded-lg shadow-sm p-6 w-full">
-        <p className="text-gray-500 text-center">No content available for this stage.</p>
+        <p className="text-gray-500 text-center">No hay contenido disponible para esta etapa.</p>
       </div>
     );
   }
@@ -39,45 +39,6 @@ export default function StageContent({ content }: StageContentProps) {
 
   return (
     <div className="space-y-4 w-full">
-      {/* Navigation Progress */}
-      <div className="bg-white rounded-lg shadow-sm p-4">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-500">
-            Content {currentIndex + 1} of {content.length}
-          </span>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={handlePrevious}
-              disabled={isFirstContent}
-              className={`p-2 rounded-full ${
-                isFirstContent
-                  ? 'text-gray-300 cursor-not-allowed'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              onClick={handleNext}
-              disabled={isLastContent}
-              className={`p-2 rounded-full ${
-                isLastContent
-                  ? 'text-gray-300 cursor-not-allowed'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-        {/* Progress Bar */}
-        <div className="mt-4 h-1 bg-gray-200 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-blue-600 transition-all duration-300"
-            style={{ width: `${((currentIndex + 1) / content.length) * 100}%` }}
-          />
-        </div>
-      </div>
 
       {/* Content Display */}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden w-full">
@@ -149,32 +110,37 @@ export default function StageContent({ content }: StageContentProps) {
           )}
         </div>
 
-        {/* Bottom Navigation */}
+        {/* Navegación inferior mejorada */}
         <div className="border-t border-gray-200 p-4 bg-gray-50">
           <div className="flex justify-between items-center">
             <button
               onClick={handlePrevious}
               disabled={isFirstContent}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md ${
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
                 isFirstContent
-                  ? 'text-gray-300 cursor-not-allowed'
-                  : 'text-gray-700 hover:bg-gray-100'
+                  ? 'text-gray-300 cursor-not-allowed bg-gray-50'
+                  : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600 border border-gray-200 hover:border-blue-200'
               }`}
             >
-              <ChevronLeft className="h-5 w-5" />
-              <span>Previous</span>
+              <ArrowLeft className="h-5 w-5" />
+              <span>Anterior</span>
             </button>
+            
+            <div className="text-sm text-gray-500">
+              {currentIndex + 1} de {content.length}
+            </div>
+            
             <button
               onClick={handleNext}
               disabled={isLastContent}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md ${
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
                 isLastContent
-                  ? 'text-gray-300 cursor-not-allowed'
-                  : 'text-blue-600 hover:bg-blue-50'
+                  ? 'text-gray-300 cursor-not-allowed bg-gray-50'
+                  : 'text-blue-600 hover:bg-blue-50 border border-blue-200 hover:border-blue-400'
               }`}
             >
-              <span>Next</span>
-              <ChevronRight className="h-5 w-5" />
+              <span>Siguiente</span>
+              <ArrowRight className="h-5 w-5" />
             </button>
           </div>
         </div>

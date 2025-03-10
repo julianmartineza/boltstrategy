@@ -33,6 +33,18 @@
 - [x] Fijado el ancho mínimo del ProgramOutline para garantizar su usabilidad en diferentes tamaños de pantalla
 - [x] Eliminado el botón "Iniciar Actividad" y toda su funcionalidad relacionada
 - [x] Simplificada la interfaz al remover la vista de actividades
+- [x] Mejorado el componente ProgramOutline para mostrar todas las etapas independientemente de si tienen contenido
+- [x] Implementada la carga automática del contenido de todas las etapas al iniciar el componente
+- [x] Modificada la consulta en programStore para obtener todas las etapas sin filtrar por actividades
+- [x] Corregidos errores de tipos en programStore para asegurar la compatibilidad con la interfaz Stage
+- [x] Mejorado el componente ProgramOutline para que tenga una altura fija y genere una barra de desplazamiento cuando el contenido excede la altura disponible
+- [x] Ajustado el contenedor del ProgramOutline en StrategyProgram para mantener una altura consistente con el contenido principal
+- [x] Corregido error de tipo en DBActivity añadiendo la propiedad stage_content_id para compatibilidad con el componente Chat
+- [x] Eliminado el indicador "Content X of Y" del componente StageContent por ser redundante con la navegación del ProgramOutline
+- [x] Eliminada completamente la caja de navegación superior en el componente StageContent para simplificar la interfaz
+- [x] Mejorada la navegación inferior en el componente StageContent con una interfaz más moderna y textos en español
+- [x] Añadido indicador de progreso en la navegación inferior que muestra la posición actual dentro del contenido
+- [x] Ajustada la altura del componente ProgramOutline para que llegue hasta el límite inferior de la sección de navegación
 
 ## 2025-03-10
 

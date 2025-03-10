@@ -182,8 +182,8 @@ export default function StrategyProgram() {
           )}
         </div>
         
-        {/* Program Outline - fijo al extremo derecho */}
-        <div style={{ width: '25%', minWidth: '250px' }}>
+        {/* Program Outline - fijo al extremo derecho con altura ajustada a la navegación inferior */}
+        <div style={{ width: '25%', minWidth: '250px', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
           <ProgramOutline 
             program={currentProgram} 
             currentStage={currentStage} 
