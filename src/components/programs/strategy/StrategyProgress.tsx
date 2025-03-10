@@ -1,22 +1,17 @@
-import React from 'react';
 import { Stage } from '../../../types';
-import { Target, CheckCircle } from 'lucide-react';
 
 interface StrategyProgressProps {
   stages: Stage[];
   currentPhase: number;
-  currentStage: Stage | null;
+  // Eliminamos currentStage ya que no se usa
 }
 
-export default function StrategyProgress({ stages, currentPhase, currentStage }: StrategyProgressProps) {
+export default function StrategyProgress({ stages, currentPhase }: StrategyProgressProps) {
   // Calculate progress
   const completedStages = stages.filter(stage => stage.status === 'completed').length;
   const progress = Math.round((completedStages / stages.length) * 100);
   
-  // Get next uncompleted stages
-  const nextStages = stages
-    .filter(stage => stage.status !== 'completed')
-    .slice(0, 2);
+  // Ya no necesitamos los próximos pasos
 
   // Get current phase name
   const getCurrentPhaseName = (phaseIndex: number) => {
@@ -29,7 +24,7 @@ export default function StrategyProgress({ stages, currentPhase, currentStage }:
   };
 
   return (
-    <div className="grid grid-cols-2 gap-6 mb-8">
+    <div className="mb-8">
       {/* Progress Card */}
       <div className="bg-white rounded-lg p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900 mb-2">Progreso General</h2>
@@ -43,23 +38,6 @@ export default function StrategyProgress({ stages, currentPhase, currentStage }:
           />
         </div>
         <p className="mt-2 text-sm text-gray-600">{progress}% Completado</p>
-      </div>
-
-      {/* Next Steps Card */}
-      <div className="bg-white rounded-lg p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Próximos Pasos</h2>
-        <div className="space-y-3">
-          {nextStages.map((stage, index) => (
-            <div key={stage.id} className="flex items-center space-x-3">
-              {stage.id === currentStage?.id ? (
-                <Target className="h-5 w-5 text-blue-600" />
-              ) : (
-                <div className="h-5 w-5 rounded-full border-2 border-gray-300" />
-              )}
-              <span className="text-sm text-gray-700">{stage.name}</span>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );

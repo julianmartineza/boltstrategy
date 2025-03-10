@@ -136,7 +136,6 @@ export default function StrategyProgram() {
       <StrategyProgress 
         stages={currentProgram.stages}
         currentPhase={currentPhase}
-        currentStage={currentStage}
       />
 
       {/* Main Content Area */}

@@ -16,6 +16,11 @@
 - [x] Añadida verificación para comprobar si las columnas de embeddings ya existen antes de crearlas
 - [x] Mejorada la función search_similar_interactions para manejar valores nulos en los embeddings
 
+### Mejoras en la Interfaz de Usuario
+- [x] Simplificado el componente StrategyProgress para mostrar solo la sección de "Progreso General"
+- [x] Eliminada la sección de "Próximos Pasos" para una interfaz más limpia
+- [x] Corregidos errores de tipos y variables no utilizadas en los componentes
+
 ## 2025-03-10
 
 ### Integración de la API de OpenAI
