@@ -1,5 +1,64 @@
 # Registro de Cambios
 
+## 2025-03-17
+
+### Corrección de errores en ContentManager
+- [x] Corregido error en `contentManagerService.ts` que causaba fallos al cargar etapas
+- [x] Actualizado el nombre de la tabla de `stages` a `strategy_stages` para coincidir con la estructura real de la base de datos
+- [x] Actualizada la interfaz `Stage` en `types.ts` para incluir todos los campos de la tabla `strategy_stages`
+- [x] Mejorada la consistencia entre el modelo de datos y las interfaces TypeScript
+
+## 2025-03-15
+
+### Refactorización del Componente ContentManager
+- [x] Refactorizado el componente ContentManager para mejorar la mantenibilidad y resolver errores de sintaxis
+- [x] Creados componentes modulares para una mejor organización del código:
+  - [x] `ContentForm.tsx` para la creación y edición de contenido
+  - [x] `ContentList.tsx` para mostrar el listado de contenidos por etapa
+  - [x] `StageForm.tsx` para la creación y edición de etapas
+  - [x] `StageList.tsx` para mostrar el listado de etapas con sus contenidos
+  - [x] `ProgramSelector.tsx` para la selección de programas
+  - [x] `Notification.tsx` para mostrar mensajes de éxito y error
+- [x] Creado archivo `types.ts` con interfaces para mejorar la tipificación
+- [x] Implementado servicio `contentManagerService.ts` para centralizar las operaciones de base de datos
+- [x] Mejorada la interfaz de usuario con indicadores de carga y mensajes de notificación
+- [x] Optimizado el rendimiento al cargar contenido solo cuando se expande una etapa
+- [x] Corregidos errores de sintaxis que causaban fallos en el servidor
+
+## 2025-03-13
+
+### Implementación de Chat Basado en Pasos
+- [x] Creada migración `20250313220800_step_based_chat.sql` para añadir campos necesarios para el chat basado en pasos
+- [x] Modificada la tabla `stage_content` para incluir:
+  - [x] Campo `step` para identificar el número de paso en la actividad
+  - [x] Campo `prompt_section` para definir la sección del prompt
+  - [x] Campo `system_instructions` para instrucciones específicas del asistente
+- [x] Creada nueva tabla `user_insights` para almacenar ideas valiosas de los usuarios
+- [x] Actualizado el componente `Chat.tsx` para implementar la funcionalidad de pasos:
+  - [x] Añadida gestión de pasos con variables de estado para `currentStep`, `totalSteps` y validación
+  - [x] Implementada carga de mensajes previos y insights relacionados con la actividad actual
+  - [x] Añadida validación de respuestas de usuario antes de avanzar al siguiente paso
+  - [x] Integrada funcionalidad para guardar insights con el comando `/guardar`
+  - [x] Mejorada la interfaz de usuario con botones para navegar entre pasos
+- [x] Actualizados los tipos en `index.ts` para soportar la nueva funcionalidad:
+  - [x] Añadida interfaz `UserInsight` para los insights de usuario
+  - [x] Actualizada interfaz `Message` para incluir información de pasos
+  - [x] Añadida interfaz `ActivityContent` y `ActivityData` para manejar el contenido de actividades
+- [x] Actualizado `programStore.ts` para incluir funcionalidad de carga de empresa y diagnóstico
+- [x] Corregidos errores de tipado en el componente `Chat.tsx`
+- [x] Actualizado `ContentManager.tsx` para gestionar los nuevos campos de actividades por pasos:
+  - [x] Añadidos campos para número de paso y sección del prompt
+  - [x] Actualizada la interfaz de usuario para crear y editar actividades por pasos
+  - [x] Mejorada la lógica de guardado para incluir los nuevos campos
+
+### Corrección de Errores en ActivityBot
+- [x] Añadida la interfaz Activity en el archivo types/index.ts para corregir errores de tipado
+- [x] Actualizada la interfaz Message para incluir el tipo 'error' en metadata.type
+- [x] Añadidos campos activity y progress a la interfaz Message para compatibilidad con el componente ActivityBot
+- [x] Corregido el manejo de errores en ActivityBot.tsx para utilizar correctamente la interfaz Message
+- [x] Reemplazado el método concat por el operador spread para la concatenación de arrays en ActivityBot
+- [x] Eliminada la interfaz Message duplicada en ActivityBot.tsx para evitar conflictos de tipos
+
 ## 2025-03-14
 
 ### Implementación de Gestión de Etapas en ContentManager
@@ -17,7 +76,6 @@
 - [x] Mejorada la experiencia de usuario con diseño más intuitivo y visual
 - [x] Añadidas descripciones breves a cada sección para mejorar la usabilidad
 - [x] Optimizada la interfaz para todos los tamaños de pantalla
-
 
 ### Implementación de Campos para Actividades
 - [x] Implementada funcionalidad para gestionar contenido de tipo "Actividad" en ContentManager
@@ -163,7 +221,7 @@
 - Los datos específicos de la actividad se almacenan en la columna `activity_data` como un objeto JSON con la siguiente estructura:
   - `prompt`: El prompt a utilizar para generar respuestas de la IA
   - `system_instructions`: Instrucciones del sistema para la IA (opcional)
-  - `initial_message`: Mensaje inicial que se muestra al usuario al comenzar la actividad (opcional)
+  - `initial_message`: Mensaje inicial mostrado al usuario al comenzar la actividad (opcional)
   - `max_exchanges`: Número máximo de intercambios antes de completar la actividad automáticamente (opcional, por defecto 5)
 - El componente Chat ahora puede recibir la actividad como prop desde el componente StageContent
 - Se ha implementado una verificación de tipos para asegurar la compatibilidad entre los datos de la base de datos y los componentes

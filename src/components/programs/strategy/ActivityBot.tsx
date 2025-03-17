@@ -78,14 +78,14 @@ export default function ActivityBot({ activity, stageContext }: ActivityBotProps
       // If the activity is complete, save the responses
       if (aiResponse.metadata?.type === 'summary') {
         await completeActivity(activity.id, {
-          responses: messages.concat(userMessage, aiResponse)
+          responses: [...messages, userMessage, aiResponse]
         });
       }
     } catch (err) {
       console.error('Error processing response:', err);
       setError('Failed to process response. Please try again.');
       // Add error message to chat
-      setMessages(prev => [...prev, {
+      const errorMessage: Message = {
         id: Date.now().toString(),
         content: 'Sorry, there was an error processing your response. Please try again.',
         sender: 'ai',
@@ -95,7 +95,8 @@ export default function ActivityBot({ activity, stageContext }: ActivityBotProps
           activity: activity.id,
           type: 'error'
         }
-      }]);
+      };
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsTyping(false);
     }

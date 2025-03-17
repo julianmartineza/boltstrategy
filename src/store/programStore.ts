@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
-import type { Program, Stage } from '../types/index';
+import type { Program, Stage, Company, Diagnostic } from '../types/index';
 
 // Definimos un tipo para las actividades que vienen de la base de datos
 type DBActivity = {
@@ -27,6 +27,8 @@ interface ProgramState {
   currentProgram: Program | null;
   currentStage: Stage | null;
   currentActivity: DBActivity | null;
+  company: Company | null;
+  diagnostic: Diagnostic | null;
   loading: boolean;
   error: string | null;
   
@@ -36,14 +38,66 @@ interface ProgramState {
   completeStage: (stageId: string) => Promise<void>;
   startActivity: (activityId: string) => Promise<void>;
   completeActivity: (activityId: string, response: any) => Promise<void>;
+  loadCompanyAndDiagnostic: (userId: string) => Promise<void>;
 }
 
 export const useProgramStore = create<ProgramState>((set, get) => ({
   currentProgram: null,
   currentStage: null,
   currentActivity: null,
+  company: null,
+  diagnostic: null,
   loading: false,
   error: null,
+
+  loadCompanyAndDiagnostic: async (userId: string) => {
+    set({ loading: true, error: null });
+    try {
+      // Fetch company data
+      const { data: companies, error: companyError } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('user_id', userId)
+        .limit(1)
+        .single();
+
+      if (companyError) {
+        console.error('Error fetching company:', companyError);
+        set({ loading: false, error: 'Error al cargar la empresa' });
+        return;
+      }
+
+      if (companies) {
+        set({ company: companies });
+
+        // Fetch diagnostic data
+        const { data: diagnostics, error: diagnosticError } = await supabase
+          .from('diagnostics')
+          .select('*')
+          .eq('company_id', companies.id)
+          .limit(1)
+          .single();
+
+        if (diagnosticError) {
+          console.error('Error fetching diagnostic:', diagnosticError);
+          set({ loading: false, error: 'Error al cargar el diagnóstico' });
+          return;
+        }
+
+        if (diagnostics) {
+          set({ diagnostic: diagnostics });
+        }
+      }
+      
+      set({ loading: false });
+    } catch (error) {
+      console.error('Error in loadCompanyAndDiagnostic:', error);
+      set({ 
+        loading: false, 
+        error: error instanceof Error ? error.message : 'Error al cargar datos de la empresa' 
+      });
+    }
+  },
 
   loadProgram: async (programId: string) => {
     set({ loading: true, error: null });

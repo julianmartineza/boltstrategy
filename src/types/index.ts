@@ -21,6 +21,10 @@ export interface Diagnostic {
     growthAspiration: string;
   };
   created_at: string;
+  currentChallenges?: string;
+  marketPosition?: string;
+  keyStrengths?: string;
+  growthAspiration?: string;
 }
 
 // Program Types
@@ -50,19 +54,58 @@ export interface StageContent {
   content: string;
   order_num: number;
   metadata?: any;
-  activity_data?: {
-    type: string;
-    description: string;
-    prompt_template: string;
-    required_steps?: string[];
-    completion_criteria?: {
-      min_responses?: number;
-      required_topics?: string[];
-    };
-  } | null; // Permitimos que activity_data pueda ser null
+  activity_data?: ActivityData;
+  step?: number;
+  prompt_section?: string;
+  system_instructions?: string;
 }
 
 // Activity Types
+export interface Activity {
+  id: string;
+  name: string;
+  description: string;
+  type: string;
+  prompt_template?: string;
+  required_steps?: string[];
+  completion_criteria?: {
+    min_responses?: number;
+    required_topics?: string[];
+  };
+  step?: number;
+  totalSteps?: number;
+}
+
+export interface ActivityData {
+  prompt?: string;
+  system_instructions?: string;
+  initial_message?: string;
+  max_exchanges?: number;
+  type?: string;
+  description?: string;
+  prompt_template?: string;
+  required_steps?: string[];
+  completion_criteria?: {
+    min_responses?: number;
+    required_topics?: string[];
+  };
+}
+
+export interface ActivityContent {
+  id: string;
+  title: string;
+  content: string;
+  content_type: string;
+  activity_data: ActivityData;
+  metadata?: any;
+  stage_id?: string;
+  order_num?: number;
+  created_at?: string;
+  step?: number;
+  prompt_section?: string;
+  system_instructions?: string;
+}
+
 export interface ActivityResponse {
   id: string;
   stage_content_id: string;
@@ -80,6 +123,22 @@ export interface Message {
   metadata?: {
     stage?: string;
     content_id?: string;
-    type?: 'question' | 'response' | 'guidance' | 'summary';
+    activity?: string;
+    type?: 'question' | 'response' | 'guidance' | 'summary' | 'error' | 'system';
+    progress?: number;
   };
+  activity?: {
+    step: number;
+    totalSteps: number;
+  };
+}
+
+// User Insights
+export interface UserInsight {
+  id: string;
+  user_id: string;
+  activity_id: string;
+  step?: number;
+  content: string;
+  created_at: string;
 }

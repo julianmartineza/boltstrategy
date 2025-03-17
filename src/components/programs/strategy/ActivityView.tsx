@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, Stage } from '../../../types';
-import { Send, MessageSquare, CheckCircle, AlertCircle } from 'lucide-react';
+import { Send, MessageSquare, AlertCircle } from 'lucide-react';
 
 interface ActivityViewProps {
   activity: Activity;

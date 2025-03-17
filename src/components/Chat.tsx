@@ -1,57 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, BookmarkPlus, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { useProgramStore } from '../store/programStore';
-import { findSimilarMessages, saveInteractionWithEmbeddings, SimilarMessage } from '../lib/openai';
-
-// Acceder a la clave API de OpenAI desde las variables de entorno
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
-
-interface Message {
-  id: string;
-  content: string;
-  sender: 'user' | 'ai';
-  timestamp: Date;
-}
-
-interface Company {
-  id: string;
-  name: string;
-  industry: string;
-  size: string;
-  website: string;
-  annual_revenue: number;
-}
-
-interface Diagnostic {
-  id: string;
-  diagnostic_data: {
-    currentChallenges: string;
-    marketPosition: string;
-    keyStrengths: string;
-    growthAspiration: string;
-  };
-}
-
-interface ActivityData {
-  prompt: string;
-  system_instructions?: string;
-  initial_message?: string;
-  max_exchanges?: number;
-}
-
-interface ActivityContent {
-  id: string;
-  title: string;
-  content: string;
-  content_type: string; // Cambiado de 'activity' a string para ser compatible con "video" | "text" | "activity"
-  activity_data: ActivityData;
-  metadata?: any; // Añadido para ser compatible con el tipo en StageContent
-  stage_id?: string; // Añadido para ser compatible con el tipo en StageContent
-  order_num?: number; // Añadido para ser compatible con el tipo en StageContent
-  created_at?: string; // Añadido para ser compatible con el tipo en StageContent
-}
+import { generateBotResponse } from '../lib/openai';
+import { Message, ActivityContent, UserInsight } from '../types';
 
 interface ChatProps {
   stageContentId?: string;
@@ -59,507 +12,541 @@ interface ChatProps {
 }
 
 export default function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
+  const { user } = useAuthStore();
+  const { company, diagnostic, loadCompanyAndDiagnostic } = useProgramStore();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [company, setCompany] = useState<Company | null>(null);
-  const [diagnostic, setDiagnostic] = useState<Diagnostic | null>(null);
-  const [activityContent, setActivityContent] = useState<ActivityContent | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { user } = useAuthStore();
-  const { currentActivity, completeActivity } = useProgramStore();
+  const [activityContent, setActivityContent] = useState<ActivityContent | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  useEffect(() => {
-    const fetchCompanyAndDiagnostic = async () => {
-      if (!user) return;
+  // Estado para el manejo de pasos
+  const [currentStep, setCurrentStep] = useState<number>(1);
+  const [totalSteps, setTotalSteps] = useState<number>(1);
+  const [stepValidated, setStepValidated] = useState<boolean>(false);
+  const [showInsightButton, setShowInsightButton] = useState<boolean>(false);
+  const [insights, setInsights] = useState<UserInsight[]>([]);
+  const [showInsights, setShowInsights] = useState<boolean>(false);
 
-      // Fetch company data
-      const { data: companies, error: companyError } = await supabase
-        .from('companies')
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    if (activityContentProp) {
+      setActivityContent(activityContentProp);
+    } else if (stageContentId) {
+      fetchActivityContent();
+    }
+
+    // Cargar datos de la empresa y diagnóstico si el usuario está autenticado
+    if (user?.id) {
+      loadCompanyAndDiagnostic(user.id);
+    }
+  }, [stageContentId, activityContentProp, user?.id, loadCompanyAndDiagnostic]);
+
+  useEffect(() => {
+    if (activityContent) {
+      loadPreviousMessages();
+      fetchTotalSteps();
+      fetchInsights();
+    }
+  }, [activityContent]);
+
+  const fetchActivityContent = async () => {
+    if (!stageContentId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('stage_content')
         .select('*')
-        .eq('user_id', user.id)
-        .limit(1)
+        .eq('id', stageContentId)
         .single();
 
-      if (companyError) {
-        console.error('Error fetching company:', companyError);
+      if (error) {
+        console.error('Error fetching activity content:', error);
         return;
       }
 
-      if (companies) {
-        setCompany(companies);
+      setActivityContent(data as ActivityContent);
+    } catch (error) {
+      console.error('Error in fetchActivityContent:', error);
+    }
+  };
 
-        // Fetch diagnostic data
-        const { data: diagnostics, error: diagnosticError } = await supabase
-          .from('diagnostics')
-          .select('*')
-          .eq('company_id', companies.id)
-          .limit(1)
-          .single();
+  const fetchTotalSteps = async () => {
+    if (!activityContent?.id) return;
 
-        if (diagnosticError) {
-          console.error('Error fetching diagnostic:', diagnosticError);
-          return;
-        }
-
-        if (diagnostics) {
-          setDiagnostic(diagnostics);
-        }
-      }
-    };
-
-    fetchCompanyAndDiagnostic();
-  }, [user]);
-  
-  // Efecto para cargar actividades previas completadas
-  useEffect(() => {
-    const fetchCompletedActivities = async () => {
-      if (!user) return [];
-      
-      // Obtener actividades completadas del usuario actual
+    try {
       const { data, error } = await supabase
-        .from('activity_completions')
-        .select('*, stage_content(*)')
-        .eq('user_id', user.id)
-        .order('completed_at', { ascending: false });
-      
+        .from('stage_content')
+        .select('step')
+        .eq('stage_id', activityContent.stage_id)
+        .eq('content_type', 'activity')
+        .order('step', { ascending: false })
+        .limit(1);
+
       if (error) {
-        console.error('Error al cargar actividades completadas:', error);
-        return [];
+        console.error('Error fetching total steps:', error);
+        return;
       }
-      
-      return data || [];
-    };
-    
-    // Almacenar las actividades completadas para usarlas en el contexto
-    fetchCompletedActivities().then(activities => {
-      console.log('Actividades completadas cargadas:', activities.length);
-    });
-  }, [user]);
 
-  // Efecto para cargar mensajes previos de la actividad
-  useEffect(() => {
-    const loadPreviousMessages = async () => {
-      if (!user || !activityContent) return;
-      
-      console.log('Cargando mensajes previos para la actividad:', activityContent.id);
-      
-      // Obtener interacciones previas para esta actividad
+      if (data && data.length > 0 && data[0].step) {
+        setTotalSteps(data[0].step);
+      }
+    } catch (error) {
+      console.error('Error in fetchTotalSteps:', error);
+    }
+  };
+
+  const fetchInsights = async () => {
+    if (!user?.id || !activityContent?.id) return;
+
+    try {
       const { data, error } = await supabase
-        .from('activity_interactions')
+        .from('user_insights')
         .select('*')
         .eq('user_id', user.id)
         .eq('activity_id', activityContent.id)
-        .order('timestamp', { ascending: true });
-      
+        .order('created_at', { ascending: false });
+
       if (error) {
-        console.error('Error al cargar mensajes previos:', error);
+        console.error('Error fetching insights:', error);
         return;
       }
-      
-      if (data && data.length > 0) {
-        console.log(`Se encontraron ${data.length} mensajes previos`);
+
+      if (data) {
+        setInsights(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchInsights:', error);
+    }
+  };
+
+  const loadPreviousMessages = async () => {
+    if (!user?.id || !activityContent?.id) return;
+
+    try {
+      // Cargar mensajes anteriores para esta actividad específica
+      const { data: interactions, error } = await supabase
+        .from('activity_interactions')
+        .select('user_message, ai_response, timestamp')
+        .eq('user_id', user.id)
+        .eq('activity_id', activityContent.id)
+        .order('timestamp', { ascending: true });
+
+      if (error) {
+        console.error('Error loading previous messages:', error);
+        return;
+      }
+
+      // Convertir los datos a formato de mensajes
+      if (interactions && interactions.length > 0) {
+        const loadedMessages: Message[] = [];
         
-        // Convertir las interacciones a mensajes
-        const previousMessages: Message[] = [];
-        
-        // Si hay un mensaje inicial en la actividad, agregarlo primero
-        if (activityContent.activity_data?.initial_message) {
-          previousMessages.push({
-            id: 'initial-message',
-            content: activityContent.activity_data.initial_message,
-            sender: 'ai',
-            timestamp: new Date(data[0].timestamp) // Usar la fecha del primer mensaje como referencia
-          });
-        }
-        
-        // Agregar los mensajes de las interacciones
-        data.forEach(interaction => {
+        interactions.forEach((interaction) => {
           // Mensaje del usuario
-          previousMessages.push({
-            id: `user-${interaction.id}`,
+          loadedMessages.push({
+            id: `user-${interaction.timestamp}`,
             content: interaction.user_message,
             sender: 'user',
             timestamp: new Date(interaction.timestamp)
           });
           
           // Respuesta de la IA
-          previousMessages.push({
-            id: `ai-${interaction.id}`,
+          loadedMessages.push({
+            id: `ai-${interaction.timestamp}`,
             content: interaction.ai_response,
             sender: 'ai',
             timestamp: new Date(interaction.timestamp)
           });
         });
         
-        // Actualizar el estado de mensajes
-        setMessages(previousMessages);
+        setMessages(loadedMessages);
+        
+        // Determinar el paso actual basado en los mensajes cargados
+        // Asumimos que cada paso tiene al menos un intercambio (usuario + AI)
+        const estimatedStep = Math.floor(loadedMessages.length / 2) + 1;
+        setCurrentStep(Math.min(estimatedStep, totalSteps));
       } else {
-        console.log('No se encontraron mensajes previos');
-        
-        // Si no hay mensajes previos pero hay un mensaje inicial en la actividad, agregarlo
-        if (activityContent.activity_data?.initial_message) {
-          const initialMessage: Message = {
-            id: Date.now().toString(),
-            content: activityContent.activity_data.initial_message,
-            sender: 'ai',
-            timestamp: new Date()
-          };
-          
-          setMessages([initialMessage]);
-        }
+        // Si no hay mensajes previos, iniciar con el mensaje inicial de la actividad
+        await fetchActivityStep(1);
       }
-    };
-    
-    loadPreviousMessages();
-  }, [user, activityContent]);
-  
-  // Efecto para cargar la actividad actual
-  useEffect(() => {
-    // Si se proporciona la actividad como prop, la usamos directamente
-    if (activityContentProp) {
-      console.log('Usando actividad proporcionada como prop:', activityContentProp);
-      setActivityContent(activityContentProp);
-      return;
+    } catch (error) {
+      console.error('Error in loadPreviousMessages:', error);
     }
-    
-    const fetchActivityContent = async () => {
-      // Si se proporciona un ID específico, lo usamos
-      const contentId = stageContentId || (currentActivity?.stage_content_id);
-      
-      if (!contentId) {
-        // Si no hay actividad actual ni ID proporcionado, intentamos cargar una actividad de ejemplo
-        console.log('No hay actividad actual, buscando actividades disponibles...');
-        
-        const { data: activities, error: activitiesError } = await supabase
-          .from('stage_content')
-          .select('*')
-          .eq('content_type', 'activity')
-          .limit(1);
-        
-        if (activitiesError) {
-          console.error('Error al buscar actividades:', activitiesError);
-          return;
-        }
-        
-        if (activities && activities.length > 0) {
-          console.log('Actividad encontrada:', activities[0]);
-          setActivityContent(activities[0] as ActivityContent);
-          
-          // Si hay un mensaje inicial, agregarlo como mensaje del AI
-          if (activities[0].activity_data?.initial_message) {
-            const initialMessage: Message = {
-              id: Date.now().toString(),
-              content: activities[0].activity_data.initial_message,
-              sender: 'ai',
-              timestamp: new Date()
-            };
-            
-            setMessages([initialMessage]);
-          }
-          return;
-        }
-        
-        console.log('No se encontraron actividades disponibles');
-        return;
-      }
-      
-      // Buscar el contenido de la actividad en stage_content
+  };
+
+  const fetchActivityStep = async (step: number) => {
+    if (!activityContent?.stage_id) return null;
+
+    try {
       const { data, error } = await supabase
         .from('stage_content')
         .select('*')
-        .eq('id', contentId)
+        .eq('stage_id', activityContent.stage_id)
         .eq('content_type', 'activity')
+        .eq('step', step)
         .single();
-      
+
       if (error) {
-        console.error('Error al cargar el contenido de la actividad:', error);
+        console.error(`Error fetching step ${step}:`, error);
+        return null;
+      }
+
+      return data as ActivityContent;
+    } catch (error) {
+      console.error(`Error in fetchActivityStep for step ${step}:`, error);
+      return null;
+    }
+  };
+
+  const validateResponse = async (response: string, step: number) => {
+    if (!activityContent) return false;
+
+    try {
+      // Obtener el paso actual para las instrucciones de validación
+      const stepContent = await fetchActivityStep(step);
+      if (!stepContent) return false;
+
+      // Crear un prompt para validar la respuesta
+      const validationPrompt = `
+        Estás evaluando la respuesta de un usuario para una actividad de consultoría estratégica.
+        
+        PASO ${step}: ${stepContent.title}
+        
+        INSTRUCCIONES DE VALIDACIÓN:
+        ${stepContent.system_instructions || 'Evalúa si la respuesta del usuario es adecuada para este paso.'}
+        
+        RESPUESTA DEL USUARIO:
+        "${response}"
+        
+        Evalúa si la respuesta cumple con los requisitos mínimos para este paso.
+        Responde SOLO con "VALIDO" si la respuesta es aceptable, o "INVALIDO: [razón]" si no es aceptable.
+      `;
+
+      // Llamar a la API para validar
+      const validationResult = await generateBotResponse(
+        validationPrompt,
+        {
+          systemPrompt: 'Eres un evaluador de respuestas para actividades de consultoría estratégica. Tu trabajo es determinar si las respuestas de los usuarios cumplen con los requisitos mínimos.',
+          stage: activityContent.title,
+          activity: 'Validación de respuesta',
+          previousMessages: []
+        },
+        user?.id,
+        activityContent.id
+      );
+
+      // Procesar el resultado
+      if (validationResult?.toLowerCase().startsWith('valido')) {
+        return true;
+      } else {
+        // Extraer el mensaje de error
+        const errorMessage = validationResult?.split(':')[1]?.trim() || 'La respuesta no cumple con los requisitos.';
+        
+        // Añadir mensaje de error
+        setMessages(prev => [...prev, {
+          id: `error-${Date.now()}`,
+          content: `⚠️ ${errorMessage} Por favor, intenta de nuevo.`,
+          sender: 'ai',
+          timestamp: new Date(),
+          metadata: { type: 'error' }
+        }]);
+        
+        return false;
+      }
+    } catch (error) {
+      console.error('Error validating response:', error);
+      return false;
+    }
+  };
+
+  const saveInsight = async (messageContent: string) => {
+    if (!user?.id || !activityContent?.id) return;
+
+    try {
+      const { error } = await supabase
+        .from('user_insights')
+        .insert([{
+          user_id: user.id,
+          activity_id: activityContent.id,
+          step: currentStep,
+          content: messageContent
+        }]);
+
+      if (error) {
+        console.error('Error saving insight:', error);
         return;
       }
+
+      // Actualizar la lista de insights
+      fetchInsights();
       
-      if (data) {
-        console.log('Actividad cargada:', data);
-        setActivityContent(data as ActivityContent);
-        
-        // Si hay un mensaje inicial, agregarlo como mensaje del AI
-        if (data.activity_data?.initial_message) {
-          const initialMessage: Message = {
-            id: Date.now().toString(),
-            content: data.activity_data.initial_message,
-            sender: 'ai',
-            timestamp: new Date()
-          };
-          
-          setMessages([initialMessage]);
-        }
-      }
-    };
-    
-    fetchActivityContent();
-  }, [currentActivity, stageContentId, activityContentProp]);
-  
-  // Efecto para hacer scroll al último mensaje
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+      // Mostrar confirmación
+      setMessages(prev => [...prev, {
+        id: `system-${Date.now()}`,
+        content: '✅ Insight guardado correctamente.',
+        sender: 'ai',
+        timestamp: new Date(),
+        metadata: { type: 'system' }
+      }]);
+    } catch (error) {
+      console.error('Error in saveInsight:', error);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !company || isLoading) return;
+    if (!input.trim() || isLoading || !activityContent) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: input,
-      sender: 'user',
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
+    const userMessage = input.trim();
     setInput('');
     setIsLoading(true);
-    
-    try {
-      // Si estamos en una actividad, usamos el prompt de la actividad
-      if (activityContent && activityContent.activity_data && activityContent.content_type === 'activity') {
-        // Preparar los datos para la API de OpenAI
-        const promptText = activityContent.activity_data.prompt;
-        const systemInstructionsText = activityContent.activity_data.system_instructions || 
-          'Eres un asistente de estrategia empresarial que ayuda a los usuarios a completar actividades estratégicas.';
-        
-        // Obtener actividades previas completadas para contexto
-        const { data: completedActivities, error: activitiesError } = await supabase
-          .from('activity_completions')
-          .select('*, stage_content(*)')
-          .eq('user_id', user?.id || '')
-          .order('completed_at', { ascending: false })
-          .limit(5);
-          
-        if (activitiesError) {
-          console.error('Error al cargar actividades previas:', activitiesError);
-        }
-        
-        // Preparar el contexto para la API con información enriquecida
-        const contextData = {
-          company: company ? {
-            name: company.name,
-            industry: company.industry,
-            size: company.size,
-            annual_revenue: company.annual_revenue,
-            website: company.website
-          } : null,
-          diagnostic: diagnostic ? {
-            currentChallenges: diagnostic.diagnostic_data?.currentChallenges,
-            marketPosition: diagnostic.diagnostic_data?.marketPosition,
-            keyStrengths: diagnostic.diagnostic_data?.keyStrengths,
-            growthAspiration: diagnostic.diagnostic_data?.growthAspiration
-          } : null,
-          activity: {
-            id: activityContent.id,
-            title: activityContent.title,
-            content: activityContent.content,
-            type: activityContent.content_type
-          },
-          previousActivities: completedActivities ? completedActivities.map(act => ({
-            id: act.stage_content?.id,
-            title: act.stage_content?.title,
-            completedAt: act.completed_at,
-            userResponses: act.user_responses
-          })) : [],
-          messages: [...messages, userMessage].map(m => ({
-            role: m.sender === 'user' ? 'user' : 'assistant',
-            content: m.content
-          }))
-        };
-        
-        console.log('Procesando actividad con contexto enriquecido:', {
-          prompt: promptText,
-          systemInstructions: systemInstructionsText,
-          context: contextData
-        });
-        
-        // Llamar a la API de OpenAI directamente
-        let aiResponse = '';
-        
-        try {
-          console.log('Llamando a la API de OpenAI con la clave:', OPENAI_API_KEY ? 'API Key disponible' : 'API Key no disponible');
-          
-          // Importar la interfaz SimilarMessage de openai.ts
-          
-          // Buscar mensajes similares usando embeddings vectoriales
-          let relevantMessages: SimilarMessage[] = [];
-          if (user?.id) {
-            try {
-              relevantMessages = await findSimilarMessages(
-                userMessage.content,
-                user.id,
-                activityContent.id,
-                0.7, // umbral de similitud
-                5    // número máximo de resultados
-              );
-              console.log(`Se encontraron ${relevantMessages.length} mensajes relevantes usando embeddings`);
-            } catch (searchError) {
-              console.error('Error al buscar mensajes similares:', searchError);
-            }
-          }
-          
-          // Preparar los mensajes para OpenAI en formato correcto
-          const messagesForAPI = [
-            {
-              role: 'system',
-              content: systemInstructionsText
-            },
-            // Convertir el prompt en un mensaje del sistema
-            {
-              role: 'system',
-              content: `Prompt de la actividad: ${promptText}\n\nInformación de contexto:\n${JSON.stringify(contextData, null, 2)}`
-            },
-            // Incluir mensajes relevantes de conversaciones anteriores si existen
-            ...(relevantMessages.length > 0 ? [{
-              role: 'system',
-              content: `Mensajes relevantes de conversaciones anteriores:\n${relevantMessages
-                .map(m => `Usuario: ${m.user_message}\nAsistente: ${m.ai_response}`)
-                .join('\n\n')}`
-            }] : []),
-            // Incluir mensajes de la conversación actual (limitados a los últimos 10 para no sobrecargar)
-            ...messages.slice(-10).map(m => ({
-              role: m.sender === 'user' ? 'user' : 'assistant',
-              content: m.content
-            })),
-            // Añadir el mensaje actual del usuario
-            {
-              role: 'user',
-              content: userMessage.content
-            }
-          ];
-          
-          // Llamada a la API de OpenAI
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-              model: 'gpt-4-turbo-preview',  // Usar el modelo más avanzado disponible
-              messages: messagesForAPI,
-              temperature: 0.7,
-              max_tokens: 1000,
-              top_p: 1,
-              frequency_penalty: 0,
-              presence_penalty: 0
-            })
-          });
-          
-          if (!response.ok) {
-            const errorData = await response.json();
-            console.error('Error en la respuesta de OpenAI:', errorData);
-            throw new Error(`Error al generar respuesta de IA: ${response.status} ${response.statusText}`);
-          }
-          
-          const data = await response.json();
-          console.log('Respuesta de OpenAI:', data);
-          
-          // Extraer la respuesta del modelo
-          aiResponse = data.choices[0].message.content;
-          
-          // Guardar la interacción con embeddings vectoriales
-          try {
-            if (user?.id) {
-              await saveInteractionWithEmbeddings(
-                user.id,
-                activityContent.id,
-                userMessage.content,
-                aiResponse
-              );
-              console.log('Interacción guardada con embeddings vectoriales');
-            }
-          } catch (saveError) {
-            console.error('Error al guardar la interacción con embeddings:', saveError);
-          }
-        } catch (openAiError) {
-          console.error('Error al llamar a la API de OpenAI:', openAiError);
-          
-          // Si hay un error con la API, usar una respuesta de fallback
-          aiResponse = `Lo siento, ha ocurrido un error al procesar tu respuesta para la actividad "${activityContent.title}".\n\n`;
-          aiResponse += "Estamos experimentando problemas de conexión con nuestro servicio de IA. Por favor, intenta nuevamente en unos momentos.";
-          
-          // Si tenemos información de contexto, añadir una respuesta más personalizada
-          if (company) {
-            aiResponse += `\n\nMientras tanto, puedes reflexionar sobre cómo ${company.name} podría abordar sus desafíos actuales considerando su posición en el sector ${company.industry}.`;
-          }
-        }
-        
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: aiResponse,
-          sender: 'ai',
-          timestamp: new Date(),
-        };
+    setShowInsightButton(false);
 
-        setMessages((prev) => [...prev, aiMessage]);
-        
-        // Verificar si hemos alcanzado el número máximo de intercambios
-        const maxExchanges = activityContent.activity_data.max_exchanges || 5;
-        if (messages.filter(m => m.sender === 'user').length >= maxExchanges) {
-          // Completar la actividad automáticamente después del último intercambio
-          if (currentActivity) {
-            await completeActivity(currentActivity.id, {
-              messages: [...messages, userMessage, aiMessage],
-              completed_at: new Date().toISOString()
-            });
-          }
-        }
+    // Verificar si es un comando para guardar insight
+    if (userMessage.toLowerCase().startsWith('/guardar')) {
+      const insightContent = userMessage.substring('/guardar'.length).trim();
+      if (insightContent) {
+        await saveInsight(insightContent);
       } else {
-        // Comportamiento normal del chat sin actividad
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          content: `Soy tu consultor de estrategia para ${company.name}. ¿En qué puedo ayudarte hoy?`,
+        setMessages(prev => [...prev, {
+          id: `error-${Date.now()}`,
+          content: 'Por favor, proporciona el contenido del insight después del comando /guardar.',
           sender: 'ai',
           timestamp: new Date(),
-        };
-
-        setMessages((prev) => [...prev, aiMessage]);
+          metadata: { type: 'error' }
+        }]);
       }
-    } catch (error) {
-      console.error('Error al generar respuesta:', error);
-      // Mostrar mensaje de error al usuario
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: 'Lo siento, hubo un error al procesar tu mensaje. Por favor, intenta nuevamente.',
+      setIsLoading(false);
+      return;
+    }
+
+    // Añadir mensaje del usuario
+    const newUserMessage: Message = {
+      id: `user-${Date.now()}`,
+      content: userMessage,
+      sender: 'user',
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, newUserMessage]);
+
+    try {
+      // Si estamos en un paso que requiere validación
+      if (!stepValidated) {
+        const isValid = await validateResponse(userMessage, currentStep);
+        if (!isValid) {
+          setIsLoading(false);
+          return;
+        }
+        setStepValidated(true);
+      }
+
+      // Obtener el contenido del paso actual
+      const stepContent = await fetchActivityStep(currentStep);
+      if (!stepContent) {
+        throw new Error(`No se pudo obtener el contenido para el paso ${currentStep}`);
+      }
+
+      // Preparar el contexto para la respuesta del bot
+      let contextData: Record<string, any> = {};
+      if (company) {
+        contextData.company = {
+          name: company.name,
+          industry: company.industry,
+          size: company.size,
+          annual_revenue: company.annual_revenue
+        };
+      }
+      if (diagnostic) {
+        contextData.diagnostic = {
+          currentChallenges: diagnostic.diagnostic_data?.currentChallenges || diagnostic.currentChallenges,
+          marketPosition: diagnostic.diagnostic_data?.marketPosition || diagnostic.marketPosition,
+          keyStrengths: diagnostic.diagnostic_data?.keyStrengths || diagnostic.keyStrengths,
+          growthAspiration: diagnostic.diagnostic_data?.growthAspiration || diagnostic.growthAspiration
+        };
+      }
+
+      // Obtener mensajes previos para el contexto
+      const previousMessages = messages
+        .slice(-6) // Últimos 6 mensajes para mantener el contexto reciente
+        .map(msg => ({
+          role: msg.sender === 'user' ? 'user' as const : 'assistant' as const,
+          content: msg.content
+        }));
+
+      // Generar respuesta del bot
+      const botResponse = await generateBotResponse(
+        userMessage,
+        {
+          systemPrompt: stepContent.system_instructions || stepContent.activity_data?.system_instructions,
+          stage: activityContent.title,
+          activity: stepContent.title,
+          previousMessages,
+          context: contextData
+        },
+        user?.id,
+        activityContent.id
+      );
+
+      if (!botResponse) {
+        throw new Error('No se pudo generar una respuesta');
+      }
+
+      // Añadir respuesta del bot
+      const newBotMessage: Message = {
+        id: `ai-${Date.now()}`,
+        content: botResponse,
         sender: 'ai',
         timestamp: new Date(),
+        activity: {
+          step: currentStep,
+          totalSteps
+        }
       };
-      
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages(prev => [...prev, newBotMessage]);
+
+      // Mostrar botón de guardar insight después de la respuesta del bot
+      setShowInsightButton(true);
+
+      // Si la respuesta ha sido validada, preparar para el siguiente paso
+      if (stepValidated && currentStep < totalSteps) {
+        // Añadir mensaje de sistema para avanzar al siguiente paso
+        setTimeout(() => {
+          setMessages(prev => [...prev, {
+            id: `system-${Date.now()}`,
+            content: `Has completado el paso ${currentStep} de ${totalSteps}. Puedes continuar al siguiente paso.`,
+            sender: 'ai',
+            timestamp: new Date(),
+            metadata: { type: 'system' },
+            activity: {
+              step: currentStep,
+              totalSteps
+            }
+          }]);
+        }, 1000);
+      } else if (stepValidated && currentStep === totalSteps) {
+        // Mensaje de finalización de la actividad
+        setTimeout(() => {
+          setMessages(prev => [...prev, {
+            id: `system-${Date.now()}`,
+            content: '¡Felicidades! Has completado todos los pasos de esta actividad.',
+            sender: 'ai',
+            timestamp: new Date(),
+            metadata: { type: 'system' },
+            activity: {
+              step: currentStep,
+              totalSteps
+            }
+          }]);
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('Error in handleSubmit:', error);
+      setMessages(prev => [...prev, {
+        id: `error-${Date.now()}`,
+        content: 'Lo siento, ha ocurrido un error al procesar tu mensaje. Por favor, intenta de nuevo.',
+        sender: 'ai',
+        timestamp: new Date(),
+        metadata: { type: 'error' }
+      }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Mostrar un indicador de carga mientras se cargan los datos
-  if ((!activityContent || (activityContent && activityContent.content_type !== 'activity')) && !company) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="flex flex-col items-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500" />
-          <p className="mt-4 text-gray-600">Cargando datos...</p>
-        </div>
-      </div>
-    );
-  }
-  
+  const handleNextStep = () => {
+    if (currentStep < totalSteps) {
+      setCurrentStep(prev => prev + 1);
+      setStepValidated(false);
+      
+      // Cargar el contenido del siguiente paso
+      fetchActivityStep(currentStep + 1).then(stepContent => {
+        if (stepContent) {
+          // Añadir mensaje de inicio del nuevo paso
+          setMessages(prev => [...prev, {
+            id: `system-${Date.now()}`,
+            content: `PASO ${currentStep + 1}: ${stepContent.title}`,
+            sender: 'ai',
+            timestamp: new Date(),
+            metadata: { type: 'system' },
+            activity: {
+              step: currentStep + 1,
+              totalSteps
+            }
+          }]);
+          
+          // Si hay un mensaje inicial para este paso, añadirlo
+          if (stepContent.activity_data?.initial_message) {
+            setMessages(prev => [...prev, {
+              id: `ai-${Date.now()}`,
+              content: stepContent.activity_data.initial_message || '',
+              sender: 'ai',
+              timestamp: new Date(),
+              activity: {
+                step: currentStep + 1,
+                totalSteps
+              }
+            }]);
+          }
+        }
+      });
+    }
+  };
+
+  const handleSaveCurrentInsight = () => {
+    // Obtener el último mensaje de la IA
+    const lastAiMessage = [...messages].reverse().find(msg => msg.sender === 'ai' && !msg.metadata?.type);
+    
+    if (lastAiMessage) {
+      saveInsight(lastAiMessage.content);
+    }
+  };
+
   // Si estamos en una actividad, mostrar información de la actividad
   const headerTitle = activityContent ? activityContent.title : (company?.name || 'Consultoría Estratégica');
   const headerSubtitle = activityContent 
-    ? 'Actividad interactiva' 
+    ? `Actividad interactiva • Paso ${currentStep} de ${totalSteps}` 
     : (company ? `${company.industry} • ${company.size}` : 'Información de la empresa no disponible');
 
   return (
     <div className="h-screen flex flex-col">
-      <div className="bg-white border-b border-gray-200 p-4">
-        <h1 className="text-xl font-semibold text-gray-900">{headerTitle}</h1>
-        <p className="text-sm text-gray-500">{headerSubtitle}</p>
+      <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">{headerTitle}</h1>
+          <p className="text-sm text-gray-500">{headerSubtitle}</p>
+        </div>
+        {activityContent && (
+          <div className="flex items-center">
+            <button
+              onClick={() => setShowInsights(!showInsights)}
+              className="text-sm text-blue-600 hover:text-blue-800 mr-4"
+            >
+              {showInsights ? 'Ocultar insights' : `Insights (${insights.length})`}
+            </button>
+          </div>
+        )}
       </div>
+
+      {showInsights && (
+        <div className="bg-gray-50 p-4 border-b border-gray-200">
+          <h2 className="text-lg font-medium mb-2">Insights Guardados</h2>
+          {insights.length > 0 ? (
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {insights.map(insight => (
+                <div key={insight.id} className="bg-white p-3 rounded-lg border border-gray-200">
+                  {insight.content}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500">No hay insights guardados para esta actividad.</p>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((message) => (
@@ -573,6 +560,10 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
               className={`max-w-lg rounded-lg px-4 py-2 ${
                 message.sender === 'user'
                   ? 'bg-blue-600 text-white'
+                  : message.metadata?.type === 'error'
+                  ? 'bg-red-100 text-red-800 border border-red-200'
+                  : message.metadata?.type === 'system'
+                  ? 'bg-yellow-100 text-yellow-800 border border-yellow-200'
                   : 'bg-gray-100 text-gray-900'
               }`}
             >
@@ -582,36 +573,54 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
                   {i < message.content.split('\n').length - 1 && <br />}
                 </React.Fragment>
               ))}
+              
+              {message.activity && (
+                <div className="mt-2 text-xs text-gray-500">
+                  Paso {message.activity.step} de {message.activity.totalSteps}
+                </div>
+              )}
+              
+              {message.sender === 'ai' && !message.metadata?.type && showInsightButton && (
+                <button
+                  onClick={handleSaveCurrentInsight}
+                  className="mt-2 flex items-center text-xs text-blue-600 hover:text-blue-800"
+                >
+                  <BookmarkPlus className="h-3 w-3 mr-1" />
+                  Guardar como insight
+                </button>
+              )}
             </div>
           </div>
         ))}
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-100 text-gray-900 rounded-lg px-4 py-2 flex items-center">
-              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-              <span>Generando respuesta...</span>
-            </div>
+        
+        {stepValidated && currentStep < totalSteps && (
+          <div className="flex justify-center my-4">
+            <button
+              onClick={handleNextStep}
+              className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              Siguiente paso <ArrowRight className="h-4 w-4 ml-2" />
+            </button>
           </div>
         )}
+        
         <div ref={messagesEndRef} />
       </div>
-      
-      <form onSubmit={handleSubmit} className="border-t p-4">
-        <div className="flex space-x-4">
+
+      <div className="bg-white border-t border-gray-200 p-4">
+        <form onSubmit={handleSubmit} className="flex items-center">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Escribe tu mensaje..."
-            className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             disabled={isLoading}
           />
           <button
             type="submit"
-            className={`rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              isLoading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-            }`}
-            disabled={isLoading}
+            className="ml-2 bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            disabled={isLoading || !input.trim()}
           >
             {isLoading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -619,8 +628,11 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
               <Send className="h-5 w-5" />
             )}
           </button>
+        </form>
+        <div className="mt-2 text-xs text-gray-500">
+          <p>Comandos especiales: <span className="font-mono">/guardar [texto]</span> para guardar un insight</p>
         </div>
-      </form>
+      </div>
     </div>
   );
 }
