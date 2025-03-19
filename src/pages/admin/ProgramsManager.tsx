@@ -6,7 +6,7 @@ interface Program {
   id: string;
   name: string;
   description: string;
-  status: 'not_started' | 'in_progress' | 'completed' | 'archived';
+  status: 'not_started' | 'in_progress' | 'completed' | 'archived' | 'active';
   created_at: string;
   updated_at?: string;
   user_count?: number;
@@ -154,6 +154,47 @@ const ProgramsManager: React.FC = () => {
     }
   };
 
+  // Activar/desactivar un programa
+  const toggleProgramStatus = async (program: Program) => {
+    try {
+      const newStatus = program.status === 'active' ? 'not_started' : 'active';
+      
+      // Si estamos activando este programa, primero desactivamos cualquier otro programa activo
+      if (newStatus === 'active') {
+        const { error: updateError } = await supabase
+          .from('programs')
+          .update({ status: 'not_started' })
+          .eq('status', 'active');
+        
+        if (updateError) throw updateError;
+      }
+      
+      // Actualizar el estado del programa seleccionado
+      const { error } = await supabase
+        .from('programs')
+        .update({ status: newStatus })
+        .eq('id', program.id);
+
+      if (error) throw error;
+
+      // Actualizar la lista de programas
+      setPrograms(programs.map(p => 
+        p.id === program.id 
+          ? { ...p, status: newStatus } 
+          : (newStatus === 'active' && p.status === 'active' ? { ...p, status: 'not_started' } : p)
+      ));
+      
+      setError(null);
+      setSuccess(`Programa ${newStatus === 'active' ? 'activado' : 'desactivado'} exitosamente.`);
+      
+      // Ocultar mensaje de éxito después de 3 segundos
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      console.error('Error al cambiar el estado del programa:', err);
+      setError('Error al cambiar el estado del programa. Por favor, inténtalo de nuevo.');
+    }
+  };
+
   // Ordenar programas
   const sortedPrograms = [...programs].sort((a, b) => {
     if (sortField === 'created_at') {
@@ -200,160 +241,144 @@ const ProgramsManager: React.FC = () => {
           <h2 className="text-xl font-semibold text-gray-800">Gestión de Programas</h2>
           <p className="text-sm text-gray-500 mt-1">Administra los programas de estrategia disponibles</p>
         </div>
-        {!isCreating && (
-          <button
-            onClick={() => {
-              setIsCreating(true);
-              setError(null);
-              setSuccess(null);
-            }}
-            className="flex items-center text-sm bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
-          >
-            <PlusCircle className="h-4 w-4 mr-2" />
-            Nuevo Programa
-          </button>
-        )}
+        <button
+          onClick={() => setIsCreating(true)}
+          className="flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+        >
+          <PlusCircle size={16} />
+          <span>Nuevo Programa</span>
+        </button>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 flex items-start">
-          <X className="h-5 w-5 mr-2 flex-shrink-0 text-red-500" />
-          <p className="text-sm">{error}</p>
-        </div>
-      )}
-      
-      {success && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md mb-4 flex items-start">
-          <Save className="h-5 w-5 mr-2 flex-shrink-0 text-green-500" />
-          <p className="text-sm">{success}</p>
+        <div className="mb-4 p-3 bg-red-100 border border-red-200 text-red-700 rounded-md flex items-start gap-2">
+          <X size={18} className="mt-0.5 flex-shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
-      {/* Formulario para crear nuevo programa */}
+      {success && (
+        <div className="mb-4 p-3 bg-green-100 border border-green-200 text-green-700 rounded-md">
+          {success}
+        </div>
+      )}
+
       {isCreating && (
-        <div className="bg-gray-50 p-6 rounded-lg mb-6 border border-gray-200 shadow-sm">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-medium text-gray-800">Crear Nuevo Programa</h3>
-            <button 
-              onClick={() => {
-                setIsCreating(false);
-                setNewProgram({ name: '', description: '', status: 'not_started' as const });
-                setError(null);
-              }}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          
-          <div className="space-y-4">
+        <div className="mb-6 p-4 border border-gray-200 rounded-md bg-gray-50">
+          <h3 className="text-lg font-medium mb-3">Nuevo Programa</h3>
+          <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Programa</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
               <input
                 type="text"
-                value={newProgram.name || ''}
+                value={newProgram.name}
                 onChange={(e) => setNewProgram({ ...newProgram, name: e.target.value })}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                placeholder="Ej: Estrategia de Crecimiento 2025"
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Nombre del programa"
               />
             </div>
-            
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
               <textarea
-                value={newProgram.description || ''}
+                value={newProgram.description}
                 onChange={(e) => setNewProgram({ ...newProgram, description: e.target.value })}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 rows={3}
-                placeholder="Describe el propósito y objetivos del programa..."
+                placeholder="Descripción del programa"
               />
             </div>
-            
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
               <select
-                value={newProgram.status || 'not_started'}
-                onChange={(e) => setNewProgram({ ...newProgram, status: e.target.value as Program['status'] })}
-                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                value={newProgram.status}
+                onChange={(e) => setNewProgram({ 
+                  ...newProgram, 
+                  status: e.target.value as 'not_started' | 'in_progress' | 'completed' | 'archived' | 'active' 
+                })}
+                className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="not_started">No iniciado</option>
                 <option value="in_progress">En progreso</option>
                 <option value="completed">Completado</option>
                 <option value="archived">Archivado</option>
+                <option value="active">Activo</option>
               </select>
             </div>
-            
-            <div className="flex justify-end space-x-3 pt-2">
+            <div className="flex justify-end gap-2">
               <button
                 onClick={() => {
                   setIsCreating(false);
-                  setNewProgram({ name: '', description: '', status: 'not_started' as const });
-                  setError(null);
+                  setNewProgram({
+                    name: '',
+                    description: '',
+                    status: 'not_started'
+                  });
                 }}
-                className="px-4 py-2 text-sm font-medium border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                className="px-3 py-1 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleCreateProgram}
-                className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center space-x-1"
+                className="px-3 py-1 text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                disabled={!newProgram.name || !newProgram.description}
               >
-                <Save size={16} />
-                <span>Guardar Programa</span>
+                Crear Programa
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Lista de programas */}
-      <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                onClick={() => toggleSort('name')}
-              >
-                Nombre {getSortIcon('name')}
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                onClick={() => toggleSort('status')}
-              >
-                Estado {getSortIcon('status')}
-              </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
-                onClick={() => toggleSort('created_at')}
-              >
-                Fecha de Creación {getSortIcon('created_at')}
-              </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {programs.length === 0 ? (
+      {programs.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          No hay programas disponibles. Crea un nuevo programa para comenzar.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
               <tr>
-                <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                  No hay programas disponibles. Crea uno nuevo para empezar.
-                </td>
-              </tr>
-            ) : loading ? (
-              <tr>
-                <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                  <div className="flex justify-center items-center py-4">
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
-                    <span className="ml-2">Cargando programas...</span>
+                <th 
+                  scope="col" 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => toggleSort('name')}
+                >
+                  <div className="flex items-center gap-1">
+                    Nombre {getSortIcon('name')}
                   </div>
-                </td>
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Descripción
+                </th>
+                <th 
+                  scope="col" 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => toggleSort('status')}
+                >
+                  <div className="flex items-center gap-1">
+                    Estado {getSortIcon('status')}
+                  </div>
+                </th>
+                <th 
+                  scope="col" 
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
+                  onClick={() => toggleSort('created_at')}
+                >
+                  <div className="flex items-center gap-1">
+                    Creado {getSortIcon('created_at')}
+                  </div>
+                </th>
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Acciones
+                </th>
               </tr>
-            ) : (
-              sortedPrograms.map((program) => (
-                <tr key={program.id}>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {sortedPrograms.map((program) => (
+                <tr key={program.id} className={program.status === 'active' ? 'bg-blue-50' : ''}>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {editingProgram?.id === program.id ? (
+                    {editingProgram && editingProgram.id === program.id ? (
                       <input
                         type="text"
                         value={editingProgram.name}
@@ -365,7 +390,7 @@ const ProgramsManager: React.FC = () => {
                     )}
                   </td>
                   <td className="px-6 py-4">
-                    {editingProgram?.id === program.id ? (
+                    {editingProgram && editingProgram.id === program.id ? (
                       <textarea
                         value={editingProgram.description}
                         onChange={(e) => setEditingProgram({ ...editingProgram, description: e.target.value })}
@@ -373,74 +398,89 @@ const ProgramsManager: React.FC = () => {
                         rows={2}
                       />
                     ) : (
-                      <div className="text-sm text-gray-500 max-w-md truncate">{program.description}</div>
+                      <div className="text-sm text-gray-500 line-clamp-2">{program.description}</div>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {editingProgram?.id === program.id ? (
+                    {editingProgram && editingProgram.id === program.id ? (
                       <select
                         value={editingProgram.status}
-                        onChange={(e) => setEditingProgram({ ...editingProgram, status: e.target.value as Program['status'] })}
+                        onChange={(e) => setEditingProgram({ 
+                          ...editingProgram, 
+                          status: e.target.value as 'not_started' | 'in_progress' | 'completed' | 'archived' | 'active'
+                        })}
                         className="w-full p-1 border border-gray-300 rounded-md"
                       >
                         <option value="not_started">No iniciado</option>
                         <option value="in_progress">En progreso</option>
                         <option value="completed">Completado</option>
+                        <option value="archived">Archivado</option>
+                        <option value="active">Activo</option>
                       </select>
                     ) : (
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                        ${program.status === 'completed' ? 'bg-green-100 text-green-800' : 
-                          program.status === 'in_progress' ? 'bg-blue-100 text-blue-800' : 
-                          'bg-gray-100 text-gray-800'}`}
-                      >
-                        {program.status === 'completed' ? 'Completado' : 
-                         program.status === 'in_progress' ? 'En progreso' : 
-                         'No iniciado'}
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        program.status === 'not_started' ? 'bg-gray-100 text-gray-800' :
+                        program.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                        program.status === 'completed' ? 'bg-green-100 text-green-800' :
+                        program.status === 'active' ? 'bg-purple-100 text-purple-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {program.status === 'not_started' ? 'No iniciado' :
+                         program.status === 'in_progress' ? 'En progreso' :
+                         program.status === 'completed' ? 'Completado' :
+                         program.status === 'active' ? 'Activo' :
+                         'Archivado'}
                       </span>
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(program.created_at).toLocaleDateString('es-ES')}
+                    {new Date(program.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    {editingProgram?.id === program.id ? (
-                      <div className="flex justify-end space-x-2">
-                        <button
-                          onClick={handleUpdateProgram}
-                          className="text-green-600 hover:text-green-900"
-                        >
-                          <Save className="h-5 w-5" />
-                        </button>
+                    {editingProgram && editingProgram.id === program.id ? (
+                      <div className="flex justify-end gap-2">
                         <button
                           onClick={() => setEditingProgram(null)}
                           className="text-gray-600 hover:text-gray-900"
                         >
-                          <X className="h-5 w-5" />
+                          <X size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleUpdateProgram()}
+                          className="text-green-600 hover:text-green-900"
+                        >
+                          <Save size={18} />
                         </button>
                       </div>
                     ) : (
-                      <div className="flex justify-end space-x-2">
+                      <div className="flex justify-end gap-3">
+                        <button
+                          onClick={() => toggleProgramStatus(program)}
+                          className={`text-sm ${program.status === 'active' ? 'text-red-600 hover:text-red-900' : 'text-purple-600 hover:text-purple-900'}`}
+                        >
+                          {program.status === 'active' ? 'Desactivar' : 'Activar'}
+                        </button>
                         <button
                           onClick={() => setEditingProgram(program)}
                           className="text-blue-600 hover:text-blue-900"
                         >
-                          <Edit className="h-5 w-5" />
+                          <Edit size={18} />
                         </button>
                         <button
                           onClick={() => handleDeleteProgram(program.id)}
                           className="text-red-600 hover:text-red-900"
                         >
-                          <Trash2 className="h-5 w-5" />
+                          <Trash2 size={18} />
                         </button>
                       </div>
                     )}
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };

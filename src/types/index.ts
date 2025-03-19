@@ -58,6 +58,7 @@ export interface StageContent {
   step?: number;
   prompt_section?: string;
   system_instructions?: string;
+  dependencies?: string[];
 }
 
 // Activity Types
@@ -95,15 +96,14 @@ export interface ActivityContent {
   id: string;
   title: string;
   content: string;
+  stage_id: string;
   content_type: string;
-  activity_data: ActivityData;
-  metadata?: any;
-  stage_id?: string;
-  order_num?: number;
-  created_at?: string;
-  step?: number;
-  prompt_section?: string;
+  order: number;
+  created_at: string;
+  updated_at: string;
   system_instructions?: string;
+  prompt_section?: string;
+  dependencies?: string[];
 }
 
 export interface ActivityResponse {
@@ -115,14 +115,25 @@ export interface ActivityResponse {
 }
 
 // Chat Types
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export interface ChatSummary {
+  id: string;
+  user_id: string;
+  activity_id: string;
+  summary: string;
+  created_at: string;
+}
+
 export interface Message {
   id: string;
   content: string;
   sender: 'user' | 'ai';
   timestamp: Date;
   metadata?: {
-    stage?: string;
-    content_id?: string;
     activity?: string;
     type?: 'question' | 'response' | 'guidance' | 'summary' | 'error' | 'system';
     progress?: number;
@@ -138,7 +149,6 @@ export interface UserInsight {
   id: string;
   user_id: string;
   activity_id: string;
-  step?: number;
   content: string;
   created_at: string;
 }

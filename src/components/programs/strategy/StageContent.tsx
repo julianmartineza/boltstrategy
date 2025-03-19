@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Database } from '../../../lib/database.types';
 import VideoPlayer from '../../VideoPlayer';
-import Chat from '../../Chat';
+import Chat from '../../chat/Chat';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 
 type StageContent = Database['public']['Tables']['stage_content']['Row'];

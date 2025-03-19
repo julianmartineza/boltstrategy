@@ -138,15 +138,43 @@ export const updateContent = async (
       contentToUpdate.activity_data = activityData;
     }
     
-    const { data, error } = await supabase
-      .from('stage_content')
-      .update(contentToUpdate)
-      .eq('id', content.id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
+    try {
+      // Intentar actualizar con todos los campos
+      const { data, error } = await supabase
+        .from('stage_content')
+        .update(contentToUpdate)
+        .eq('id', content.id)
+        .select()
+        .single();
+      
+      if (error) {
+        // Si hay un error específico sobre stage_name, intentar sin ese campo
+        if (error.message && error.message.includes('stage_name')) {
+          console.warn('Error con stage_name, intentando sin este campo');
+          
+          // Crear una copia sin stage_name
+          const { stage_name, ...contentWithoutStageName } = contentToUpdate;
+          
+          // Intentar de nuevo sin stage_name
+          const retryResult = await supabase
+            .from('stage_content')
+            .update(contentWithoutStageName)
+            .eq('id', content.id)
+            .select()
+            .single();
+            
+          if (retryResult.error) throw retryResult.error;
+          return retryResult.data;
+        } else {
+          throw error;
+        }
+      }
+      
+      return data;
+    } catch (innerError) {
+      console.error('Error updating content:', innerError);
+      throw innerError;
+    }
   } catch (error) {
     console.error('Error updating content:', error);
     throw error;

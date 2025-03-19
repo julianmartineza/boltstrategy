@@ -1,5 +1,121 @@
 # Registro de Cambios
 
+## 2025-03-19
+
+### Implementación de la refactorización del componente Chat
+
+- [x] Add Componentes UI separados: `ChatMessage.tsx`, `ChatInput.tsx`, `InsightsList.tsx`
+- [x] Add Hooks personalizados: `useChatMessages.ts`, `useChatInsights.ts`, `useActivityContent.ts`
+- [x] Add Servicio separado: `chatService.ts`
+- [x] Edit Componente principal `Chat.tsx` refactorizado
+- [x] Delete Componente original `Chat.tsx`
+- [x] Fix Corrección de errores en `chatService.ts` relacionados con la generación de respuestas
+
+#### Detalles de los cambios:
+
+1. **Componentes UI separados**:
+   - Se creó `ChatMessage.tsx` para renderizar mensajes individuales
+   - Se creó `ChatInput.tsx` para el área de entrada de mensajes
+   - Se creó `InsightsList.tsx` para mostrar la lista de insights
+
+2. **Hooks personalizados**:
+   - Se implementó `useChatMessages.ts` para gestionar los mensajes del chat
+   - Se implementó `useChatInsights.ts` para gestionar los insights
+   - Se implementó `useActivityContent.ts` para gestionar el contenido de la actividad
+
+3. **Servicios separados**:
+   - Se creó `chatService.ts` para manejar la lógica de negocio del chat
+
+4. **Beneficios de la refactorización**:
+   - Mejor separación de responsabilidades
+   - Mayor reutilización de código
+   - Mejor testabilidad
+   - Mayor mantenibilidad
+   - Mejor escalabilidad
+
+## 2025-03-19
+
+### Corrección de errores en componentes Chat y StrategyProgram
+
+- [x] Fix Error de usuario indefinido en Chat.tsx al cargar datos de la empresa
+- [x] Fix Conflicto 409 al guardar contenido visto en StrategyProgram.tsx
+- [x] Fix Error de sintaxis con await en StrategyProgram.tsx
+
+#### Detalles de los cambios:
+
+1. **Corrección en Chat.tsx**:
+   - Se pasó correctamente el ID del usuario a la función `loadCompanyAndDiagnostic` para evitar el error "invalid input syntax for type uuid: undefined"
+
+2. **Corrección en StrategyProgram.tsx**:
+   - Se mejoró el manejo de registros en la tabla `viewed_contents` para evitar conflictos
+   - Se implementó una verificación previa para determinar si el registro ya existe
+   - Se separó la lógica en operaciones de actualización e inserción según corresponda
+   - Se corrigió un error de sintaxis relacionado con el uso de `await` fuera de una función async, utilizando una función async inmediatamente invocada (IIFE)
+
+## 2025-03-18
+
+### Implementación del Sistema de Memoria Conversacional
+- [x] Refactorizado el componente Chat.tsx para implementar un sistema de memoria conversacional
+- [x] Creado el servicio chatMemoryService.ts para gestionar la memoria de corto y largo plazo
+- [x] Implementada funcionalidad para guardar insights de usuario durante las conversaciones
+- [x] Creada migración 20250318223500_chat_memory_system.sql con los siguientes cambios:
+  - [x] Añadida columna stage_name a la tabla strategy_stages para mejorar la identificación
+  - [x] Añadida columna dependencies (JSONB) a la tabla stage_content para gestionar dependencias entre actividades
+  - [x] Creada tabla chat_summaries para almacenar resúmenes de conversaciones
+  - [x] Creada tabla user_insights para almacenar insights valiosos de los usuarios
+- [x] Implementado sistema de memoria de tres niveles:
+  - [x] Memoria de corto plazo: últimas 10 interacciones en el frontend
+  - [x] Memoria de medio plazo: interacciones almacenadas en la base de datos
+  - [x] Memoria de largo plazo: resúmenes de conversaciones generados automáticamente
+- [x] Añadida funcionalidad para limpiar interacciones antiguas y generar resúmenes automáticamente
+- [x] Implementada recuperación de contexto de actividades dependientes para mejorar la continuidad
+- [x] Configuradas políticas de seguridad RLS para las nuevas tablas
+- [x] Actualizados los tipos en index.ts para soportar el nuevo sistema de memoria
+
+### Corrección de errores en ContentForm
+- [x] Corregido error "Uncaught ReferenceError: Loader2 is not defined" en ContentForm.tsx
+- [x] Añadida importación faltante de Loader2 desde lucide-react
+
+## 2025-03-19
+
+### Corrección de errores en StrategyProgram
+- [x] Corregido error de conexión con Supabase al guardar contenido visto
+- [x] Mejorado el manejo de errores en la función de guardado de contenido visto
+- [x] Corregida la integración con el store de autenticación para obtener el usuario actual
+- [x] Actualizada la interfaz del componente para pasar correctamente los datos al componente StageContent
+- [x] Optimizada la carga de contenido de etapas para mejorar el rendimiento
+- [x] Corregido error 406 en la carga de programas activos
+
+## 2025-03-18
+
+### Correcciones de errores críticos en la aplicación
+
+- [x] Add Script SQL `fix_all_issues.sql` para resolver problemas de base de datos
+- [x] Edit Componente `Chat.tsx` para corregir bucle infinito que causaba "Maximum update depth exceeded"
+- [x] Add Solución robusta para manejar errores relacionados con la columna `stage_name`
+- [x] Add Plan de refactorización del componente Chat para mejorar mantenibilidad
+
+#### Detalles de los cambios:
+
+1. **Problema de columna stage_name**:
+   - Se creó un script SQL para añadir la columna `stage_name` a la tabla `stage_content` si no existe
+   - Se implementó una actualización de los valores existentes basados en los nombres de etapa correspondientes
+   - Se mantiene la solución robusta en `contentManagerService.ts` para manejar errores de esquema en caché
+
+2. **Activación de programas**:
+   - Se añadió lógica en el script SQL para activar un programa existente o crear uno nuevo si no hay ninguno
+   - Esto resuelve el error 406 que ocurría al intentar cargar la página de programas
+
+3. **Corrección del componente Chat**:
+   - Se optimizó el manejo de efectos para evitar bucles infinitos de renderizado
+   - Se mejoró la gestión de la memoria de corto plazo para evitar actualizaciones innecesarias
+   - Se implementó un mejor manejo de las interacciones cargadas desde la base de datos
+
+4. **Plan de refactorización del componente Chat**:
+   - Se creó un documento detallado con la propuesta de refactorización en `docs/refactorizacion-chat.md`
+   - La refactorización divide el componente en partes más pequeñas y manejables
+   - Se propone la creación de componentes UI, hooks personalizados y servicios separados
+
 ## 2025-03-17
 
 ### Corrección de errores en ContentManager
@@ -238,3 +354,57 @@
 4. El usuario puede interactuar con la actividad a través de la interfaz de chat
 5. El componente Chat enriquece el contexto con información de la empresa, diagnóstico y actividades previas
 6. Las respuestas de la IA se generan teniendo en cuenta todo el contexto disponible
+
+## [Unreleased]
+
+### Añadido
+- [x] Implementación del sistema de memoria conversacional con tres niveles:
+  - Memoria de corto plazo: Últimas 10 interacciones en el frontend
+  - Memoria de medio plazo: Interacciones almacenadas en la base de datos
+  - Memoria de largo plazo: Resúmenes generados automáticamente
+- [x] Servicio `chatMemoryService.ts` para gestionar la memoria conversacional
+- [x] Funcionalidad para guardar y mostrar insights de usuario durante las actividades
+- [x] Soporte para dependencias entre actividades, permitiendo que una actividad utilice información de actividades anteriores
+- [x] Formulario mejorado en el Content Manager para configurar dependencias entre actividades
+- [x] Campo `stage_name` para dar nombres descriptivos a las actividades
+- [x] Funcionalidad para activar/desactivar programas directamente desde la interfaz de administración
+- [x] Script SQL para activar automáticamente un programa existente o crear uno nuevo si no existe
+- [x] Script SQL para añadir la columna `stage_name` a la tabla `stage_content`
+
+### Modificado
+- [x] Refactorización del componente `Chat.tsx` para implementar el sistema de memoria conversacional
+- [x] Actualización de interfaces en `types.ts` para soportar el nuevo sistema de memoria
+- [x] Mejora en el Content Manager para permitir la configuración de dependencias entre actividades
+- [x] Modificación del script de migración SQL para verificar la existencia de políticas antes de crearlas
+- [x] Actualización de `StrategyProgram.tsx` para manejar correctamente el caso cuando no hay programas activos
+- [x] Mejora en el componente `ProgramsManager.tsx` para permitir la activación/desactivación de programas
+- [x] Implementación de manejo robusto de errores en `ContentForm.tsx` y `contentManagerService.ts` para la columna `stage_name`
+
+### Corregido
+- [x] Error de sintaxis en el archivo de migración SQL
+- [x] Errores de lint en el componente ContentForm.tsx
+- [x] Error 406 en la carga de programas activos en `StrategyProgram.tsx`
+- [x] Error "Could not find the 'stage_name' column of 'stage_content'" al guardar actividades
+
+## 2025-03-19
+
+### Mejoras en la experiencia de usuario del Chat
+
+- [x] Add Componente de bienvenida para chat vacío
+- [x] Add Botón para iniciar conversación automáticamente
+
+#### Detalles de los cambios:
+
+1. **Nuevo componente WelcomeMessage.tsx**:
+   - Se creó un componente de bienvenida que se muestra cuando el chat está vacío
+   - Incluye información sobre la actividad actual y un botón para iniciar la conversación
+   - Mejora la experiencia de usuario al proporcionar una acción clara para comenzar
+
+2. **Modificación en Chat.tsx**:
+   - Se integró el componente WelcomeMessage cuando no hay mensajes
+   - Se implementó la función handleStartConversation para iniciar automáticamente la conversación con un mensaje predeterminado
+   - Se mejoró la estructura condicional para mostrar mensajes o la pantalla de bienvenida
+
+### Corrección de errores en componentes Chat y StrategyProgram
+
+{{ ... }}

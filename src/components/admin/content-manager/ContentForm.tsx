@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Loader2, X } from 'lucide-react';
 import { StageContent, ActivityData } from './types';
+import { supabase } from '../../../lib/supabase';
 
 interface ContentFormProps {
   content: Partial<StageContent>;
@@ -14,7 +16,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
   onSave, 
   onCancel, 
   loading, 
-  isEditing = false 
+  isEditing = false
 }) => {
   const [formContent, setFormContent] = useState<Partial<StageContent>>(content);
   const [activityData, setActivityData] = useState<ActivityData>({
@@ -25,6 +27,26 @@ const ContentForm: React.FC<ContentFormProps> = ({
     step: 1,
     prompt_section: ''
   });
+  const [availableActivities, setAvailableActivities] = useState<{id: string, stage_name: string, title: string}[]>([]);
+  const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
+  const [stageName, setStageName] = useState<string>('');
+
+  useEffect(() => {
+    // Cargar actividades disponibles para dependencias
+    const fetchAvailableActivities = async () => {
+      const { data, error } = await supabase
+        .from('stage_content')
+        .select('id, stage_name, title')
+        .eq('content_type', 'activity')
+        .order('created_at', { ascending: true });
+      
+      if (!error && data) {
+        setAvailableActivities(data);
+      }
+    };
+
+    fetchAvailableActivities();
+  }, []);
 
   useEffect(() => {
     if (content.activity_data) {
@@ -45,11 +67,45 @@ const ContentForm: React.FC<ContentFormProps> = ({
         console.error('Error parsing activity data:', error);
       }
     }
+
+    // Cargar dependencias si existen
+    if (content.dependencies) {
+      setSelectedDependencies(content.dependencies);
+    }
+
+    // Cargar stage_name si existe
+    if (content.stage_name) {
+      setStageName(content.stage_name);
+    }
   }, [content]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(formContent, activityData);
+    
+    // Incluir las dependencias en el objeto formContent
+    // Manejar stage_name de forma segura
+    const updatedContent = {
+      ...formContent,
+      dependencies: selectedDependencies
+    };
+    
+    // Solo añadir stage_name si tiene un valor
+    if (stageName) {
+      // Intentamos añadir stage_name, pero el servicio lo manejará si hay error
+      updatedContent.stage_name = stageName;
+    }
+    
+    onSave(updatedContent, activityData);
+  };
+
+  const handleAddDependency = (dependencyId: string) => {
+    if (!selectedDependencies.includes(dependencyId)) {
+      setSelectedDependencies([...selectedDependencies, dependencyId]);
+    }
+  };
+
+  const handleRemoveDependency = (dependencyId: string) => {
+    setSelectedDependencies(selectedDependencies.filter(id => id !== dependencyId));
   };
 
   return (
@@ -87,6 +143,20 @@ const ContentForm: React.FC<ContentFormProps> = ({
             disabled={loading}
             required
           />
+        </div>
+
+        {/* Campo para stage_name */}
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Nombre de la Etapa</label>
+          <input
+            type="text"
+            value={stageName}
+            onChange={(e) => setStageName(e.target.value)}
+            className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="Nombre descriptivo de la etapa (ej: Identificación de Paradigmas)"
+            disabled={loading}
+          />
+          <p className="text-xs text-gray-500 mt-1">Este nombre se utilizará para referenciar esta actividad en dependencias</p>
         </div>
         
         <div>
@@ -189,6 +259,50 @@ const ContentForm: React.FC<ContentFormProps> = ({
                   disabled={loading}
                 />
               </div>
+              
+              {/* Sección de dependencias */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Dependencias</label>
+                <p className="text-xs text-gray-500 mb-2">Selecciona actividades previas cuya información será utilizada como contexto</p>
+                
+                <div className="mb-2">
+                  <select
+                    className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    onChange={(e) => e.target.value && handleAddDependency(e.target.value)}
+                    value=""
+                    disabled={loading}
+                  >
+                    <option value="">Seleccionar actividad...</option>
+                    {availableActivities
+                      .filter(activity => activity.id !== formContent.id) // No permitir dependencia circular
+                      .map(activity => (
+                        <option key={activity.id} value={activity.stage_name || activity.id}>
+                          {activity.stage_name || activity.title}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                
+                {/* Lista de dependencias seleccionadas */}
+                <div className="space-y-1">
+                  {selectedDependencies.map(dependency => {
+                    const activityInfo = availableActivities.find(a => a.stage_name === dependency || a.id === dependency);
+                    return (
+                      <div key={dependency} className="flex items-center justify-between p-2 bg-gray-100 rounded-md">
+                        <span className="text-xs">{activityInfo?.stage_name || activityInfo?.title || dependency}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDependency(dependency)}
+                          className="text-red-500 hover:text-red-700"
+                          disabled={loading}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           ) : (
             <input
@@ -203,36 +317,23 @@ const ContentForm: React.FC<ContentFormProps> = ({
           )}
         </div>
         
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Orden</label>
-          <input
-            type="number"
-            value={formContent.order_num || 0}
-            onChange={(e) => setFormContent({ ...formContent, order_num: parseInt(e.target.value) || 0 })}
-            className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            min="0"
-            disabled={loading}
-            required
-          />
-        </div>
-        
-        <div className="flex justify-end space-x-2 pt-2">
+        <div className="flex justify-end space-x-2">
           <button
             type="button"
             onClick={onCancel}
-            className="px-3 py-1 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50"
+            className="px-3 py-1 text-xs text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400"
             disabled={loading}
           >
             Cancelar
           </button>
           <button
             type="submit"
-            className="px-3 py-1 text-xs font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+            className="px-3 py-1 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             disabled={loading}
           >
             {loading ? (
               <span className="flex items-center">
-                <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                <Loader2 size={14} className="animate-spin mr-1" />
                 Guardando...
               </span>
             ) : (
