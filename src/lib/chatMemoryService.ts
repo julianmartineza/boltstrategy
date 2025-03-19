@@ -115,7 +115,7 @@ export const cleanUpInteractions = async (userId: string, activityId: string) =>
     
     try {
       const summaryPrompt = `
-      Resume las siguientes interacciones manteniendo los puntos clave:
+      Genera un resumen detallado de las siguientes interacciones manteniendo los puntos clave para la empresa, su negocio y su equipo:
       ${interactions.map(m => {
         // Verificar que los campos existan antes de usarlos
         const role = m.user_message ? 'Usuario' : 'Asistente';
@@ -127,7 +127,7 @@ export const cleanUpInteractions = async (userId: string, activityId: string) =>
       console.log('Prompt para resumen generado, llamando a OpenAI...');
       
       const summary = await generateBotResponse(
-        "Genera un resumen detallado de esta conversación, resaltando los puntos clave de la conversación, tanto dados por el usuario como por el asistente", 
+        "Genera un resumen detallado de esta conversación, resaltando los puntos clave de la conversación para la empresa, su negocio y su equipo, tanto dados por el usuario como por el asistente", 
         {
           systemPrompt: summaryPrompt,
           stage: "Resumen de conversación",
@@ -160,6 +160,9 @@ export const cleanUpInteractions = async (userId: string, activityId: string) =>
       
       console.log('Resumen guardado correctamente con ID:', data?.[0]?.id);
       
+      // Nota: Temporalmente desactivamos la eliminación de interacciones antiguas
+      // para mantener el historial completo en la base de datos
+      /*
       // Eliminar interacciones antiguas para liberar espacio
       console.log(`Eliminando las ${interactions.length - 5} interacciones más antiguas...`);
       
@@ -173,8 +176,9 @@ export const cleanUpInteractions = async (userId: string, activityId: string) =>
           console.error(`Error al eliminar la interacción ${interaction.id}:`, deleteError);
         }
       }
+      */
       
-      console.log('Proceso de limpieza y resumen completado con éxito');
+      console.log('Proceso de generación de resumen completado con éxito (sin eliminación de interacciones)');
     } catch (openaiError) {
       console.error('Error en la generación del resumen con OpenAI:', openaiError);
     }

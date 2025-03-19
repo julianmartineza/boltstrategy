@@ -150,10 +150,8 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
       const messageId = userMsg.id.replace('user-', '');
       await saveInteraction(userMessage, botResponse, messageId);
       
-      // Limpiar interacciones antiguas si es necesario
-      if (interactionCount > 10) {
-        await chatService.cleanUpOldInteractions(user.id, activityContent.id, interactionCount);
-      }
+      // Nota: La limpieza de interacciones antiguas ahora se maneja directamente en chatService.generateResponse
+      // y no es necesario llamarla aquí para evitar duplicación de resúmenes
       
       // Mostrar botón de guardar insight
       showInsightButtonAfterResponse();
