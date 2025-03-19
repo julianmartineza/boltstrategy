@@ -88,44 +88,98 @@ export const fetchPreviousResponses = async (userId: string, dependencies: strin
  * @param activityId ID de la actividad
  */
 export const cleanUpInteractions = async (userId: string, activityId: string) => {
-  const { data: interactions, error } = await supabase
-    .from('activity_interactions')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('activity_id', activityId)
-    .order('timestamp', { ascending: true });
-
-  if (!error && interactions && interactions.length >= 10) {
+  console.log(`Iniciando cleanUpInteractions para usuario ${userId} y actividad ${activityId}`);
+  
+  try {
+    const { data: interactions, error } = await supabase
+      .from('activity_interactions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('activity_id', activityId)
+      .order('timestamp', { ascending: true });
+    
+    if (error) {
+      console.error('Error al obtener interacciones:', error);
+      return;
+    }
+    
+    console.log(`Se encontraron ${interactions?.length || 0} interacciones para el usuario ${userId}`);
+    
+    if (!interactions || interactions.length < 10) {
+      console.log('No hay suficientes interacciones para generar un resumen (mínimo 10)');
+      return;
+    }
+    
     // Generar resumen con OpenAI
-    const summaryPrompt = `
-    Resume las siguientes interacciones manteniendo los puntos clave:
-    ${interactions.map(m => `${m.role || (m.user_message ? 'Usuario' : 'Asistente')}: ${m.user_message || m.ai_response}`).join("\n")}
-    `;
-
-    const summary = await generateBotResponse(
-      "Genera un resumen conciso de esta conversación", 
-      {
-        systemPrompt: summaryPrompt,
-        stage: "Resumen de conversación",
-        activity: "Generación de resumen",
-        previousMessages: []
+    console.log('Generando resumen con OpenAI...');
+    
+    try {
+      const summaryPrompt = `
+      Resume las siguientes interacciones manteniendo los puntos clave:
+      ${interactions.map(m => {
+        // Verificar que los campos existan antes de usarlos
+        const role = m.user_message ? 'Usuario' : 'Asistente';
+        const content = m.user_message || m.ai_response || '';
+        return `${role}: ${content}`;
+      }).join("\n")}
+      `;
+      
+      console.log('Prompt para resumen generado, llamando a OpenAI...');
+      
+      const summary = await generateBotResponse(
+        "Genera un resumen detallado de esta conversación, resaltando los puntos clave de la conversación, tanto dados por el usuario como por el asistente", 
+        {
+          systemPrompt: summaryPrompt,
+          stage: "Resumen de conversación",
+          activity: "Generación de resumen",
+          previousMessages: []
+        }
+      );
+      
+      if (!summary) {
+        console.error('OpenAI no generó un resumen válido');
+        return;
       }
-    );
-
-    if (summary) {
+      
+      console.log('Resumen generado correctamente:', summary.substring(0, 50) + '...');
+      
       // Guardar el resumen en `chat_summaries`
-      await supabase.from('chat_summaries').insert([{ 
+      console.log('Guardando resumen en la base de datos...');
+      
+      const { data, error: insertError } = await supabase.from('chat_summaries').insert([{ 
         user_id: userId, 
         activity_id: activityId, 
         summary: summary, 
         created_at: new Date().toISOString()
-      }]);
-
-      // Eliminar interacciones antiguas para liberar espacio
-      for (const interaction of interactions.slice(0, interactions.length - 5)) {
-        await supabase.from('activity_interactions').delete().eq('id', interaction.id);
+      }]).select();
+      
+      if (insertError) {
+        console.error('Error al guardar el resumen en chat_summaries:', insertError);
+        return;
       }
+      
+      console.log('Resumen guardado correctamente con ID:', data?.[0]?.id);
+      
+      // Eliminar interacciones antiguas para liberar espacio
+      console.log(`Eliminando las ${interactions.length - 5} interacciones más antiguas...`);
+      
+      for (const interaction of interactions.slice(0, interactions.length - 5)) {
+        const { error: deleteError } = await supabase
+          .from('activity_interactions')
+          .delete()
+          .eq('id', interaction.id);
+          
+        if (deleteError) {
+          console.error(`Error al eliminar la interacción ${interaction.id}:`, deleteError);
+        }
+      }
+      
+      console.log('Proceso de limpieza y resumen completado con éxito');
+    } catch (openaiError) {
+      console.error('Error en la generación del resumen con OpenAI:', openaiError);
     }
+  } catch (error) {
+    console.error('Error general en cleanUpInteractions:', error);
   }
 };
 
