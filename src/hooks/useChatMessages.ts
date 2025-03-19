@@ -177,8 +177,7 @@ export function useChatMessages(userId?: string, activityId?: string) {
           activity_id: activityId,
           user_message: userMessage,
           ai_response: aiResponse,
-          timestamp: new Date(parseInt(timestamp)).toISOString(),
-          message_id: messageId || undefined // Guardar el ID único del mensaje si está disponible
+          timestamp: new Date(parseInt(timestamp)).toISOString()
         });
         
       if (error) {

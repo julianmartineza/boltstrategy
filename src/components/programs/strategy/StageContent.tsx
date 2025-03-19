@@ -11,9 +11,22 @@ interface StageContentProps {
   currentIndex?: number;
   onChangeContent?: (index: number) => void;
   viewedContents?: Record<string, boolean>;
+  hasNextStage?: boolean;
+  hasPreviousStage?: boolean;
+  onNavigateToNextStage?: () => void;
+  onNavigateToPreviousStage?: () => void;
 }
 
-export function StageContent({ content, currentIndex: externalIndex, onChangeContent, viewedContents = {} }: StageContentProps) {
+export function StageContent({ 
+  content, 
+  currentIndex: externalIndex, 
+  onChangeContent, 
+  viewedContents = {},
+  hasNextStage = false,
+  hasPreviousStage = false,
+  onNavigateToNextStage,
+  onNavigateToPreviousStage
+}: StageContentProps) {
   // Usar el viewedContents para mostrar indicadores visuales
   // Usar el índice externo si se proporciona, o mantener un estado interno
   const [internalIndex, setInternalIndex] = useState(0);
@@ -41,6 +54,9 @@ export function StageContent({ content, currentIndex: externalIndex, onChangeCon
       } else {
         setInternalIndex(newIndex);
       }
+    } else if (hasPreviousStage && onNavigateToPreviousStage) {
+      // Si estamos en el primer contenido y hay una etapa anterior, navegar a ella
+      onNavigateToPreviousStage();
     }
   };
 
@@ -52,6 +68,9 @@ export function StageContent({ content, currentIndex: externalIndex, onChangeCon
       } else {
         setInternalIndex(newIndex);
       }
+    } else if (hasNextStage && onNavigateToNextStage) {
+      // Si estamos en el último contenido y hay una etapa siguiente, navegar a ella
+      onNavigateToNextStage();
     }
   };
 
@@ -129,13 +148,13 @@ export function StageContent({ content, currentIndex: externalIndex, onChangeCon
         </div>
 
         {/* Navegación inferior mejorada */}
-        <div className="border-t border-gray-200 p-4 bg-gray-50">
-          <div className="flex justify-between items-center">
+        <div className="border-t border-gray-200 p-4 bg-gray-50" data-component-name="StageContent">
+          <div className="flex justify-between items-center" data-component-name="StageContent">
             <button
               onClick={handlePrevious}
-              disabled={isFirstContent}
+              disabled={isFirstContent && !hasPreviousStage}
               className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
-                isFirstContent
+                isFirstContent && !hasPreviousStage
                   ? 'text-gray-300 cursor-not-allowed bg-gray-50'
                   : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600 border border-gray-200 hover:border-blue-200'
               }`}
@@ -173,14 +192,15 @@ export function StageContent({ content, currentIndex: externalIndex, onChangeCon
             
             <button
               onClick={handleNext}
-              disabled={isLastContent}
+              disabled={isLastContent && !hasNextStage}
               className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-200 ${
-                isLastContent
+                isLastContent && !hasNextStage
                   ? 'text-gray-300 cursor-not-allowed bg-gray-50'
                   : 'text-blue-600 hover:bg-blue-50 border border-blue-200 hover:border-blue-400'
               }`}
+              data-component-name="StageContent"
             >
-              <span>Siguiente</span>
+              <span data-component-name="StageContent">Siguiente</span>
               <ArrowRight className="h-5 w-5" />
             </button>
           </div>

@@ -2,6 +2,12 @@
 
 ## 2025-03-19
 
+### Mejoras en la navegación entre etapas y correcciones en la interfaz de usuario
+
+- [x] Edit Componente `StageContent.tsx` mejorado para permitir navegación entre etapas
+- [x] Edit Componente `StrategyProgram.tsx` actualizado para manejar la navegación entre etapas
+- [x] Fix Corrección del estado de los botones de navegación (Anterior/Siguiente) basado en la disponibilidad de contenido
+
 ### Implementación de la refactorización del componente Chat
 
 - [x] Add Componentes UI separados: `ChatMessage.tsx`, `ChatInput.tsx`, `InsightsList.tsx`
@@ -247,7 +253,6 @@
 - [x] Corregidos errores de importación en los componentes de administración
 - [x] Simplificada la implementación de pestañas en el componente AdminDashboard
 - [x] Implementada solución temporal para evitar dependencias externas en los componentes UI
-- [x] Corregida la ruta de importación del componente AdminDashboard en Dashboard.tsx
 - [x] Corregido error de recursión infinita en las políticas RLS para la tabla user_profiles
 - [x] Creada función check_is_admin para evitar consultas recursivas en las políticas de seguridad
 - [x] Actualizadas todas las políticas RLS para usar la nueva función check_is_admin

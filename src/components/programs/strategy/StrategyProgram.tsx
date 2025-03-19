@@ -13,9 +13,9 @@ type DBStageContent = Database['public']['Tables']['stage_content']['Row'];
 
 const StrategyProgram: React.FC = () => {
   const { 
+    loadProgram, 
     currentProgram, 
     currentStage,
-    loadProgram,
     startStage
   } = useProgramStore();
   const { user } = useAuthStore();
@@ -26,6 +26,7 @@ const StrategyProgram: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentContentIndex, setCurrentContentIndex] = useState<number>(0);
+  const [currentStageIndex, setCurrentStageIndex] = useState<number>(0);
 
   useEffect(() => {
     const initializeProgram = async () => {
@@ -164,6 +165,16 @@ const StrategyProgram: React.FC = () => {
     loadViewedContents();
   }, [user]);
 
+  // Actualizar el índice de la etapa actual cuando cambia currentStage
+  useEffect(() => {
+    if (currentStage && currentProgram) {
+      const index = currentProgram.stages.findIndex(stage => stage.id === currentStage.id);
+      if (index !== -1) {
+        setCurrentStageIndex(index);
+      }
+    }
+  }, [currentStage, currentProgram]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -219,51 +230,84 @@ const StrategyProgram: React.FC = () => {
                   [contentId]: true
                 }));
                 
-                // Guardar en la base de datos que el contenido ha sido visto
-                if (user) {
+                // Guardar en la base de datos que el usuario ha visto este contenido
+                (async () => {
+                  if (!user) return;
+                  
                   try {
-                    // Usar una función async inmediatamente invocada
-                    (async () => {
-                      try {
-                        // Primero verificamos si ya existe el registro
-                        const { data: existingView } = await supabase
-                          .from('viewed_contents')
-                          .select('*')
-                          .eq('content_id', contentId)
-                          .eq('user_id', user.id)
-                          .maybeSingle();
-                        
-                        if (existingView) {
-                          // Si existe, actualizamos solo la fecha
-                          await supabase
-                            .from('viewed_contents')
-                            .update({ viewed_at: new Date().toISOString() })
-                            .eq('content_id', contentId)
-                            .eq('user_id', user.id);
-                        } else {
-                          // Si no existe, lo insertamos
-                          await supabase
-                            .from('viewed_contents')
-                            .insert({ 
-                              content_id: contentId, 
-                              user_id: user.id, 
-                              viewed_at: new Date().toISOString() 
-                            });
-                        }
-                      } catch (innerErr) {
-                        console.error('Error al procesar el contenido visto:', innerErr);
-                      }
-                    })();
-                  } catch (err) {
-                    console.error('Error de conexión al guardar contenido visto:', err);
+                    // Verificar si ya existe un registro para este contenido
+                    const { data: existingData, error: checkError } = await supabase
+                      .from('viewed_contents')
+                      .select('*')
+                      .eq('user_id', user.id)
+                      .eq('content_id', contentId)
+                      .single();
+                    
+                    if (checkError && checkError.code !== 'PGRST116') {
+                      console.error('Error checking viewed content:', checkError);
+                      return;
+                    }
+                    
+                    // Si ya existe, no hacer nada
+                    if (existingData) return;
+                    
+                    // Si no existe, insertar nuevo registro
+                    const { error } = await supabase
+                      .from('viewed_contents')
+                      .insert({
+                        user_id: user.id,
+                        content_id: contentId,
+                        viewed_at: new Date().toISOString()
+                      });
+                    
+                    if (error) throw error;
+                  } catch (error) {
+                    console.error('Error saving viewed content:', error);
                   }
-                }
+                })();
               }}
               viewedContents={viewedContents}
+              hasNextStage={currentStageIndex < currentProgram.stages.length - 1}
+              hasPreviousStage={currentStageIndex > 0}
+              onNavigateToNextStage={() => {
+                if (currentStageIndex < currentProgram.stages.length - 1) {
+                  // Navegar a la siguiente etapa
+                  const nextStageIndex = currentStageIndex + 1;
+                  startStage(currentProgram.stages[nextStageIndex].id);
+                  setCurrentContentIndex(0); // Empezar desde el primer contenido de la nueva etapa
+                }
+              }}
+              onNavigateToPreviousStage={() => {
+                if (currentStageIndex > 0) {
+                  // Navegar a la etapa anterior
+                  const prevStageIndex = currentStageIndex - 1;
+                  startStage(currentProgram.stages[prevStageIndex].id);
+                  
+                  // Ir al último contenido de la etapa anterior
+                  const prevStageId = currentProgram.stages[prevStageIndex].id;
+                  const prevStageContent = allStagesContent[prevStageId] || [];
+                  setCurrentContentIndex(prevStageContent.length - 1);
+                }
+              }}
             />
           ) : (
-            <div className="p-4">
-              Select a stage to view content.
+            <div className="flex flex-col items-center justify-center h-full">
+              <div className="bg-white rounded-lg shadow-sm p-8 max-w-lg w-full text-center">
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                    <p className="text-gray-600">Cargando contenido...</p>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+                    <h3 className="text-xl font-semibold text-gray-800 mb-2">No hay contenido disponible</h3>
+                    <p className="text-gray-600 mb-6">
+                      No se encontró contenido para la etapa actual. Por favor, selecciona otra etapa o contacta al administrador.
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
