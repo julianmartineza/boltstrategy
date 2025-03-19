@@ -28,7 +28,17 @@ export function useActivityContent(stageContentId?: string, activityContentProp?
         return;
       }
 
-      setActivityContent(data as ActivityContent);
+      // Añadir user_id al contenido de la actividad si es necesario
+      const auth = useAuthStore.getState();
+      if (auth && auth.user && auth.user.id && data) {
+        const contentWithUserId = {
+          ...data,
+          user_id: auth.user.id
+        };
+        setActivityContent(contentWithUserId as ActivityContent);
+      } else {
+        setActivityContent(data as ActivityContent);
+      }
     } catch (err) {
       console.error('Error in fetchActivityContent:', err);
       setError(err instanceof Error ? err : new Error('Error desconocido'));
@@ -41,29 +51,23 @@ export function useActivityContent(stageContentId?: string, activityContentProp?
   useEffect(() => {
     if (activityContentProp) {
       // Asegurarnos de que activityContentProp tenga user_id
-      setActivityContent(activityContentProp);
+      const auth = useAuthStore.getState();
+      if (auth && auth.user && auth.user.id && !activityContentProp.user_id) {
+        // Solo actualizar si no tiene user_id
+        setActivityContent({
+          ...activityContentProp,
+          user_id: auth.user.id
+        });
+      } else {
+        setActivityContent(activityContentProp);
+      }
     } else if (stageContentId) {
       fetchActivityContent();
     }
   }, [stageContentId, activityContentProp, fetchActivityContent]);
 
-  // Asegurarnos de que activityContent siempre tenga un user_id
-  useEffect(() => {
-    if (activityContent && !activityContent.user_id) {
-      const auth = useAuthStore.getState();
-      
-      if (auth && auth.user && auth.user.id) {
-        console.log('Actualizando user_id en activityContent:', auth.user.id);
-        setActivityContent(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            user_id: auth.user.id
-          };
-        });
-      }
-    }
-  }, [activityContent]);
+  // Eliminamos el useEffect problemático que causaba actualizaciones infinitas
+  // y movimos su lógica a los lugares donde se inicializa activityContent
 
   return {
     activityContent,

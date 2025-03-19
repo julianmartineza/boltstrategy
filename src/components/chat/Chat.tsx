@@ -3,24 +3,22 @@ import { useAuthStore } from '../../store/authStore';
 import { useProgramStore } from '../../store/programStore';
 import { ActivityContent } from '../../types';
 import { chatService } from '../../services/chatService';
-
-// Componentes
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
-import { InsightsList } from './InsightsList';
 import { WelcomeMessage } from './WelcomeMessage';
-
-// Hooks personalizados
+import { InsightsList } from './InsightsList';
+import { useActivityContent } from '../../hooks/useActivityContent';
 import { useChatMessages } from '../../hooks/useChatMessages';
 import { useChatInsights } from '../../hooks/useChatInsights';
-import { useActivityContent } from '../../hooks/useActivityContent';
+import { TypingIndicator } from './TypingIndicator';
+import { MessageSquare, Lightbulb, BookOpen } from 'lucide-react';
 
 interface ChatProps {
   stageContentId?: string;
   activityContentProp?: ActivityContent;
 }
 
-export default function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
+export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
   const { user } = useAuthStore();
   const { company, loadCompanyAndDiagnostic } = useProgramStore();
   const [input, setInput] = useState('');
@@ -91,12 +89,12 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
 
   // Cargar mensajes previos cuando el contenido de la actividad esté disponible
   useEffect(() => {
-    if (user && user.id && activityContent && activityContent.id) {
+    if (user && user.id && activityContent && activityContent.id && !messagesLoaded) {
       console.log(`Verificando carga de mensajes para actividad ${activityContent.id}`);
       // Solo cargar si no se han cargado previamente
       loadPreviousMessages(false);
     }
-  }, [user, activityContent, loadPreviousMessages]);
+  }, [user, activityContent, loadPreviousMessages, messagesLoaded]);
 
   // Estado derivado para mostrar el mensaje de bienvenida
   const shouldShowWelcomeMessage = !loadingActivity && messagesLoaded && messages.length === 0;
@@ -133,7 +131,7 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
     
     try {
       // Añadir mensaje del usuario a la UI
-      addUserMessage(userMessage);
+      const userMsg = addUserMessage(userMessage);
       setInput('');
       
       // Generar respuesta del bot
@@ -148,7 +146,9 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
       addAIMessage(botResponse);
       
       // Guardar la interacción en la base de datos
-      await saveInteraction(userMessage, botResponse);
+      // Usamos un ID único para evitar duplicados
+      const messageId = userMsg.id.replace('user-', '');
+      await saveInteraction(userMessage, botResponse, messageId);
       
       // Limpiar interacciones antiguas si es necesario
       if (interactionCount > 10) {
@@ -193,7 +193,7 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
     try {
       // Añadir mensaje predeterminado del usuario - Mensaje más simple
       const defaultMessage = "Hola, ¿puedes ayudarme con esta actividad?";
-      addUserMessage(defaultMessage);
+      const userMsg = addUserMessage(defaultMessage);
       
       // Asegurarnos de que el objeto activityContent tenga los campos necesarios
       const enrichedActivityContent = {
@@ -231,8 +231,9 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
       // Añadir respuesta del bot a la UI
       addAIMessage(botResponse);
       
-      // Guardar la interacción en la base de datos
-      await saveInteraction(defaultMessage, botResponse);
+      // Guardar la interacción en la base de datos con un ID único
+      const messageId = userMsg.id.replace('user-', '');
+      await saveInteraction(defaultMessage, botResponse, messageId);
       
       // Mostrar botón de insight después de la respuesta
       showInsightButtonAfterResponse();
@@ -251,11 +252,16 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
     : (company ? `${company.industry} • ${company.size}` : 'Información de la empresa no disponible');
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">{headerTitle}</h1>
-          <p className="text-sm text-gray-500">{headerSubtitle}</p>
+    <div className="h-screen flex flex-col bg-gray-50">
+      <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm">
+        <div className="flex items-center">
+          <div className="bg-gradient-to-r from-blue-500 to-indigo-600 w-10 h-10 rounded-full flex items-center justify-center text-white shadow-md mr-3">
+            <MessageSquare size={20} />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900">{headerTitle}</h1>
+            <p className="text-sm text-gray-500">{headerSubtitle}</p>
+          </div>
         </div>
         {activityContent && (
           <InsightsList 
@@ -267,32 +273,38 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
       </div>
 
       {showInsights && (
-        <div className="bg-gray-50 p-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium mb-2">Insights Guardados</h2>
+        <div className="bg-white p-4 border-b border-gray-200 shadow-sm">
+          <div className="flex items-center mb-3">
+            <Lightbulb className="h-5 w-5 text-yellow-500 mr-2" />
+            <h2 className="text-lg font-medium text-gray-800">Insights Guardados</h2>
+          </div>
           {insights.length > 0 ? (
-            <div className="space-y-2 max-h-40 overflow-y-auto">
+            <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
               {insights.map(insight => (
-                <div key={insight.id} className="bg-white p-3 rounded-lg border border-gray-200">
-                  {insight.content}
+                <div key={insight.id} className="bg-yellow-50 p-3 rounded-lg border border-yellow-100 hover:border-yellow-200 transition-colors">
+                  <div className="flex items-start">
+                    <BookOpen className="h-4 w-4 text-yellow-600 mt-1 mr-2 flex-shrink-0" />
+                    <p className="text-sm text-gray-700">{insight.content}</p>
+                  </div>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-gray-500">No hay insights guardados para esta actividad.</p>
+            <p className="text-gray-500 text-sm italic">No hay insights guardados para esta actividad.</p>
           )}
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-gray-50 to-white">
         {loadingActivity ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-            <span className="ml-2 text-gray-600">Cargando actividad...</span>
+          <div className="flex flex-col items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+            <span className="text-gray-600 font-medium">Cargando actividad...</span>
           </div>
         ) : !messagesLoaded ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-            <span className="ml-2 text-gray-600">Cargando mensajes anteriores...</span>
+          <div className="flex flex-col items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+            <span className="text-gray-600 font-medium">Cargando mensajes anteriores...</span>
           </div>
         ) : shouldShowWelcomeMessage ? (
           <WelcomeMessage 
@@ -300,7 +312,7 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
             onStartConversation={handleStartConversation} 
           />
         ) : (
-          <>
+          <div className="space-y-4 pb-2">
             {messages.map((message) => (
               <ChatMessage 
                 key={message.id}
@@ -309,8 +321,9 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
                 showInsightButton={showInsightButton && message.sender === 'ai' && !message.metadata?.type}
               />
             ))}
+            {isLoading && <TypingIndicator />}
             <div ref={messagesEndRef} />
-          </>
+          </div>
         )}
       </div>
 

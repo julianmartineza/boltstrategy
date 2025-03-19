@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Database } from '../../../lib/database.types';
 import VideoPlayer from '../../VideoPlayer';
-import Chat from '../../chat/Chat';
+import { Chat } from '../../chat/Chat';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 
 type StageContent = Database['public']['Tables']['stage_content']['Row'];
@@ -13,7 +13,7 @@ interface StageContentProps {
   viewedContents?: Record<string, boolean>;
 }
 
-export default function StageContent({ content, currentIndex: externalIndex, onChangeContent, viewedContents = {} }: StageContentProps) {
+export function StageContent({ content, currentIndex: externalIndex, onChangeContent, viewedContents = {} }: StageContentProps) {
   // Usar el viewedContents para mostrar indicadores visuales
   // Usar el índice externo si se proporciona, o mantener un estado interno
   const [internalIndex, setInternalIndex] = useState(0);

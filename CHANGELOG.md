@@ -390,7 +390,7 @@
 
 ### Mejoras en la experiencia de usuario del Chat
 
-- [x] Add Componente de bienvenida para chat vacío
+- [x] Add Componente `TypingIndicator` para mostrar cuando el bot está escribiendo
 - [x] Add Botón para iniciar conversación automáticamente
 
 #### Detalles de los cambios:
@@ -444,3 +444,35 @@
    - Mejor aprovechamiento de la información almacenada en la base de datos
 
 {{ ... }}
+
+## 2025-03-19
+
+### Mejoras en la interfaz de usuario del Chat y corrección de errores de recarga
+
+- [x] Add Componente `TypingIndicator` para mostrar cuando el bot está escribiendo
+- [x] Add Botón para iniciar conversación automáticamente
+
+#### Detalles de los cambios:
+
+1. **Nuevo componente WelcomeMessage.tsx**:
+   - Se creó un componente de bienvenida que se muestra cuando el chat está vacío
+   - Incluye información sobre la actividad actual y un botón para iniciar la conversación
+   - Mejora la experiencia de usuario al proporcionar una acción clara para comenzar
+
+2. **Modificación en Chat.tsx**:
+   - Se integró el componente WelcomeMessage cuando no hay mensajes
+   - Se implementó la función handleStartConversation para iniciar automáticamente la conversación con un mensaje predeterminado
+   - Se mejoró la estructura condicional para mostrar mensajes o la pantalla de bienvenida
+
+3. **Corrección de errores**:
+   - Se corrigieron errores de importaciones duplicadas en `Chat.tsx`
+   - Se corrigieron errores de importaciones de React no utilizadas en varios componentes
+   - Se cambió la exportación por defecto a exportación nombrada en `StageContent.tsx`
+   - Se corrigieron errores de tipos en la integración entre `StageContent` y `Chat`
+   - Se mejoró la estructura de archivos y la organización del código
+
+4. **Beneficios de las mejoras**:
+   - Interfaz de usuario más moderna y atractiva
+   - Mejor experiencia de usuario al proporcionar retroalimentación visual durante la generación de respuestas
+   - Eliminación de errores que impedían la recarga correcta de los componentes
+   - Mayor consistencia en el estilo de exportación de componentes

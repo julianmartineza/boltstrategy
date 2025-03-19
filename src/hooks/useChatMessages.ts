@@ -141,7 +141,7 @@ export function useChatMessages(userId?: string, activityId?: string) {
   }, []);
 
   // Guardar interacción en la base de datos
-  const saveInteraction = useCallback(async (userMessage: string, aiResponse: string) => {
+  const saveInteraction = useCallback(async (userMessage: string, aiResponse: string, messageId?: string) => {
     if (!userId || !activityId) return;
     
     try {
@@ -166,6 +166,9 @@ export function useChatMessages(userId?: string, activityId?: string) {
       
       console.log('Guardando nueva interacción para actividad:', activityId);
       
+      // Usar messageId como identificador único si está disponible
+      const timestamp = messageId || Date.now().toString();
+      
       // Guardar la nueva interacción
       const { error } = await supabase
         .from('activity_interactions')
@@ -174,7 +177,8 @@ export function useChatMessages(userId?: string, activityId?: string) {
           activity_id: activityId,
           user_message: userMessage,
           ai_response: aiResponse,
-          timestamp: new Date().toISOString()
+          timestamp: new Date(parseInt(timestamp)).toISOString(),
+          message_id: messageId || undefined // Guardar el ID único del mensaje si está disponible
         });
         
       if (error) {
@@ -193,7 +197,7 @@ export function useChatMessages(userId?: string, activityId?: string) {
     loadPreviousMessages,
     addUserMessage,
     addAIMessage,
-    saveInteraction,
+    saveInteraction: (userMessage: string, aiResponse: string, messageId?: string) => saveInteraction(userMessage, aiResponse, messageId),
     clearMessages: () => {
       setMessages([]);
       clearShortTermMemory();

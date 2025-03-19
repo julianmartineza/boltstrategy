@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useProgramStore } from '../../../store/programStore';
 import StrategyProgress from './StrategyProgress';
-import StageContentComponent from './StageContent';
+import { StageContent } from './StageContent';
 import ProgramOutline from './ProgramOutline';
 import { supabase } from '../../../lib/supabase';
 import type { Database } from '../../../lib/database.types';
@@ -206,7 +206,7 @@ const StrategyProgram: React.FC = () => {
         {/* Main Content Area */}
         <div className="flex-1 p-4 overflow-y-auto">
           {currentStage && stageContent.length > 0 ? (
-            <StageContentComponent 
+            <StageContent 
               content={stageContent}
               currentIndex={currentContentIndex}
               onChangeContent={(index) => {
