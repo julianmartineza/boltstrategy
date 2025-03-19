@@ -130,94 +130,203 @@ export const cleanUpInteractions = async (userId: string, activityId: string) =>
 };
 
 /**
- * Genera el contexto para OpenAI incluyendo memoria de corto y largo plazo
+ * Obtiene el perfil de la empresa del usuario
+ * @param userId ID del usuario
+ * @returns Datos de la empresa o null si no existe
+ */
+async function fetchCompanyProfile(userId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data) {
+      console.log('No se encontró perfil de empresa para el usuario:', userId);
+      return null;
+    }
+
+    return {
+      name: data.name,
+      industry: data.industry,
+      size: data.size,
+      annual_revenue: data.annual_revenue,
+      website: data.website
+    };
+  } catch (error) {
+    console.error('Error al obtener el perfil de la empresa:', error);
+    return null;
+  }
+}
+
+/**
+ * Obtiene el resumen del diagnóstico de la empresa
+ * @param userId ID del usuario
+ * @returns Datos del diagnóstico o null si no existe
+ */
+async function fetchDiagnosticSummary(userId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('diagnostics')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data) {
+      console.log('No se encontró diagnóstico para el usuario:', userId);
+      return null;
+    }
+
+    return data.diagnostic_data;
+  } catch (error) {
+    console.error('Error al obtener el diagnóstico:', error);
+    return null;
+  }
+}
+
+/**
+ * Obtiene los resúmenes de memoria a largo plazo
  * @param userId ID del usuario
  * @param activityId ID de la actividad
- * @param userInput Mensaje del usuario
+ * @returns Array de resúmenes o array vacío si no existen
+ */
+async function fetchLongTermMemorySummaries(userId: string, activityId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('chat_summaries')
+      .select('summary, created_at')
+      .eq('user_id', userId)
+      .eq('activity_id', activityId)
+      .order('created_at', { ascending: false })
+      .limit(3);
+
+    if (error || !data || data.length === 0) {
+      console.log('No se encontraron resúmenes para el usuario:', userId, 'y actividad:', activityId);
+      return [];
+    }
+
+    return data.map(item => item.summary);
+  } catch (error) {
+    console.error('Error al obtener resúmenes de memoria a largo plazo:', error);
+    return [];
+  }
+}
+
+/**
+ * Genera el contexto completo para OpenAI
+ * @param userId ID del usuario
+ * @param activityId ID de la actividad
+ * @param userMessage Mensaje del usuario
+ * @param systemInstructions Instrucciones del sistema para OpenAI
  * @returns Contexto completo para OpenAI
  */
-export const generateContextForOpenAI = async (
-  userId: string, 
-  activityId: string, 
-  userInput: string,
-  systemPrompt?: string
-) => {
-  let chatHistory = [...getShortTermMemory()];
+export async function generateContextForOpenAI(
+  userId: string,
+  activityId: string,
+  userMessage: string,
+  systemInstructions?: string
+) {
+  try {
+    // Verificar que tenemos los datos necesarios
+    if (!userId || !activityId) {
+      console.error('Error: userId o activityId no disponibles para generar contexto');
+      return [
+        {
+          role: 'system',
+          content: 'Eres un asistente de estrategia. Responde de manera concisa y útil.'
+        },
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ];
+    }
 
-  // Obtener dependencias de la actividad actual
-  const dependencies = await fetchDependencies(activityId);
-
-  // Si hay dependencias, recuperar respuestas previas
-  if (dependencies.length > 0) {
-    const previousResponses = await fetchPreviousResponses(userId, dependencies);
-    if (previousResponses && previousResponses.length > 0) {
-      chatHistory.unshift({ 
-        role: "system", 
-        content: `Información relevante de actividades previas: ${JSON.stringify(previousResponses)}` 
+    // Obtener memoria a corto plazo
+    let chatHistory = [...getShortTermMemory()];
+    
+    // Obtener dependencias y otra información relevante
+    const dependencies = await fetchDependencies(activityId);
+    const companyProfile = await fetchCompanyProfile(userId);
+    const diagnosticSummary = await fetchDiagnosticSummary(userId);
+    
+    // Obtener resúmenes de memoria a largo plazo
+    const longTermMemorySummaries = await fetchLongTermMemorySummaries(userId, activityId);
+    
+    // Construir el contexto para OpenAI
+    let context = [];
+    
+    // Añadir instrucciones del sistema si están disponibles
+    if (systemInstructions) {
+      context.push({
+        role: 'system',
+        content: systemInstructions
+      });
+    } else {
+      context.push({
+        role: 'system',
+        content: 'Eres un asistente de estrategia empresarial. Ayuda al usuario con su consulta basándote en el contexto proporcionado.'
       });
     }
-  }
-
-  // Obtener el perfil de la empresa
-  const { data: company, error: companyError } = await supabase
-    .from('companies')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-
-  if (!companyError && company) {
-    chatHistory.unshift({ 
-      role: "system", 
-      content: `Contexto de la empresa: ${JSON.stringify(company)}` 
+    
+    // Añadir información de la empresa si está disponible
+    if (companyProfile) {
+      context.push({
+        role: 'system',
+        content: `Información de la empresa: ${JSON.stringify(companyProfile)}`
+      });
+    }
+    
+    // Añadir resumen del diagnóstico si está disponible
+    if (diagnosticSummary) {
+      context.push({
+        role: 'system',
+        content: `Resumen del diagnóstico: ${JSON.stringify(diagnosticSummary)}`
+      });
+    }
+    
+    // Añadir dependencias si están disponibles
+    if (dependencies && dependencies.length > 0) {
+      context.push({
+        role: 'system',
+        content: `Dependencias de la actividad: ${JSON.stringify(dependencies)}`
+      });
+    }
+    
+    // Añadir resúmenes de memoria a largo plazo si están disponibles
+    if (longTermMemorySummaries && longTermMemorySummaries.length > 0) {
+      context.push({
+        role: 'system',
+        content: `Resúmenes de conversaciones anteriores: ${JSON.stringify(longTermMemorySummaries)}`
+      });
+    }
+    
+    // Añadir historial de chat a corto plazo
+    context = [...context, ...chatHistory];
+    
+    // Añadir mensaje actual del usuario
+    context.push({
+      role: 'user',
+      content: userMessage
     });
+    
+    return context;
+  } catch (error) {
+    console.error('Error generando contexto para OpenAI:', error);
+    // Devolver un contexto mínimo en caso de error
+    return [
+      {
+        role: 'system',
+        content: 'Eres un asistente de estrategia. Responde de manera concisa y útil.'
+      },
+      {
+        role: 'user',
+        content: userMessage
+      }
+    ];
   }
-
-  // Obtener el diagnóstico de la empresa
-  const { data: diagnostic, error: diagnosticError } = await supabase
-    .from('diagnostics')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-
-  if (!diagnosticError && diagnostic) {
-    chatHistory.unshift({ 
-      role: "system", 
-      content: `Diagnóstico de la empresa: ${JSON.stringify(diagnostic.diagnostic_data)}` 
-    });
-  }
-
-  // Obtener el último resumen de memoria de largo plazo
-  const { data: longTermMemory, error } = await supabase
-    .from('chat_summaries')
-    .select('summary')
-    .eq('user_id', userId)
-    .eq('activity_id', activityId)
-    .order('created_at', { ascending: false })
-    .limit(1);
-
-  if (!error && longTermMemory && longTermMemory.length > 0) {
-    chatHistory.unshift({ 
-      role: "system", 
-      content: `Resumen de la conversación previa: ${longTermMemory[0].summary}` 
-    });
-  }
-
-  // Añadir instrucciones del sistema si existen
-  if (systemPrompt) {
-    chatHistory.unshift({ 
-      role: "system", 
-      content: systemPrompt 
-    });
-  }
-
-  // Añadir el mensaje del usuario
-  chatHistory.push({ 
-    role: "user", 
-    content: userInput 
-  });
-
-  return chatHistory;
-};
+}
 
 /**
  * Guarda un insight del usuario

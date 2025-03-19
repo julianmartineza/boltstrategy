@@ -408,3 +408,39 @@
 ### Corrección de errores en componentes Chat y StrategyProgram
 
 {{ ... }}
+
+## 2025-03-19
+
+### Mejoras en el servicio de chat y manejo de prompts
+
+- [x] Add Implementación mejorada para utilizar correctamente los prompts específicos de la actividad
+- [x] Add Soporte para instrucciones de sistema personalizadas desde la base de datos
+- [x] Add Función `fetchDependencies` para obtener dependencias de actividades
+- [x] Edit Actualización de la interfaz `ActivityContent` para incluir campos de prompts
+- [x] Edit Mejora en la función `generateContextForOpenAI` para incluir instrucciones específicas
+- [x] Edit Actualización de la documentación en `chat.md` con detalles sobre el manejo de prompts
+
+#### Detalles de los cambios:
+
+1. **Mejoras en el manejo de prompts**:
+   - Se extraen correctamente los campos `system_instructions` y `prompt` del objeto `activity_data`
+   - Se utilizan estos campos para personalizar las respuestas del bot según la actividad
+   - Se implementó una lógica diferenciada para el primer mensaje y los mensajes subsiguientes
+
+2. **Mejoras en la generación de contexto**:
+   - Se añadió soporte para instrucciones de sistema personalizadas
+   - Se mejoró la estructura del contexto enviado a OpenAI
+   - Se implementaron funciones para obtener información de la empresa, diagnóstico y memoria a largo plazo
+
+3. **Mejoras en la documentación**:
+   - Se actualizó la documentación con detalles sobre el flujo de procesamiento de prompts
+   - Se añadió información sobre la estructura de datos en `stage_content.activity_data`
+   - Se incluyeron ejemplos de código para ilustrar el funcionamiento
+
+4. **Beneficios de las mejoras**:
+   - Mayor personalización de las respuestas según la actividad
+   - Mejor coherencia en las conversaciones
+   - Mayor flexibilidad para los administradores al configurar actividades
+   - Mejor aprovechamiento de la información almacenada en la base de datos
+
+{{ ... }}

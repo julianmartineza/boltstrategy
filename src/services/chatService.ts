@@ -3,6 +3,7 @@ import {
   generateContextForOpenAI,
   cleanUpInteractions
 } from '../lib/chatMemoryService';
+import { supabase } from '../lib/supabase';
 
 export const chatService = {
   // Generar respuesta del bot
@@ -32,18 +33,27 @@ export const chatService = {
       
       console.log('Generando respuesta con:', { userId, activityId, stageName, activityTitle });
       
+      // Obtener instrucciones específicas de la actividad
+      const systemInstructions = activityContent?.activity_data?.system_instructions || '';
+      const promptTemplate = activityContent?.activity_data?.prompt || activityContent?.content || '';
+      
+      console.log('Instrucciones del sistema:', systemInstructions ? 'Disponibles' : 'No disponibles');
+      console.log('Plantilla de prompt:', promptTemplate ? 'Disponible' : 'No disponible');
+      
       // Determinar si es el primer mensaje (mensaje de bienvenida)
       const isFirstMessage = userMessage === "Hola, ¿puedes ayudarme con esta actividad?";
       
-      // Para el primer mensaje, usamos un contexto más simple
+      // Para el primer mensaje, usamos un contexto más simple pero con las instrucciones específicas
       if (isFirstMessage) {
-        console.log('Generando respuesta de bienvenida simplificada');
+        console.log('Generando respuesta de bienvenida');
         
-        // Crear un contexto simplificado para el primer mensaje
+        // Crear un contexto para el primer mensaje que incluya las instrucciones específicas
         const botContext = {
-          systemPrompt: `Eres un consultor de estrategia ayudando con la actividad "${activityTitle}" en la etapa "${stageName}". 
-          Da una bienvenida breve y concisa (máximo 3 párrafos) explicando el propósito de esta actividad. 
-          No incluyas información detallada sobre la empresa ni historial de conversaciones previas.`,
+          systemPrompt: systemInstructions || 
+            `Eres un consultor de estrategia ayudando con la actividad "${activityTitle}" en la etapa "${stageName}". 
+            Da una bienvenida breve y concisa (máximo 1 párrafo) explicando el propósito de esta actividad.
+            ${promptTemplate ? `\nInstrucciones específicas: ${promptTemplate}` : ''}
+            No incluyas información detallada sobre la empresa ni historial de conversaciones previas.`,
           stage: stageName || '',
           activity: activityTitle || '',
           previousMessages: [] as Array<{role: 'user' | 'assistant', content: string}>,
@@ -53,7 +63,7 @@ export const chatService = {
           } : null
         };
         
-        // Generar respuesta simplificada
+        // Generar respuesta con el contexto específico
         const botResponse = await generateBotResponse(
           userMessage, 
           botContext,
@@ -68,12 +78,13 @@ export const chatService = {
         return botResponse;
       }
       
-      // Para mensajes normales, usamos el contexto completo
+      // Para mensajes normales, usamos el contexto completo con las instrucciones específicas
       // Generar contexto para la API de OpenAI
       const context = await generateContextForOpenAI(
         userId,
         activityId,
-        userMessage
+        userMessage,
+        systemInstructions // Pasar las instrucciones específicas al contexto
       );
       
       // Filtrar los mensajes para que solo incluyan 'user' y 'assistant'
@@ -86,7 +97,9 @@ export const chatService = {
       
       // Crear el objeto de contexto en el formato esperado por generateBotResponse
       const botContext = {
-        systemPrompt: `Eres un consultor de estrategia ayudando con la etapa "${stageName}", específicamente en la actividad "${activityTitle}".`,
+        systemPrompt: systemInstructions || 
+          `Eres un consultor de estrategia ayudando con la etapa "${stageName}", específicamente en la actividad "${activityTitle}".
+          ${promptTemplate ? `\nInstrucciones específicas: ${promptTemplate}` : ''}`,
         stage: stageName,
         activity: activityTitle,
         previousMessages: filteredContext,
@@ -155,5 +168,32 @@ export const chatService = {
       }
     }
     return false;
+  },
+  
+  // Obtener dependencias de una actividad
+  fetchDependencies: async (activityId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('stage_content')
+        .select('dependencies')
+        .eq('id', activityId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching dependencies:', error);
+        return [];
+      }
+
+      if (!data || !data.dependencies) {
+        console.log('No se encontraron dependencias para la actividad:', activityId);
+        return [];
+      }
+
+      console.log('Dependencias encontradas:', data.dependencies);
+      return data.dependencies;
+    } catch (error) {
+      console.error('Error fetching dependencies:', error);
+      return [];
+    }
   }
 };

@@ -63,7 +63,8 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
     addUserMessage, 
     addAIMessage, 
     saveInteraction,
-    clearMessages
+    clearMessages,
+    messagesLoaded
   } = useChatMessages(user?.id, activityContent?.id);
   
   // Mostrar mensaje de error si existe
@@ -91,9 +92,14 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
   // Cargar mensajes previos cuando el contenido de la actividad esté disponible
   useEffect(() => {
     if (user && user.id && activityContent && activityContent.id) {
-      loadPreviousMessages();
+      console.log(`Verificando carga de mensajes para actividad ${activityContent.id}`);
+      // Solo cargar si no se han cargado previamente
+      loadPreviousMessages(false);
     }
   }, [user, activityContent, loadPreviousMessages]);
+
+  // Estado derivado para mostrar el mensaje de bienvenida
+  const shouldShowWelcomeMessage = !loadingActivity && messagesLoaded && messages.length === 0;
 
   // Desplazarse al final de los mensajes
   useEffect(() => {
@@ -283,7 +289,12 @@ export default function Chat({ stageContentId, activityContentProp }: ChatProps 
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
             <span className="ml-2 text-gray-600">Cargando actividad...</span>
           </div>
-        ) : messages.length === 0 ? (
+        ) : !messagesLoaded ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+            <span className="ml-2 text-gray-600">Cargando mensajes anteriores...</span>
+          </div>
+        ) : shouldShowWelcomeMessage ? (
           <WelcomeMessage 
             activityContent={activityContent} 
             onStartConversation={handleStartConversation} 

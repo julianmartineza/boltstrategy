@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Message } from '../types';
 import { 
@@ -9,15 +9,24 @@ import {
 export function useChatMessages(userId?: string, activityId?: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [interactionCount, setInteractionCount] = useState<number>(0);
+  const [messagesLoaded, setMessagesLoaded] = useState<boolean>(false);
 
   // Cargar mensajes previos
-  const loadPreviousMessages = useCallback(async () => {
+  const loadPreviousMessages = useCallback(async (forceReload = false) => {
     if (!userId || !activityId || userId === undefined || activityId === undefined) {
       console.log('No se pueden cargar mensajes: userId o activityId no disponibles');
       return;
     }
 
+    // Si ya se cargaron mensajes y no se fuerza la recarga, no hacer nada
+    if (messagesLoaded && !forceReload) {
+      console.log('Mensajes ya cargados, omitiendo carga duplicada');
+      return;
+    }
+
     try {
+      console.log(`Cargando mensajes para usuario ${userId} y actividad ${activityId}`);
+      
       // Cargar mensajes anteriores para esta actividad específica
       const { data: interactions, error } = await supabase
         .from('activity_interactions')
@@ -78,10 +87,22 @@ export function useChatMessages(userId?: string, activityId?: string) {
         
         setMessages(loadedMessages);
         setInteractionCount(interactions.length);
+        setMessagesLoaded(true);
+        console.log(`Cargados ${loadedMessages.length} mensajes para la actividad ${activityId}`);
+      } else {
+        console.log(`No se encontraron mensajes previos para la actividad ${activityId}`);
+        setMessagesLoaded(true);
       }
     } catch (error) {
       console.error('Error in loadPreviousMessages:', error);
     }
+  }, [userId, activityId, messagesLoaded]);
+
+  // Resetear el estado cuando cambia el usuario o la actividad
+  useEffect(() => {
+    setMessages([]);
+    setInteractionCount(0);
+    setMessagesLoaded(false);
   }, [userId, activityId]);
 
   // Añadir mensaje del usuario
@@ -124,6 +145,28 @@ export function useChatMessages(userId?: string, activityId?: string) {
     if (!userId || !activityId) return;
     
     try {
+      // Verificar si ya existe una interacción similar en la base de datos
+      const { data: existingInteractions, error: checkError } = await supabase
+        .from('activity_interactions')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('activity_id', activityId)
+        .eq('user_message', userMessage)
+        .limit(1);
+      
+      if (checkError) {
+        console.error('Error verificando interacciones existentes:', checkError);
+      }
+      
+      // Si ya existe una interacción similar, no guardar duplicado
+      if (existingInteractions && existingInteractions.length > 0) {
+        console.log('Interacción similar ya existe, evitando duplicado:', userMessage.substring(0, 20) + '...');
+        return;
+      }
+      
+      console.log('Guardando nueva interacción para actividad:', activityId);
+      
+      // Guardar la nueva interacción
       const { error } = await supabase
         .from('activity_interactions')
         .insert({
@@ -154,6 +197,8 @@ export function useChatMessages(userId?: string, activityId?: string) {
     clearMessages: () => {
       setMessages([]);
       clearShortTermMemory();
-    }
+      setMessagesLoaded(false);
+    },
+    messagesLoaded
   };
 }

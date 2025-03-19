@@ -25,6 +25,21 @@ export interface ActivityContent {
   content?: string;
   prompt_section?: string;
   stage_name?: string;
+  user_id?: string;
+  activity_data?: {
+    prompt?: string;
+    system_instructions?: string;
+    initial_message?: string;
+    max_exchanges?: number;
+    type?: string;
+    description?: string;
+    prompt_template?: string;
+    required_steps?: string[];
+    completion_criteria?: {
+      min_responses?: number;
+      required_topics?: string[];
+    };
+  };
   [key: string]: any;
 }
 
