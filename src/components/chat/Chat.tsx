@@ -251,14 +251,14 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center shadow-sm">
-        <div className="flex items-center">
-          <div className="bg-gradient-to-r from-blue-500 to-indigo-600 w-10 h-10 rounded-full flex items-center justify-center text-white shadow-md mr-3">
+      <div className="bg-white border-b border-gray-200 p-3 sm:p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center shadow-sm">
+        <div className="flex items-center w-full sm:w-auto mb-2 sm:mb-0">
+          <div className="bg-gradient-to-r from-blue-500 to-indigo-600 w-10 h-10 rounded-full flex items-center justify-center text-white shadow-md mr-3 flex-shrink-0">
             <MessageSquare size={20} />
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">{headerTitle}</h1>
-            <p className="text-sm text-gray-500">{headerSubtitle}</p>
+          <div className="overflow-hidden">
+            <h1 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">{headerTitle}</h1>
+            <p className="text-xs sm:text-sm text-gray-500 truncate">{headerSubtitle}</p>
           </div>
         </div>
         {activityContent && (
@@ -271,38 +271,38 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
       </div>
 
       {showInsights && (
-        <div className="bg-white p-4 border-b border-gray-200 shadow-sm">
-          <div className="flex items-center mb-3">
-            <Lightbulb className="h-5 w-5 text-yellow-500 mr-2" />
-            <h2 className="text-lg font-medium text-gray-800">Insights Guardados</h2>
+        <div className="bg-white p-3 sm:p-4 border-b border-gray-200 shadow-sm">
+          <div className="flex items-center mb-2 sm:mb-3">
+            <Lightbulb className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-500 mr-2" />
+            <h2 className="text-base sm:text-lg font-medium text-gray-800">Insights Guardados</h2>
           </div>
           {insights.length > 0 ? (
-            <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+            <div className="space-y-2 max-h-32 sm:max-h-40 overflow-y-auto pr-2">
               {insights.map(insight => (
-                <div key={insight.id} className="bg-yellow-50 p-3 rounded-lg border border-yellow-100 hover:border-yellow-200 transition-colors">
+                <div key={insight.id} className="bg-yellow-50 p-2 sm:p-3 rounded-lg border border-yellow-100 hover:border-yellow-200 transition-colors">
                   <div className="flex items-start">
-                    <BookOpen className="h-4 w-4 text-yellow-600 mt-1 mr-2 flex-shrink-0" />
-                    <p className="text-sm text-gray-700">{insight.content}</p>
+                    <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-600 mt-1 mr-2 flex-shrink-0" />
+                    <p className="text-xs sm:text-sm text-gray-700">{insight.content}</p>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-gray-500 text-sm italic">No hay insights guardados para esta actividad.</p>
+            <p className="text-gray-500 text-xs sm:text-sm italic">No hay insights guardados para esta actividad.</p>
           )}
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gradient-to-b from-gray-50 to-white">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3 sm:space-y-4 bg-gradient-to-b from-gray-50 to-white">
         {loadingActivity ? (
           <div className="flex flex-col items-center justify-center h-full">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
-            <span className="text-gray-600 font-medium">Cargando actividad...</span>
+            <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-blue-500 mb-3 sm:mb-4"></div>
+            <span className="text-sm sm:text-base text-gray-600 font-medium">Cargando actividad...</span>
           </div>
         ) : !messagesLoaded ? (
           <div className="flex flex-col items-center justify-center h-full">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
-            <span className="text-gray-600 font-medium">Cargando mensajes anteriores...</span>
+            <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-blue-500 mb-3 sm:mb-4"></div>
+            <span className="text-sm sm:text-base text-gray-600 font-medium">Cargando mensajes anteriores...</span>
           </div>
         ) : shouldShowWelcomeMessage ? (
           <WelcomeMessage 
@@ -310,7 +310,7 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
             onStartConversation={handleStartConversation} 
           />
         ) : (
-          <div className="space-y-4 pb-2">
+          <div className="space-y-3 sm:space-y-4 pb-2">
             {messages.map((message) => (
               <ChatMessage 
                 key={message.id}

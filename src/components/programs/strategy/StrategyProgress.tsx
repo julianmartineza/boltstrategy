@@ -1,18 +1,26 @@
-import { Stage } from '../../../types';
+// Definir el tipo Stage localmente ya que no está disponible directamente
+interface Stage {
+  id: string;
+  name: string;
+  order_num: number;
+  status: 'locked' | 'active' | 'completed';
+}
 
 interface StrategyProgressProps {
   stages: Stage[];
   currentPhase: number;
-  // Eliminamos currentStage ya que no se usa
+  isVertical?: boolean; // Nueva prop para indicar si se muestra vertical
 }
 
-export default function StrategyProgress({ stages, currentPhase }: StrategyProgressProps) {
+export default function StrategyProgress({ 
+  stages, 
+  currentPhase,
+  isVertical = false 
+}: StrategyProgressProps) {
   // Calculate progress
   const completedStages = stages.filter(stage => stage.status === 'completed').length;
   const progress = Math.round((completedStages / stages.length) * 100);
   
-  // Ya no necesitamos los próximos pasos
-
   // Get current phase name
   const getCurrentPhaseName = (phaseIndex: number) => {
     switch (phaseIndex) {
@@ -23,6 +31,30 @@ export default function StrategyProgress({ stages, currentPhase }: StrategyProgr
     }
   };
 
+  // Versión compacta para barra lateral
+  if (isVertical) {
+    return (
+      <div className="bg-white border-b border-gray-200 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-medium text-gray-700">Progreso</h3>
+          <span className="text-sm font-semibold text-blue-600">{progress}%</span>
+        </div>
+        
+        <div className="relative h-1.5 bg-gray-200 rounded-full overflow-hidden mb-2">
+          <div 
+            className="absolute left-0 top-0 h-full bg-blue-600 transition-all duration-500"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        
+        <p className="text-xs text-gray-500 truncate">
+          Fase {currentPhase + 1}: {getCurrentPhaseName(currentPhase)}
+        </p>
+      </div>
+    );
+  }
+
+  // Versión original (para compatibilidad)
   return (
     <div className="mb-8">
       {/* Progress Card */}

@@ -19,18 +19,18 @@ export function ChatMessage({ message, onSaveInsight, showInsightButton = false 
     <div
       className={`flex items-end ${
         message.sender === 'user' ? 'justify-end' : 'justify-start'
-      } mb-4`}
+      } mb-2 sm:mb-4`}
     >
       {message.sender === 'ai' && (
-        <div className="flex-shrink-0 mr-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-400 to-indigo-500 flex items-center justify-center text-white">
-            <Bot size={18} />
+        <div className="flex-shrink-0 mr-1 sm:mr-2">
+          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-r from-blue-400 to-indigo-500 flex items-center justify-center text-white">
+            <Bot size={14} className="sm:w-[18px] sm:h-[18px]" />
           </div>
         </div>
       )}
       
       <div
-        className={`relative max-w-md rounded-2xl px-4 py-3 shadow-sm ${
+        className={`relative max-w-[85%] sm:max-w-md rounded-xl sm:rounded-2xl px-3 py-2 sm:px-4 sm:py-3 shadow-sm text-sm sm:text-base ${
           message.sender === 'user'
             ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-br-none'
             : message.metadata?.type === 'error'
@@ -50,9 +50,9 @@ export function ChatMessage({ message, onSaveInsight, showInsightButton = false 
         {message.sender === 'ai' && !message.metadata?.type && showInsightButton && (
           <button
             onClick={handleSaveInsight}
-            className="mt-2 flex items-center text-xs text-blue-600 hover:text-blue-800 transition-colors"
+            className="mt-1 sm:mt-2 flex items-center text-[10px] sm:text-xs text-blue-600 hover:text-blue-800 transition-colors"
           >
-            <BookmarkPlus className="h-3 w-3 mr-1" />
+            <BookmarkPlus className="h-2 w-2 sm:h-3 sm:w-3 mr-1" />
             Guardar como insight
           </button>
         )}
@@ -75,9 +75,9 @@ export function ChatMessage({ message, onSaveInsight, showInsightButton = false 
       </div>
       
       {message.sender === 'user' && (
-        <div className="flex-shrink-0 ml-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white">
-            <User size={18} />
+        <div className="flex-shrink-0 ml-1 sm:ml-2">
+          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white">
+            <User size={14} className="sm:w-[18px] sm:h-[18px]" />
           </div>
         </div>
       )}

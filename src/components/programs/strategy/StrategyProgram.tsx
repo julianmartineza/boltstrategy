@@ -5,7 +5,7 @@ import { StageContent } from './StageContent';
 import ProgramOutline from './ProgramOutline';
 import { supabase } from '../../../lib/supabase';
 import type { Database } from '../../../lib/database.types';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Menu, X } from 'lucide-react';
 import { useAuthStore } from '../../../store/authStore';
 
 // Tipo para los datos de contenido de etapa que vienen de la base de datos
@@ -27,6 +27,7 @@ const StrategyProgram: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [currentContentIndex, setCurrentContentIndex] = useState<number>(0);
   const [currentStageIndex, setCurrentStageIndex] = useState<number>(0);
+  const [showOutline, setShowOutline] = useState(false);
 
   useEffect(() => {
     const initializeProgram = async () => {
@@ -52,150 +53,127 @@ const StrategyProgram: React.FC = () => {
           setError('Error al inicializar el programa');
         }
       } else {
-        console.warn('No active programs found');
-        setError('No hay programas activos disponibles. Por favor, contacta al administrador.');
+        setError('No se encontró ningún programa activo');
       }
+      
       setLoading(false);
     };
 
     initializeProgram();
   }, [loadProgram]);
 
+  // Cargar contenido de la etapa actual cuando cambia
   useEffect(() => {
-    const loadStageContent = async () => {
-      if (!currentStage) return;
-
-      setLoading(true);
+    if (!currentStage) return;
+    
+    const fetchStageContent = async () => {
       try {
-        // Si ya tenemos el contenido de esta etapa en caché, usarlo
+        // Si ya tenemos el contenido en el estado, usarlo
         if (allStagesContent[currentStage.id]) {
           setStageContent(allStagesContent[currentStage.id]);
-        } else {
-          // Si no, cargarlo desde la base de datos
-          const { data, error } = await supabase
-            .from('stage_content')
-            .select('*')
-            .eq('stage_id', currentStage.id)
-            .order('order_num', { ascending: true });
-
-          if (error) throw error;
-
-          if (data) {
-            // Actualizar el estado local y la caché
-            setStageContent(data);
-            setAllStagesContent(prev => ({
-              ...prev,
-              [currentStage.id]: data
-            }));
-          }
-          
-          // Resetear el índice de contenido al cambiar de etapa
-          setCurrentContentIndex(0);
+          return;
         }
-        setError(null);
+        
+        // Si no, cargarlo desde la base de datos
+        const { data, error } = await supabase
+          .from('stage_content')
+          .select('*')
+          .eq('stage_id', currentStage.id)
+          .order('order_num');
+          
+        if (error) throw error;
+        
+        const contentData = data || [];
+        
+        // Actualizar el estado
+        setStageContent(contentData);
+        setAllStagesContent(prev => ({
+          ...prev,
+          [currentStage.id]: contentData
+        }));
       } catch (error) {
         console.error('Error loading stage content:', error);
-        setError('Failed to load stage content');
-      } finally {
-        setLoading(false);
+        setError('Error al cargar el contenido de la etapa');
       }
     };
-
-    loadStageContent();
+    
+    fetchStageContent();
   }, [currentStage, allStagesContent]);
 
-  // Cargar el contenido de todas las etapas para el ProgramOutline
+  // Cargar contenido de todas las etapas para el esquema
   useEffect(() => {
-    const loadAllStagesContent = async () => {
-      if (!currentProgram) return;
-      
+    if (!currentProgram || !currentProgram.stages || currentProgram.stages.length === 0) return;
+    
+    const fetchAllStagesContent = async () => {
       try {
         // Para cada etapa, cargar su contenido si aún no lo tenemos
         for (const stage of currentProgram.stages) {
-          if (!allStagesContent[stage.id]) {
-            const { data, error } = await supabase
-              .from('stage_content')
-              .select('*')
-              .eq('stage_id', stage.id)
-              .order('order_num', { ascending: true });
-
-            if (error) throw error;
-
-            if (data) {
-              setAllStagesContent(prev => ({
-                ...prev,
-                [stage.id]: data
-              }));
-            }
-          }
+          if (allStagesContent[stage.id]) continue;
+          
+          const { data, error } = await supabase
+            .from('stage_content')
+            .select('*')
+            .eq('stage_id', stage.id)
+            .order('order_num');
+            
+          if (error) throw error;
+          
+          setAllStagesContent(prev => ({
+            ...prev,
+            [stage.id]: data || []
+          }));
         }
       } catch (error) {
         console.error('Error loading all stages content:', error);
       }
     };
     
-    loadAllStagesContent();
+    fetchAllStagesContent();
   }, [currentProgram, allStagesContent]);
 
-  // Cargar el registro de contenidos vistos
+  // Actualizar el índice de la etapa actual cuando cambia
   useEffect(() => {
-    const loadViewedContents = async () => {
-      if (!user) return;
-      
-      try {
-        const { data, error } = await supabase
-          .from('viewed_contents')
-          .select('content_id')
-          .eq('user_id', user.id);
-
-        if (error) throw error;
-
-        if (data) {
-          const viewedMap: Record<string, boolean> = {};
-          data.forEach(item => {
-            viewedMap[item.content_id] = true;
-          });
-          setViewedContents(viewedMap);
-        }
-      } catch (error) {
-        console.error('Error loading viewed contents:', error);
-      }
-    };
+    if (!currentProgram || !currentStage) return;
     
-    loadViewedContents();
-  }, [user]);
-
-  // Actualizar el índice de la etapa actual cuando cambia currentStage
-  useEffect(() => {
-    if (currentStage && currentProgram) {
-      const index = currentProgram.stages.findIndex(stage => stage.id === currentStage.id);
-      if (index !== -1) {
-        setCurrentStageIndex(index);
-      }
+    const index = currentProgram.stages.findIndex(s => s.id === currentStage.id);
+    if (index !== -1) {
+      setCurrentStageIndex(index);
     }
   }, [currentStage, currentProgram]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        setShowOutline(false);
+      } else {
+        setShowOutline(true);
+      }
+    };
+
+    handleResize();
+
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-4 bg-red-50 rounded-lg flex items-center space-x-3">
-        <AlertCircle className="text-red-500" />
-        <p className="text-red-700">{error}</p>
+        <div className="animate-spin rounded-full h-24 w-24 sm:h-32 sm:w-32 border-b-2 border-blue-500" />
       </div>
     );
   }
 
   if (!currentProgram) {
     return (
-      <div className="p-4">
-        No program found. Please try refreshing the page.
+      <div className="p-6 bg-white rounded-lg shadow-sm">
+        <h2 className="text-xl font-semibold text-gray-800 mb-4">Programa no disponible</h2>
+        <p className="text-gray-600">
+          {error || "No se encontró ningún programa activo. Por favor, intenta recargar la página o contacta al administrador."}
+        </p>
       </div>
     );
   }
@@ -207,15 +185,36 @@ const StrategyProgram: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Progress Overview */}
-      <StrategyProgress 
-        stages={currentProgram.stages}
-        currentPhase={currentPhase}
-      />
+      {/* Botón de menú móvil para mostrar/ocultar el esquema */}
+      <div className="md:hidden px-4 py-2 bg-white border-b border-gray-200 flex items-center justify-between">
+        <button 
+          onClick={() => setShowOutline(!showOutline)}
+          className="flex items-center text-sm font-medium text-blue-600"
+        >
+          {showOutline ? (
+            <>
+              <X className="h-4 w-4 mr-1" />
+              <span>Cerrar esquema</span>
+            </>
+          ) : (
+            <>
+              <Menu className="h-4 w-4 mr-1" />
+              <span>Ver esquema del programa</span>
+            </>
+          )}
+        </button>
+        
+        {currentStage && (
+          <span className="text-sm font-medium text-gray-700 truncate max-w-[60%]">
+            {currentStage.name}
+          </span>
+        )}
+      </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main Content Area */}
-        <div className="flex-1 p-4 overflow-y-auto">
+      {/* Contenedor principal con flexbox */}
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Main Content Area - Siempre visible */}
+        <div className="flex-1 p-2 sm:p-4 overflow-y-auto z-10">
           {currentStage && stageContent.length > 0 ? (
             <StageContent 
               content={stageContent}
@@ -251,8 +250,8 @@ const StrategyProgram: React.FC = () => {
                     // Si ya existe, no hacer nada
                     if (existingData) return;
                     
-                    // Si no existe, insertar nuevo registro
-                    const { error } = await supabase
+                    // Si no existe, crear un nuevo registro
+                    const { error: insertError } = await supabase
                       .from('viewed_contents')
                       .insert({
                         user_id: user.id,
@@ -260,9 +259,11 @@ const StrategyProgram: React.FC = () => {
                         viewed_at: new Date().toISOString()
                       });
                     
-                    if (error) throw error;
+                    if (insertError) {
+                      console.error('Error saving viewed content:', insertError);
+                    }
                   } catch (error) {
-                    console.error('Error saving viewed content:', error);
+                    console.error('Error in viewed content process:', error);
                   }
                 })();
               }}
@@ -270,124 +271,91 @@ const StrategyProgram: React.FC = () => {
               hasNextStage={currentStageIndex < currentProgram.stages.length - 1}
               hasPreviousStage={currentStageIndex > 0}
               onNavigateToNextStage={() => {
-                if (currentStageIndex < currentProgram.stages.length - 1) {
-                  // Navegar a la siguiente etapa
-                  const nextStageIndex = currentStageIndex + 1;
+                const nextStageIndex = currentStageIndex + 1;
+                if (nextStageIndex < currentProgram.stages.length) {
                   startStage(currentProgram.stages[nextStageIndex].id);
-                  setCurrentContentIndex(0); // Empezar desde el primer contenido de la nueva etapa
+                  setCurrentContentIndex(0);
                 }
               }}
               onNavigateToPreviousStage={() => {
-                if (currentStageIndex > 0) {
-                  // Navegar a la etapa anterior
-                  const prevStageIndex = currentStageIndex - 1;
+                const prevStageIndex = currentStageIndex - 1;
+                if (prevStageIndex >= 0) {
                   startStage(currentProgram.stages[prevStageIndex].id);
-                  
-                  // Ir al último contenido de la etapa anterior
-                  const prevStageId = currentProgram.stages[prevStageIndex].id;
-                  const prevStageContent = allStagesContent[prevStageId] || [];
-                  setCurrentContentIndex(prevStageContent.length - 1);
+                  setCurrentContentIndex(0);
                 }
               }}
             />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full">
-              <div className="bg-white rounded-lg shadow-sm p-8 max-w-lg w-full text-center">
-                {loading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                    <p className="text-gray-600">Cargando contenido...</p>
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-800 mb-2">No hay contenido disponible</h3>
-                    <p className="text-gray-600 mb-6">
-                      No se encontró contenido para la etapa actual. Por favor, selecciona otra etapa o contacta al administrador.
-                    </p>
-                  </>
-                )}
+          ) : error ? (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start">
+              <AlertCircle className="text-red-500 h-5 w-5 mr-2 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-medium text-red-800">Error</h3>
+                <p className="text-sm text-red-700 mt-1">{error}</p>
               </div>
+            </div>
+          ) : loading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <p className="text-gray-500 text-center">Selecciona una etapa del programa para comenzar.</p>
             </div>
           )}
         </div>
-        
-        {/* Program Outline - fijo al extremo derecho con altura ajustada a la navegación inferior */}
-        <div style={{ width: '25%', minWidth: '250px', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
-          <ProgramOutline 
-            program={currentProgram} 
-            currentStage={currentStage} 
-            currentContentId={stageContent[currentContentIndex]?.id}
-            viewedContents={viewedContents}
-            onSelectStage={(stageId) => {
-              // Implementar la navegación entre etapas
-              const stage = currentProgram.stages.find(s => s.id === stageId);
-              if (stage) {
-                // Actualizar el estado en el store
+
+        {/* Program Outline - Adaptado para móvil y desktop */}
+        <div 
+          className={`bg-white border-l border-gray-200 overflow-hidden
+                     md:w-[315px] md:flex md:flex-col md:flex-shrink-0 md:h-full md:static md:z-0
+                     transition-all duration-300 ease-in-out
+                     ${showOutline 
+                       ? 'fixed inset-y-0 right-0 w-3/4 max-w-xs z-20' 
+                       : 'fixed -right-full w-0 md:static md:w-[315px] md:right-0'}`}
+        >
+          {/* Barra de progreso compacta en la parte superior del esquema */}
+          {currentProgram && (
+            <StrategyProgress 
+              stages={currentProgram.stages}
+              currentPhase={currentPhase}
+              isVertical={true}
+            />
+          )}
+          
+          <div className="md:hidden flex items-center justify-between p-4 border-b border-gray-200">
+            <h3 className="font-medium text-gray-900">Esquema del Programa</h3>
+            <button onClick={() => setShowOutline(false)}>
+              <X className="h-5 w-5 text-gray-500" />
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto">
+            <ProgramOutline 
+              stages={currentProgram.stages}
+              currentStageId={currentStage?.id}
+              onSelectStage={(stageId) => {
                 startStage(stageId);
-              }
-            }}
-            onSelectContent={(stageId, contentId) => {
-              // Implementar la navegación directa a un contenido específico
-              if (stageId === currentStage?.id) {
-                // Si es la etapa actual, solo cambiar el índice
-                const index = stageContent.findIndex(c => c.id === contentId);
-                if (index !== -1) {
-                  setCurrentContentIndex(index);
-                  
-                  // Marcar como visto
-                  setViewedContents(prev => ({
-                    ...prev,
-                    [contentId]: true
-                  }));
-                  
-                  // Guardar en la base de datos
-                  if (user) {
-                    try {
-                      // Usar una función async inmediatamente invocada
-                      (async () => {
-                        try {
-                          // Primero verificamos si ya existe el registro
-                          const { data: existingView } = await supabase
-                            .from('viewed_contents')
-                            .select('*')
-                            .eq('content_id', contentId)
-                            .eq('user_id', user.id)
-                            .maybeSingle();
-                          
-                          if (existingView) {
-                            // Si existe, actualizamos solo la fecha
-                            await supabase
-                              .from('viewed_contents')
-                              .update({ viewed_at: new Date().toISOString() })
-                              .eq('content_id', contentId)
-                              .eq('user_id', user.id);
-                          } else {
-                            // Si no existe, lo insertamos
-                            await supabase
-                              .from('viewed_contents')
-                              .insert({ 
-                                content_id: contentId, 
-                                user_id: user.id, 
-                                viewed_at: new Date().toISOString() 
-                              });
-                          }
-                        } catch (innerErr) {
-                          console.error('Error al procesar el contenido visto:', innerErr);
-                        }
-                      })();
-                    } catch (err) {
-                      console.error('Error de conexión al guardar contenido visto:', err);
-                    }
-                  }
+                setCurrentContentIndex(0);
+                if (window.innerWidth < 768) {
+                  setShowOutline(false);
                 }
-              }
-            }}
-          />
+              }}
+              viewedContents={viewedContents}
+              allStagesContent={allStagesContent}
+            />
+          </div>
         </div>
+
+        {/* Overlay para móvil cuando el outline está abierto - ahora detrás del contenido principal */}
+        {showOutline && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-10 md:hidden" 
+            onClick={() => setShowOutline(false)}
+          />
+        )}
       </div>
     </div>
   );
-};
+}
 
 export default StrategyProgram;
