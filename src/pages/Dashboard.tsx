@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
+import { useProgramStore } from '../store/programStore';
 import { supabase } from '../lib/supabase';
-import { Menu, X, User, LogOut, ChevronRight, Building2 } from 'lucide-react';
+import { Menu, X, User, LogOut, ChevronRight, Building2, BookOpen } from 'lucide-react';
 
 const StrategyProgram = React.lazy(() => import('../components/programs/strategy/StrategyProgram'));
 const CompanySetup = React.lazy(() => import('../components/CompanySetup'));
@@ -11,6 +12,7 @@ const AdminDashboard = React.lazy(() => import('./admin/AdminDashboard'));
 
 export default function Dashboard() {
   const { signOut, user, isAdmin } = useAuthStore();
+  const { userPrograms, loadUserPrograms } = useProgramStore();
   const [hasCompany, setHasCompany] = useState<boolean | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -56,6 +58,13 @@ export default function Dashboard() {
 
     checkCompany();
   }, [user]);
+
+  // Cargar los programas asignados al usuario
+  useEffect(() => {
+    if (user) {
+      loadUserPrograms(user.id);
+    }
+  }, [user, loadUserPrograms]);
 
   // Cerrar el sidebar cuando cambia la ruta en dispositivos móviles
   useEffect(() => {
@@ -124,21 +133,34 @@ export default function Dashboard() {
                   )}
                 </Link>
               </li>
-              <li>
-                <Link
-                  to="/dashboard/program"
-                  className={`flex items-center px-4 py-3 text-sm ${
-                    location.pathname.includes('/dashboard/program') 
-                      ? 'bg-blue-50 text-blue-600 border-r-4 border-blue-600' 
-                      : 'text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  <span className="ml-3">Programa Estratégico</span>
-                  {location.pathname.includes('/dashboard/program') && (
-                    <ChevronRight className="ml-auto h-5 w-5 text-blue-600" />
-                  )}
-                </Link>
-              </li>
+              
+              {/* Programas asignados al usuario */}
+              {userPrograms.length > 0 && (
+                <>
+                  <li className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Mis Programas
+                  </li>
+                  {userPrograms.map(program => (
+                    <li key={program.program_id}>
+                      <Link
+                        to={`/dashboard/program/${program.program_id}`}
+                        className={`flex items-center px-4 py-3 text-sm ${
+                          location.pathname.includes(`/dashboard/program/${program.program_id}`) 
+                            ? 'bg-blue-50 text-blue-600 border-r-4 border-blue-600' 
+                            : 'text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <BookOpen className="h-4 w-4 text-gray-500 mr-2" />
+                        <span className="ml-1 truncate">{program.program_name}</span>
+                        {location.pathname.includes(`/dashboard/program/${program.program_id}`) && (
+                          <ChevronRight className="ml-auto h-5 w-5 text-blue-600" />
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </>
+              )}
+              
               <li>
                 <Link
                   to="/dashboard/company-profile"
@@ -245,7 +267,17 @@ export default function Dashboard() {
                 element={<CompanyProfile />} 
               />
               <Route 
-                path="/program/*" 
+                path="/program" 
+                element={
+                  !hasCompany ? (
+                    <Navigate to="/dashboard/profile" />
+                  ) : (
+                    <StrategyProgram />
+                  )
+                } 
+              />
+              <Route 
+                path="/program/:programId" 
                 element={
                   !hasCompany ? (
                     <Navigate to="/dashboard/profile" />

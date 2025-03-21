@@ -143,7 +143,9 @@ const ContentManager: React.FC = () => {
       
       const newStageData = {
         ...stage,
-        program_id: selectedProgram
+        program_id: selectedProgram,
+        required_content: '',  // Valor por defecto para required_content
+        prompt_template: ''    // Valor por defecto para prompt_template
       };
       
       const createdStage = await contentManagerService.createStage(newStageData);

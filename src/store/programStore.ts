@@ -23,12 +23,21 @@ type DBStage = {
   activities?: DBActivity[];
 };
 
+// Definimos un tipo para los programas asignados a un usuario
+type UserProgram = {
+  program_id: string;
+  program_name: string;
+  status: string;
+  enrolled_at: string;
+};
+
 interface ProgramState {
   currentProgram: Program | null;
   currentStage: Stage | null;
   currentActivity: DBActivity | null;
   company: Company | null;
   diagnostic: Diagnostic | null;
+  userPrograms: UserProgram[];
   loading: boolean;
   error: string | null;
   
@@ -39,6 +48,7 @@ interface ProgramState {
   startActivity: (activityId: string) => Promise<void>;
   completeActivity: (activityId: string, response: any) => Promise<void>;
   loadCompanyAndDiagnostic: (userId: string) => Promise<void>;
+  loadUserPrograms: (userId: string) => Promise<void>;
 }
 
 export const useProgramStore = create<ProgramState>((set, get) => ({
@@ -47,6 +57,7 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
   currentActivity: null,
   company: null,
   diagnostic: null,
+  userPrograms: [],
   loading: false,
   error: null,
 
@@ -370,5 +381,31 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
     } finally {
       set({ loading: false });
     }
-  }
+  },
+
+  // Cargar los programas asignados a un usuario
+  loadUserPrograms: async (userId: string) => {
+    try {
+      set({ loading: true, error: null });
+      
+      const { data, error } = await supabase
+        .rpc('get_user_programs', { p_user_id: userId });
+      
+      if (error) throw error;
+      
+      set({ 
+        userPrograms: data || [],
+        loading: false 
+      });
+      
+      return data;
+    } catch (error) {
+      console.error('Error al cargar los programas del usuario:', error);
+      set({ 
+        error: 'Error al cargar los programas. Por favor, inténtalo de nuevo.',
+        loading: false 
+      });
+      return [];
+    }
+  },
 }));

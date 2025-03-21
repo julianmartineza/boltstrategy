@@ -5,6 +5,7 @@ import ProgramsManager from './ProgramsManager';
 import ContentManager from './ContentManager';
 import { Layers, FileText, Settings } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import UserManager from '../../components/admin/UserManager';
 
 const AdminDashboard: React.FC = () => {
   const { isAdmin, user } = useAuthStore();
@@ -20,6 +21,7 @@ const AdminDashboard: React.FC = () => {
   };
   
   const [currentTab, setCurrentTab] = useState<'programs' | 'content' | 'settings'>(getTabFromUrl());
+  const [settingsTab, setSettingsTab] = useState<'users' | 'system'>('users');
 
   // Redirigir si el usuario no es administrador
   if (!isAdmin) {
@@ -40,6 +42,11 @@ const AdminDashboard: React.FC = () => {
     navigate(`/dashboard/admin/${tab}`);
   };
 
+  // Cambiar de sección en la pestaña de configuración
+  const handleSettingsTabChange = (tab: 'users' | 'system') => {
+    setSettingsTab(tab);
+  };
+
   // Renderizar los componentes basados en la pestaña seleccionada
   const renderContent = () => {
     switch (currentTab) {
@@ -51,11 +58,58 @@ const AdminDashboard: React.FC = () => {
         return (
           <div className="p-6 bg-white rounded-lg shadow-md">
             <h2 className="text-xl font-semibold mb-4">Configuración Administrativa</h2>
-            <p className="text-gray-600 mb-4">Esta sección está en desarrollo.</p>
-            <div className="p-4 bg-blue-50 rounded border border-blue-200">
-              <p className="text-sm text-blue-700">Usuario actual: {user?.email}</p>
-              <p className="text-sm text-blue-700 mt-1">Rol: {isAdmin ? 'Administrador' : 'Usuario'}</p>
+            
+            {/* Tabs para diferentes secciones de configuración */}
+            <div className="border-b border-gray-200 mb-6">
+              <ul className="flex flex-wrap -mb-px text-sm font-medium text-center">
+                <li className="mr-2">
+                  <button 
+                    className={cn(
+                      "inline-block p-4 border-b-2 rounded-t-lg",
+                      settingsTab === 'users' 
+                        ? "border-blue-500 text-blue-600" 
+                        : "border-transparent hover:border-gray-300 hover:text-gray-600 text-gray-500"
+                    )}
+                    onClick={() => handleSettingsTabChange('users')}
+                  >
+                    Gestión de Usuarios
+                  </button>
+                </li>
+                <li className="mr-2">
+                  <button 
+                    className={cn(
+                      "inline-block p-4 border-b-2 rounded-t-lg",
+                      settingsTab === 'system' 
+                        ? "border-blue-500 text-blue-600" 
+                        : "border-transparent hover:border-gray-300 hover:text-gray-600 text-gray-500"
+                    )}
+                    onClick={() => handleSettingsTabChange('system')}
+                  >
+                    Configuración del Sistema
+                  </button>
+                </li>
+              </ul>
             </div>
+            
+            {/* Contenido de la sección de usuarios */}
+            {settingsTab === 'users' && (
+              <div className="space-y-6">
+                <div className="p-4 bg-blue-50 rounded border border-blue-200 mb-6">
+                  <p className="text-sm text-blue-700">Usuario actual: {user?.email}</p>
+                  <p className="text-sm text-blue-700 mt-1">Rol: {isAdmin ? 'Administrador' : 'Usuario'}</p>
+                </div>
+                
+                <UserManager />
+              </div>
+            )}
+            
+            {/* Contenido de la sección de sistema */}
+            {settingsTab === 'system' && (
+              <div>
+                <h3 className="text-lg font-medium mb-3">Configuración del Sistema</h3>
+                <p className="text-gray-600 mb-4">Aquí podrás configurar los parámetros generales del sistema.</p>
+              </div>
+            )}
           </div>
         );
       default:

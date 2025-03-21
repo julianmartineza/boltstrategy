@@ -7,6 +7,7 @@ import { supabase } from '../../../lib/supabase';
 import type { Database } from '../../../lib/database.types';
 import { AlertCircle, Menu, X } from 'lucide-react';
 import { useAuthStore } from '../../../store/authStore';
+import { useParams } from 'react-router-dom';
 
 // Tipo para los datos de contenido de etapa que vienen de la base de datos
 type DBStageContent = Database['public']['Tables']['stage_content']['Row'];
@@ -19,6 +20,7 @@ const StrategyProgram: React.FC = () => {
     startStage
   } = useProgramStore();
   const { user } = useAuthStore();
+  const { programId } = useParams<{ programId?: string }>();
 
   const [stageContent, setStageContent] = useState<DBStageContent[]>([]);
   const [allStagesContent, setAllStagesContent] = useState<Record<string, DBStageContent[]>>({});
@@ -31,36 +33,51 @@ const StrategyProgram: React.FC = () => {
 
   useEffect(() => {
     const initializeProgram = async () => {
-      // Obtener el programa activo
-      const { data: programs, error } = await supabase
-        .from('programs')
-        .select('*')
-        .eq('status', 'active');
+      try {
+        setLoading(true);
+        let targetProgramId = programId;
+        
+        // Si no hay un ID de programa en la URL, obtener el programa activo por defecto
+        if (!targetProgramId) {
+          const { data: programs, error } = await supabase
+            .from('programs')
+            .select('*')
+            .eq('status', 'active')
+            .limit(1);
 
-      if (error) {
-        console.error('Error loading program:', error);
-        setError('Error al cargar el programa: ' + error.message);
-        setLoading(false);
-        return;
-      }
+          if (error) {
+            console.error('Error loading default program:', error);
+            setError('Error al cargar el programa: ' + error.message);
+            setLoading(false);
+            return;
+          }
 
-      if (programs && programs.length > 0) {
-        try {
-          await loadProgram(programs[0].id);
-          setError(null);
-        } catch (error) {
-          console.error('Error initializing program:', error);
-          setError('Error al inicializar el programa');
+          if (programs && programs.length > 0) {
+            targetProgramId = programs[0].id;
+          } else {
+            setError('No hay programas activos disponibles.');
+            setLoading(false);
+            return;
+          }
         }
-      } else {
-        setError('No se encontró ningún programa activo');
+        
+        // Cargar el programa específico
+        if (targetProgramId) {
+          await loadProgram(targetProgramId);
+          setError(null);
+        } else {
+          setError('No se pudo determinar el programa a cargar.');
+        }
+      } catch (error) {
+        console.error('Error initializing program:', error);
+        setError('Error al inicializar el programa.');
+      } finally {
+        setLoading(false);
       }
-      
-      setLoading(false);
     };
 
     initializeProgram();
-  }, [loadProgram]);
+  }, [programId, loadProgram]);
 
   // Cargar contenido de la etapa actual cuando cambia
   useEffect(() => {
@@ -140,24 +157,6 @@ const StrategyProgram: React.FC = () => {
       setCurrentStageIndex(index);
     }
   }, [currentStage, currentProgram]);
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 768) {
-        setShowOutline(false);
-      } else {
-        setShowOutline(true);
-      }
-    };
-
-    handleResize();
-
-    window.addEventListener('resize', handleResize);
-    
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
-  }, []);
 
   if (loading) {
     return (
@@ -292,10 +291,6 @@ const StrategyProgram: React.FC = () => {
                 <h3 className="text-sm font-medium text-red-800">Error</h3>
                 <p className="text-sm text-red-700 mt-1">{error}</p>
               </div>
-            </div>
-          ) : loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
             </div>
           ) : (
             <div className="bg-white rounded-lg shadow-sm p-6">
