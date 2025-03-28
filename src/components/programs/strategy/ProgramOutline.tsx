@@ -136,7 +136,22 @@ export default function ProgramOutline({
                                   className={`w-full flex items-center p-2 rounded-md text-left text-sm ${
                                     isViewed ? 'text-gray-500' : 'text-gray-700'
                                   } hover:bg-gray-100`}
-                                  onClick={() => handleSelectStage(stage.id)}
+                                  onClick={() => {
+                                    handleSelectStage(stage.id);
+                                    // Encontrar el índice del contenido dentro de la etapa
+                                    const contentIndex = stageContents.findIndex(c => c.id === content.id);
+                                    if (contentIndex !== -1 && onSelectStage) {
+                                      // Usar setTimeout para asegurar que primero se cambie la etapa
+                                      setTimeout(() => {
+                                        // Emitir un evento personalizado para indicar qué contenido seleccionar
+                                        const event = new CustomEvent('select-content', { 
+                                          detail: { stageId: stage.id, contentIndex } 
+                                        });
+                                        window.dispatchEvent(event);
+                                      }, 50);
+                                    }
+                                  }}
+                                  data-component-name="ProgramOutline"
                                 >
                                   {content.content_type === 'video' ? (
                                     <Video className="h-4 w-4 mr-2 flex-shrink-0" />

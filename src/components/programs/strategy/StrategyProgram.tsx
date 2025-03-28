@@ -158,6 +158,27 @@ const StrategyProgram: React.FC = () => {
     }
   }, [currentStage, currentProgram]);
 
+  // Escuchar el evento personalizado para seleccionar contenido específico
+  useEffect(() => {
+    const handleSelectContent = (event: CustomEvent<{stageId: string, contentIndex: number}>) => {
+      const { stageId, contentIndex } = event.detail;
+      
+      // Verificar que estamos en la etapa correcta
+      if (currentStage && currentStage.id === stageId) {
+        // Establecer el índice de contenido
+        setCurrentContentIndex(contentIndex);
+      }
+    };
+
+    // Añadir el event listener
+    window.addEventListener('select-content', handleSelectContent as EventListener);
+    
+    // Limpiar el event listener al desmontar
+    return () => {
+      window.removeEventListener('select-content', handleSelectContent as EventListener);
+    };
+  }, [currentStage]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -272,15 +293,38 @@ const StrategyProgram: React.FC = () => {
               onNavigateToNextStage={() => {
                 const nextStageIndex = currentStageIndex + 1;
                 if (nextStageIndex < currentProgram.stages.length) {
-                  startStage(currentProgram.stages[nextStageIndex].id);
+                  // Guardar el ID de la siguiente etapa
+                  const nextStageId = currentProgram.stages[nextStageIndex].id;
+                  
+                  // Actualizar la etapa actual
+                  startStage(nextStageId);
+                  
+                  // Resetear el índice de contenido
                   setCurrentContentIndex(0);
+                  
+                  // Registrar en consola para depuración
+                  console.log(`Navegando a la siguiente etapa: ${nextStageId}, índice: ${nextStageIndex}`);
                 }
               }}
               onNavigateToPreviousStage={() => {
                 const prevStageIndex = currentStageIndex - 1;
                 if (prevStageIndex >= 0) {
-                  startStage(currentProgram.stages[prevStageIndex].id);
-                  setCurrentContentIndex(0);
+                  // Guardar el ID de la etapa anterior
+                  const prevStageId = currentProgram.stages[prevStageIndex].id;
+                  
+                  // Actualizar la etapa actual
+                  startStage(prevStageId);
+                  
+                  // Si hay contenido en la etapa anterior, seleccionar el último
+                  const prevStageContent = allStagesContent[prevStageId] || [];
+                  if (prevStageContent.length > 0) {
+                    setCurrentContentIndex(prevStageContent.length - 1);
+                  } else {
+                    setCurrentContentIndex(0);
+                  }
+                  
+                  // Registrar en consola para depuración
+                  console.log(`Navegando a la etapa anterior: ${prevStageId}, índice: ${prevStageIndex}`);
                 }
               }}
             />

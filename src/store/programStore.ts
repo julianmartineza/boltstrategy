@@ -170,56 +170,18 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
   },
 
   startStage: async (stageId: string) => {
-    set({ loading: true, error: null });
-    try {
-      const { data, error } = await supabase
-        .from('strategy_stages')
-        .update({ status: 'active' })
-        .eq('id', stageId)
-        .select()
-        .single();
-
-      if (error) throw error;
-      if (!data) throw new Error('Stage not found');
-
-      // Verificamos si hay error al obtener la etapa
-      const { error: activitiesError } = await supabase
-        .from('activities')
-        .select('*')
-        .eq('stage_id', stageId)
-        .order('id', { ascending: true });
-
-      if (activitiesError) throw activitiesError;
-
-      // Update the current program's stages
-      const currentProgram = get().currentProgram;
-      if (currentProgram) {
-        const updatedStages = currentProgram.stages.map(s => 
-          s.id === stageId ? { ...s, status: 'active' as const } : s
-        );
-        
-        // Crear una versión tipada de la etapa actual
-        const typedStage: Stage = {
-          id: data.id,
-          name: data.name,
-          order_num: data.order_num,
-          required_content: data.required_content,
-          prompt_template: data.prompt_template,
-          status: 'active',
-          content: []
-        };
-        
-        set({ 
-          currentProgram: { ...currentProgram, stages: updatedStages },
-          currentStage: typedStage,
-          error: null
-        });
-      }
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Failed to start stage' });
-    } finally {
-      set({ loading: false });
+    // Verificar si la etapa existe en el programa actual
+    const currentProgram = get().currentProgram;
+    if (!currentProgram) return;
+    
+    const stageExists = currentProgram.stages.some(stage => stage.id === stageId);
+    if (!stageExists) {
+      console.error(`La etapa con ID ${stageId} no existe en el programa actual`);
+      return;
     }
+    
+    // Actualizar el estado con la etapa seleccionada
+    set({ currentStage: currentProgram.stages.find(stage => stage.id === stageId) });
   },
 
   startActivity: async (activityId: string) => {
