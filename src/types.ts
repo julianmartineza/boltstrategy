@@ -6,7 +6,9 @@ export interface Message {
   sender: 'user' | 'ai';
   timestamp: Date;
   metadata?: {
-    type?: 'error' | 'system';
+    type?: 'error' | 'system' | 'guidance' | 'response' | 'summary';
+    stage?: string;
+    activity?: string;
     [key: string]: any;
   };
 }
@@ -60,4 +62,24 @@ export interface Company {
 export interface CommandResult {
   type: 'normal_message' | 'save_insight' | 'clear_chat';
   content?: string;
+}
+
+// Tipos para componentes de estrategia
+export interface Activity {
+  id: string;
+  name: string;
+  description?: string;
+  order_num?: number;
+  stage_id: string;
+  content_type?: string;
+  [key: string]: any;
+}
+
+export interface Stage {
+  id: string;
+  name: string;
+  description?: string;
+  order_num?: number;
+  program_id: string;
+  [key: string]: any;
 }

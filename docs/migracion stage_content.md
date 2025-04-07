@@ -8,6 +8,7 @@ Migraremos hacia una arquitectura con:
 
 Tablas especializadas para cada tipo de contenido
 Tabla índice que unifique el registro de todo el contenido
+La tabla stage_content debe mantenerse únicamente para la actividad de chat con IA, ya que es la más compleja y requiere un manejo especializado, por tanto, no se migrará y esta tabla quedará exclusiva para las actividades de chat.
 
 2.1. Tabla Índice Propuesta
 
@@ -51,17 +52,6 @@ CREATE TABLE video_contents (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Para actividades con chat IA
-CREATE TABLE chat_activities (
-    id SERIAL PRIMARY KEY,
-    title VARCHAR(255),
-    instructions TEXT,
-    prompt_template TEXT,
-    ai_model VARCHAR(50),
-    context_strategy VARCHAR(50), -- cómo usar el contexto
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
 -- Para sesiones de asesoría
 CREATE TABLE advisory_sessions (
@@ -93,22 +83,9 @@ CREATE TABLE workshops (
 3. Plan de Migración Paso a Paso
 3.1. Preparación (Sin afectar el sistema actual)
 
-Crear tablas nuevas:
+Creación y migración de tablas nuevas:
 
-Ejecutar scripts SQL para crear content_registry y todas las tablas especializadas
-Añadir índices necesarios para optimizar consultas
-
-
-Desarrollar servicios de abstracción:
-
-Crear endpoints/servicios que unifiquen la consulta a las diferentes tablas
-Integrar estos servicios en aplicación sin activarlos
-
-
-Preparar scripts de migración:
-
-Desarrollar scripts que lean stage_content y distribuyan datos a las tablas correspondientes
-Incluir validación de datos y manejo de casos especiales
+Las tablas neuvas ya se crearon manualmente y ya se migraron los contenidos.
 
 
 

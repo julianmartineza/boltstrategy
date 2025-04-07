@@ -18,7 +18,7 @@ const ContentList: React.FC<ContentListProps> = ({
   loading 
 }) => {
   const stageContents = contents.filter(content => content.stage_id === stageId)
-    .sort((a, b) => a.order_num - b.order_num);
+    .sort((a, b) => (a.order_num || 0) - (b.order_num || 0));
 
   if (stageContents.length === 0) {
     return (

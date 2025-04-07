@@ -140,63 +140,12 @@ export function useChatMessages(userId?: string, activityId?: string) {
     return newMessage;
   }, []);
 
-  // Guardar interacción en la base de datos
-  const saveInteraction = useCallback(async (userMessage: string, aiResponse: string, messageId?: string) => {
-    if (!userId || !activityId) return;
-    
-    try {
-      // Verificar si ya existe una interacción similar en la base de datos
-      const { data: existingInteractions, error: checkError } = await supabase
-        .from('activity_interactions')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('activity_id', activityId)
-        .eq('user_message', userMessage)
-        .limit(1);
-      
-      if (checkError) {
-        console.error('Error verificando interacciones existentes:', checkError);
-      }
-      
-      // Si ya existe una interacción similar, no guardar duplicado
-      if (existingInteractions && existingInteractions.length > 0) {
-        console.log('Interacción similar ya existe, evitando duplicado:', userMessage.substring(0, 20) + '...');
-        return;
-      }
-      
-      console.log('Guardando nueva interacción para actividad:', activityId);
-      
-      // Usar messageId como identificador único si está disponible
-      const timestamp = messageId || Date.now().toString();
-      
-      // Guardar la nueva interacción
-      const { error } = await supabase
-        .from('activity_interactions')
-        .insert({
-          user_id: userId,
-          activity_id: activityId,
-          user_message: userMessage,
-          ai_response: aiResponse,
-          timestamp: new Date(parseInt(timestamp)).toISOString()
-        });
-        
-      if (error) {
-        console.error('Error saving interaction:', error);
-      } else {
-        setInteractionCount(prev => prev + 1);
-      }
-    } catch (error) {
-      console.error('Error in saveInteraction:', error);
-    }
-  }, [userId, activityId]);
-
   return {
     messages,
     interactionCount,
     loadPreviousMessages,
     addUserMessage,
     addAIMessage,
-    saveInteraction: (userMessage: string, aiResponse: string, messageId?: string) => saveInteraction(userMessage, aiResponse, messageId),
     clearMessages: () => {
       setMessages([]);
       clearShortTermMemory();

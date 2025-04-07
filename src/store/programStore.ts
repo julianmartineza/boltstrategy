@@ -250,13 +250,15 @@ export const useProgramStore = create<ProgramState>((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Save activity response
+      // Save activity response en activity_interactions en lugar de activity_responses
       const { error: responseError } = await supabase
-        .from('activity_responses')
+        .from('activity_interactions')
         .insert([{
           activity_id: activityId,
-          content: response,
-          user_id: user.id
+          user_id: user.id,
+          user_message: 'Actividad completada',
+          ai_response: JSON.stringify(response),
+          metadata: { type: 'activity_completion' }
         }]);
 
       if (responseError) throw responseError;

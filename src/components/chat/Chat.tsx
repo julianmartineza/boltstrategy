@@ -60,7 +60,6 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
     loadPreviousMessages, 
     addUserMessage, 
     addAIMessage, 
-    saveInteraction,
     clearMessages,
     messagesLoaded
   } = useChatMessages(user?.id, activityContent?.id);
@@ -131,7 +130,7 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
     
     try {
       // Añadir mensaje del usuario a la UI
-      const userMsg = addUserMessage(userMessage);
+      addUserMessage(userMessage);
       setInput('');
       
       // Generar respuesta del bot
@@ -144,14 +143,6 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
       
       // Añadir respuesta del bot a la UI
       addAIMessage(botResponse);
-      
-      // Guardar la interacción en la base de datos
-      // Usamos un ID único para evitar duplicados
-      const messageId = userMsg.id.replace('user-', '');
-      await saveInteraction(userMessage, botResponse, messageId);
-      
-      // Nota: La limpieza de interacciones antiguas ahora se maneja directamente en chatService.generateResponse
-      // y no es necesario llamarla aquí para evitar duplicación de resúmenes
       
       // Mostrar botón de guardar insight
       showInsightButtonAfterResponse();
@@ -191,7 +182,7 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
     try {
       // Añadir mensaje predeterminado del usuario - Mensaje más simple
       const defaultMessage = "Hola, ¿puedes ayudarme con esta actividad?";
-      const userMsg = addUserMessage(defaultMessage);
+      addUserMessage(defaultMessage);
       
       // Asegurarnos de que el objeto activityContent tenga los campos necesarios
       const enrichedActivityContent = {
@@ -228,10 +219,6 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
       
       // Añadir respuesta del bot a la UI
       addAIMessage(botResponse);
-      
-      // Guardar la interacción en la base de datos con un ID único
-      const messageId = userMsg.id.replace('user-', '');
-      await saveInteraction(defaultMessage, botResponse, messageId);
       
       // Mostrar botón de insight después de la respuesta
       showInsightButtonAfterResponse();
