@@ -6,7 +6,7 @@ interface ContentListProps {
   contents: StageContent[];
   stageId: string;
   onEdit: (content: StageContent) => void;
-  onDelete: (contentId: string) => void;
+  onDelete: (contentId: string, stageId: string) => void;
   loading: boolean;
 }
 
@@ -78,7 +78,7 @@ const ContentList: React.FC<ContentListProps> = ({
                     <Edit className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => onDelete(content.id)}
+                    onClick={() => onDelete(content.id, stageId)}
                     className="text-red-600 hover:text-red-900"
                     disabled={loading}
                   >

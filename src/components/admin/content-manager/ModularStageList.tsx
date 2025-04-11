@@ -1,34 +1,32 @@
 import React from 'react';
-import { Edit, Trash2, ChevronDown, ChevronUp, PlusCircle } from 'lucide-react';
-import { Stage } from './types';
-import ContentList from './ContentList';
-import { StageContent } from './types';
+import { Edit, Trash2, ChevronDown, ChevronUp, PlusCircle, Loader2 } from 'lucide-react';
+import { Stage, StageContent } from './types';
+import { UnifiedContent } from '../../../services/contentRegistryService';
+import ModularContentList from './ModularContentList';
 
-interface StageListProps {
+interface ModularStageListProps {
   stages: Stage[];
-  contents: StageContent[];
+  contents: (StageContent | UnifiedContent)[];
   expandedStages: Record<string, boolean>;
-  onToggleStage: (stageId: string) => void;
-  onEditStage: (stage: Stage) => void;
-  onDeleteStage: (stageId: string) => void;
+  onToggleExpand: (stageId: string) => void;
+  onEdit: (stage: Stage) => void;
+  onDelete: (stageId: string) => void;
   onAddContent: (stageId: string) => void;
-  onEditContent: (content: StageContent) => void;
-  onDeleteContent: (contentId: string, stageId: string) => void;
-  loading: boolean;
+  onEditContent: (content: StageContent | UnifiedContent) => void;
+  onDeleteContent: (contentId: string) => void;
   contentLoading: boolean;
 }
 
-const StageList: React.FC<StageListProps> = ({
+const ModularStageList: React.FC<ModularStageListProps> = ({
   stages,
   contents,
   expandedStages,
-  onToggleStage,
-  onEditStage,
-  onDeleteStage,
+  onToggleExpand,
+  onEdit,
+  onDelete,
   onAddContent,
   onEditContent,
   onDeleteContent,
-  loading,
   contentLoading
 }) => {
   if (stages.length === 0) {
@@ -39,6 +37,18 @@ const StageList: React.FC<StageListProps> = ({
     );
   }
 
+  // Función para filtrar contenidos por etapa, compatible con ambas estructuras
+  const getStageContents = (stageId: string) => {
+    return contents.filter(content => {
+      if ('stage_id' in content) {
+        return content.stage_id === stageId;
+      } else if ('program_module_id' in content) {
+        return content.program_module_id === stageId;
+      }
+      return false;
+    });
+  };
+
   return (
     <div className="space-y-2">
       {stages.map((stage) => (
@@ -46,7 +56,7 @@ const StageList: React.FC<StageListProps> = ({
           <div className="flex justify-between items-center p-3 bg-gray-50">
             <div 
               className="font-medium flex-grow cursor-pointer"
-              onClick={() => onToggleStage(stage.id)}
+              onClick={() => onToggleExpand(stage.id)}
             >
               <div className="flex items-center">
                 {expandedStages[stage.id] ? (
@@ -60,16 +70,14 @@ const StageList: React.FC<StageListProps> = ({
             </div>
             <div className="flex space-x-2">
               <button
-                onClick={() => onEditStage(stage)}
+                onClick={() => onEdit(stage)}
                 className="p-1 text-blue-600 hover:text-blue-900"
-                disabled={loading}
               >
                 <Edit className="h-4 w-4" />
               </button>
               <button
-                onClick={() => onDeleteStage(stage.id)}
+                onClick={() => onDelete(stage.id)}
                 className="p-1 text-red-600 hover:text-red-900"
-                disabled={loading}
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -90,13 +98,17 @@ const StageList: React.FC<StageListProps> = ({
                 </button>
               </div>
               
-              <ContentList 
-                contents={contents}
-                stageId={stage.id}
-                onEdit={onEditContent}
-                onDelete={(contentId) => onDeleteContent(contentId, stage.id)}
-                loading={contentLoading}
-              />
+              {contentLoading ? (
+                <div className="flex justify-center items-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+                </div>
+              ) : (
+                <ModularContentList 
+                  contents={getStageContents(stage.id)}
+                  onEdit={onEditContent}
+                  onDelete={onDeleteContent}
+                />
+              )}
             </div>
           )}
         </div>
@@ -105,4 +117,4 @@ const StageList: React.FC<StageListProps> = ({
   );
 };
 
-export default StageList;
+export default ModularStageList;

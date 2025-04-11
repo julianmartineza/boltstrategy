@@ -105,9 +105,12 @@ const AdminDashboard: React.FC = () => {
             
             {/* Contenido de la sección de sistema */}
             {settingsTab === 'system' && (
-              <div>
-                <h3 className="text-lg font-medium mb-3">Configuración del Sistema</h3>
-                <p className="text-gray-600 mb-4">Aquí podrás configurar los parámetros generales del sistema.</p>
+              <div className="space-y-6">
+                <div className="p-4 bg-yellow-50 rounded border border-yellow-200">
+                  <p className="text-sm text-yellow-700">
+                    Esta sección está en desarrollo. Pronto podrás configurar parámetros globales del sistema.
+                  </p>
+                </div>
               </div>
             )}
           </div>

@@ -307,8 +307,8 @@ const ContentForm: React.FC<ContentFormProps> = ({
           ) : (
             <input
               type="text"
-              value={formContent.content || ''}
-              onChange={(e) => setFormContent({ ...formContent, content: e.target.value })}
+              value={formContent.url || ''}
+              onChange={(e) => setFormContent({ ...formContent, url: e.target.value })}
               className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               placeholder="https://player.vimeo.com/video/123456789"
               disabled={loading}

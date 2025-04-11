@@ -13,6 +13,8 @@ export interface StageContent {
   stage_name?: string;
   prompt_section?: string;
   system_instructions?: string;
+  provider?: string; // Proveedor de video (youtube, vimeo, etc.)
+  url?: string; // URL del video para contenidos de tipo video
 }
 
 export interface Stage {

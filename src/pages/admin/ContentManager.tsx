@@ -11,6 +11,13 @@ import Notification from '../../components/admin/content-manager/Notification';
 // Importar tipos y servicios
 import { Program, Stage, StageContent, ActivityData } from '../../components/admin/content-manager/types';
 import * as contentManagerService from '../../components/admin/content-manager/contentManagerService';
+import * as contentTransitionService from '../../services/contentTransitionService';
+
+// Extender la interfaz StageContent para incluir propiedades opcionales de video
+interface ExtendedStageContent extends StageContent {
+  url?: string;
+  provider?: string;
+}
 
 const ContentManager: React.FC = () => {
   // Estados para datos
@@ -102,16 +109,48 @@ const ContentManager: React.FC = () => {
   const loadStageContent = async (stageId: string) => {
     try {
       setContentLoading(true);
-      const data = await contentManagerService.fetchStageContent(stageId);
       
-      // Actualizar el estado de contenidos, manteniendo los contenidos de otras etapas
-      setContents(prevContents => {
-        const otherContents = prevContents.filter(c => c.stage_id !== stageId);
-        return [...otherContents, ...data];
-      });
+      // Intentar cargar primero con la nueva estructura modular
+      const modularContents = await contentManagerService.getModuleContents(stageId);
+      
+      if (modularContents && modularContents.length > 0) {
+        console.log('Contenidos cargados desde la estructura modular:', modularContents);
+        
+        // Convertir los contenidos al formato esperado por el componente
+        const adaptedContents = modularContents.map(content => ({
+          id: content.id,
+          title: content.title,
+          content: content.content || '',
+          content_type: content.content_type,
+          stage_id: stageId,
+          order_num: content.position,
+          // Mapear otros campos según el tipo de contenido
+          url: content.url,
+          activity_data: content.activity_data,
+          prompt_section: content.prompt_section,
+          system_instructions: content.system_instructions
+        } as StageContent));
+        
+        // Actualizar el estado de contenidos
+        setContents(prevContents => {
+          const otherContents = prevContents.filter(c => c.stage_id !== stageId);
+          return [...otherContents, ...adaptedContents];
+        });
+      } else {
+        // Si no hay contenidos en la estructura modular, cargar desde la estructura antigua
+        console.log('No se encontraron contenidos en la estructura modular, cargando desde stage_content');
+        const legacyContents = await contentManagerService.fetchStageContent(stageId);
+        
+        // Actualizar el estado de contenidos
+        setContents(prevContents => {
+          const otherContents = prevContents.filter(c => c.stage_id !== stageId);
+          return [...otherContents, ...legacyContents];
+        });
+      }
       
       setContentLoading(false);
     } catch (error: any) {
+      console.error('Error al cargar contenido:', error);
       setError(`Error al cargar contenido: ${error.message}`);
       setContentLoading(false);
     }
@@ -212,9 +251,12 @@ const ContentManager: React.FC = () => {
   };
 
   // Crear nuevo contenido
-  const handleCreateContent = async (content: Partial<StageContent>, activityData: ActivityData) => {
-    if (!selectedStage) return;
-    
+  const handleCreateContent = async (content: Partial<ExtendedStageContent>, activityData?: ActivityData) => {
+    if (!selectedStage) {
+      setError('Debes seleccionar una etapa primero');
+      return;
+    }
+
     try {
       setContentLoading(true);
       
@@ -223,10 +265,69 @@ const ContentManager: React.FC = () => {
         stage_id: selectedStage
       };
       
-      const createdContent = await contentManagerService.createContent(contentToCreate, 
-        content.content_type === 'activity' ? activityData : undefined);
+      // Determinar si se debe usar la estructura modular o la antigua
+      let createdContent: StageContent;
       
-      setContents(prev => [...prev, createdContent]);
+      if (content.content_type === 'text' && content.content) {
+        // Usar la estructura modular para contenido de texto
+        try {
+          const result = await contentTransitionService.createContentWithNewStructure(
+            contentToCreate,
+            undefined
+          );
+          
+          if (result) {
+            createdContent = result as StageContent;
+          } else {
+            // Si falla la creación con la nueva estructura, usar la antigua
+            createdContent = await contentManagerService.createContent(contentToCreate, activityData);
+          }
+        } catch (error) {
+          console.error('Error al crear contenido con estructura modular:', error);
+          // Fallback a la estructura antigua
+          createdContent = await contentManagerService.createContent(contentToCreate, activityData);
+        }
+      } else if (content.content_type === 'video' && content.url) {
+        // Usar la estructura modular para contenido de video
+        try {
+          // Para videos, preparar los datos correctamente para la estructura de la tabla
+          const videoContent = {
+            ...contentToCreate,
+            url: content.url, // URL del video
+            provider: content.provider || 'youtube' // Proveedor por defecto (se convertirá a 'source' en el servicio)
+          };
+          
+          console.log('Creando contenido de video con:', videoContent);
+          
+          const result = await contentTransitionService.createContentWithNewStructure(
+            videoContent,
+            undefined
+          );
+          
+          if (result) {
+            createdContent = result as StageContent;
+          } else {
+            // Si falla la creación con la nueva estructura, usar la antigua
+            createdContent = await contentManagerService.createContent(contentToCreate, activityData);
+          }
+        } catch (error) {
+          console.error('Error al crear contenido con estructura modular:', error);
+          // Fallback a la estructura antigua
+          createdContent = await contentManagerService.createContent(contentToCreate, activityData);
+        }
+      } else {
+        // Usar la estructura antigua para otros tipos de contenido
+        createdContent = await contentManagerService.createContent(contentToCreate, activityData);
+      }
+      
+      // Después de crear el contenido, cargar la lista completa de contenidos para asegurar que se muestre correctamente
+      if (selectedStage) {
+        await loadStageContent(selectedStage);
+      } else {
+        // Si no hay etapa seleccionada, agregar el contenido al estado local
+        setContents(prev => [...prev, createdContent]);
+      }
+      
       setIsCreating(false);
       setSelectedStage(null);
       setNewContent({
@@ -235,7 +336,6 @@ const ContentManager: React.FC = () => {
         content_type: 'text',
         order_num: 0
       });
-      
       showSuccessMessage('Contenido creado exitosamente');
       setContentLoading(false);
     } catch (error: any) {
@@ -245,16 +345,22 @@ const ContentManager: React.FC = () => {
   };
 
   // Actualizar contenido existente
-  const handleUpdateContent = async (content: Partial<StageContent>, activityData: ActivityData) => {
+  const handleUpdateContent = async (content: Partial<StageContent>, activityData?: ActivityData) => {
     if (!content.id) return;
     
     try {
       setContentLoading(true);
       
-      const updatedContent = await contentManagerService.updateContent(content as StageContent, 
-        content.content_type === 'activity' ? activityData : undefined);
+      const updatedContent = await contentManagerService.updateContent(content as StageContent, activityData);
       
-      setContents(prev => prev.map(c => c.id === updatedContent.id ? updatedContent : c));
+      // Después de actualizar el contenido, recargar la lista completa para asegurar que se muestre correctamente
+      if (content.stage_id) {
+        await loadStageContent(content.stage_id);
+      } else {
+        // Si no hay stage_id, actualizar el contenido en el estado local
+        setContents(prev => prev.map(c => c.id === updatedContent.id ? updatedContent : c));
+      }
+      
       setEditingContent(null);
       
       showSuccessMessage('Contenido actualizado exitosamente');
@@ -266,7 +372,7 @@ const ContentManager: React.FC = () => {
   };
 
   // Eliminar contenido
-  const handleDeleteContent = async (id: string) => {
+  const handleDeleteContent = async (contentId: string, stageId: string) => {
     if (!window.confirm('¿Estás seguro de que deseas eliminar este contenido?')) {
       return;
     }
@@ -274,10 +380,31 @@ const ContentManager: React.FC = () => {
     try {
       setContentLoading(true);
       
-      await contentManagerService.deleteContent(id);
+      // Intentar eliminar primero con la estructura modular
+      let success = false;
       
-      setContents(prev => prev.filter(c => c.id !== id));
-      showSuccessMessage('Contenido eliminado exitosamente');
+      try {
+        success = await contentTransitionService.deleteContentWithNewStructure(contentId);
+      } catch (error) {
+        console.error('Error al eliminar contenido con estructura modular:', error);
+        // Si falla, intentar con la estructura antigua
+        success = false;
+      }
+      
+      if (!success) {
+        // Usar la estructura antigua para eliminar el contenido
+        const result = await contentManagerService.deleteContent(contentId);
+        success = result === true;
+      }
+      
+      if (success) {
+        // Después de eliminar el contenido, recargar la lista completa para asegurar que se muestre correctamente
+        await loadStageContent(stageId);
+        showSuccessMessage('Contenido eliminado exitosamente');
+      } else {
+        setError('No se pudo eliminar el contenido');
+      }
+      
       setContentLoading(false);
     } catch (error: any) {
       setError(`Error al eliminar contenido: ${error.message}`);
