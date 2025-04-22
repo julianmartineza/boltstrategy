@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useProgramStore } from '../../../store/programStore';
 import StrategyProgress from './StrategyProgress';
 import { StageContent } from './StageContent';
@@ -40,6 +40,10 @@ const StrategyProgram: React.FC = () => {
   const [currentContentIndex, setCurrentContentIndex] = useState<number>(0);
   const [currentStageIndex, setCurrentStageIndex] = useState<number>(0);
   const [showOutline, setShowOutline] = useState(false);
+
+  // Ref para controlar si ya se ha cargado el contenido
+  const contentLoadedRef = useRef<Record<string, boolean>>({});
+  const initialLoadDoneRef = useRef(false);
 
   useEffect(() => {
     const initializeProgram = async () => {
@@ -95,22 +99,277 @@ const StrategyProgram: React.FC = () => {
     
     const fetchStageContent = async () => {
       try {
+        console.log(`Intentando cargar contenido para la etapa ${currentStage.id} (${currentStage.name})...`);
+        
         // Si ya tenemos el contenido en el estado, usarlo
-        if (allStagesContent[currentStage.id]) {
+        if (allStagesContent[currentStage.id] && allStagesContent[currentStage.id].length > 0) {
+          console.log(`Usando contenido en caché para la etapa ${currentStage.id}, ${allStagesContent[currentStage.id].length} elementos`);
           setStageContent(allStagesContent[currentStage.id]);
+          
+          // Asegurarse de que el índice de contenido actual es válido
+          if (currentContentIndex >= allStagesContent[currentStage.id].length) {
+            setCurrentContentIndex(0);
+          }
           return;
         }
         
-        // Si no, cargarlo desde la base de datos
-        const { data, error } = await supabase
+        // Primero intentar cargar desde la nueva estructura (content_registry + program_module_contents)
+        console.log(`Buscando contenidos en la nueva estructura para la etapa ${currentStage.id}...`);
+        const { data: moduleContents, error: moduleError } = await supabase
+          .from('program_module_contents')
+          .select(`
+            content_registry_id,
+            position,
+            content_registry (
+              id,
+              title,
+              content_type,
+              content_table,
+              content_id
+            )
+          `)
+          .eq('program_module_id', currentStage.id)
+          .order('position');
+          
+        if (moduleError) {
+          console.error('Error al cargar contenidos desde program_module_contents:', moduleError);
+          throw moduleError;
+        }
+        
+        if (moduleContents && moduleContents.length > 0) {
+          console.log(`Encontrados ${moduleContents.length} contenidos en la nueva estructura para la etapa ${currentStage.id}`);
+          
+          // Transformar los datos al formato esperado por el componente
+          const formattedContents = moduleContents.map(item => {
+            // Asegurarnos de que content_registry existe y tiene las propiedades necesarias
+            if (!item.content_registry) {
+              console.error('Elemento sin content_registry:', item);
+              return null;
+            }
+            
+            // Acceder a las propiedades de content_registry de forma segura
+            const registry = item.content_registry as unknown as {
+              id: string;
+              title: string;
+              content_type: string;
+              content_table: string;
+              content_id: string;
+            };
+            
+            return {
+              id: registry.id,
+              title: registry.title || 'Sin título',
+              content_type: (registry.content_type || 'text') as 'text' | 'video' | 'activity' | 'advisory_session',
+              stage_id: currentStage.id,
+              order_num: item.position,
+              content: '',  // Cargaremos el contenido específico a continuación
+              created_at: new Date().toISOString(), // Valor predeterminado para cumplir con el tipo
+              metadata: {}, // Valor predeterminado para cumplir con el tipo
+              activity_data: null, // Valor predeterminado para cumplir con el tipo
+              content_metadata: {
+                content_registry_id: registry.id,
+                content_specific_id: registry.content_id
+              }
+            };
+          }).filter(Boolean) as DBStageContent[];
+          
+          // Cargar el contenido específico para cada elemento
+          for (const content of formattedContents) {
+            const registry = moduleContents.find(m => m.content_registry?.id === content.id)?.content_registry as any;
+            if (!registry) continue;
+            
+            try {
+              // Cargar el contenido según el tipo
+              if (registry.content_type === 'text') {
+                console.log(`Cargando contenido de texto para ${registry.content_id}...`);
+                try {
+                  // Usar un enfoque diferente para la consulta
+                  const { data, error } = await supabase
+                    .from('text_contents')
+                    .select('*')
+                    .filter('id', 'eq', registry.content_id)
+                    .limit(1);
+                  
+                  if (error) {
+                    console.error(`Error al cargar texto ${registry.content_id}:`, error);
+                  } else if (data && data.length > 0) {
+                    const textData = data[0];
+                    console.log(`Texto cargado para ${registry.content_id}`);
+                    content.content = textData.content || '';
+                  } else {
+                    console.log(`No se encontró el texto con ID ${registry.content_id}`);
+                  }
+                } catch (textError) {
+                  console.error(`Excepción al cargar texto ${registry.content_id}:`, textError);
+                }
+              } else if (registry.content_type === 'video') {
+                console.log(`Cargando contenido de video para ${registry.content_id}...`);
+                try {
+                  // Usar un enfoque diferente para la consulta
+                  const { data, error } = await supabase
+                    .from('video_contents')
+                    .select('*')
+                    .filter('id', 'eq', registry.content_id)
+                    .limit(1);
+                  
+                  if (error) {
+                    console.error(`Error al cargar video ${registry.content_id}:`, error);
+                  } else if (data && data.length > 0) {
+                    const videoData = data[0];
+                    console.log(`Video cargado:`, videoData);
+                    
+                    // Asegurarnos de que el contenido sea la URL del video
+                    content.content = videoData.video_url || '';
+                    
+                    // Preservar la estructura de metadata que espera el componente
+                    content.metadata = { 
+                      description: videoData.description || '',
+                      poster_url: videoData.thumbnail_url || ''
+                    };
+                    
+                    console.log('Contenido de video actualizado:', {
+                      content: content.content,
+                      metadata: content.metadata
+                    });
+                  } else {
+                    console.log(`No se encontró el video con ID ${registry.content_id}`);
+                  }
+                } catch (videoError) {
+                  console.error(`Excepción al cargar video ${registry.content_id}:`, videoError);
+                }
+              } else if (registry.content_type === 'advisory_session') {
+                console.log(`Cargando contenido de asesoría para ${registry.content_id}...`);
+                try {
+                  // Usar un enfoque diferente para la consulta
+                  const { data, error } = await supabase
+                    .from('advisory_sessions')
+                    .select('*')
+                    .filter('id', 'eq', registry.content_id)
+                    .limit(1);
+                  
+                  if (error) {
+                    console.error(`Error al cargar asesoría ${registry.content_id}:`, error);
+                  } else if (data && data.length > 0) {
+                    const advisoryData = data[0];
+                    console.log(`Asesoría cargada:`, advisoryData);
+                    content.content = advisoryData.description || '';
+                    content.metadata = { duration: advisoryData.duration || 30 };
+                  } else {
+                    console.log(`No se encontró la asesoría con ID ${registry.content_id}`);
+                  }
+                } catch (advisoryError) {
+                  console.error(`Excepción al cargar asesoría ${registry.content_id}:`, advisoryError);
+                }
+              } else if (registry.content_type === 'activity') {
+                console.log(`Cargando contenido de actividad para ${registry.content_id}...`);
+                try {
+                  // Cargar datos de la actividad
+                  const { data, error } = await supabase
+                    .from('activity_contents')
+                    .select('*')
+                    .filter('id', 'eq', registry.content_id)
+                    .limit(1);
+                  
+                  if (error) {
+                    console.error(`Error al cargar actividad ${registry.content_id}:`, error);
+                  } else if (data && data.length > 0) {
+                    const activityData = data[0];
+                    console.log(`Actividad cargada:`, activityData);
+                    
+                    // Asignar contenido y datos de actividad
+                    content.content = activityData.description || '';
+                    
+                    // Estructura completa requerida por el componente Chat
+                    content.activity_data = {
+                      prompt: activityData.prompt || '',
+                      system_instructions: activityData.system_instructions || '',
+                      initial_message: activityData.initial_message || '',
+                      max_exchanges: activityData.max_exchanges || 5,
+                      type: activityData.type || 'chat',
+                      description: activityData.description || '',
+                      prompt_template: activityData.prompt_template || '',
+                      required_steps: activityData.required_steps || [],
+                      completion_criteria: {
+                        min_responses: activityData.min_responses || 3,
+                        required_topics: activityData.required_topics || []
+                      }
+                    };
+                    
+                    console.log('Contenido de actividad actualizado:', {
+                      content: content.content,
+                      activity_data: content.activity_data
+                    });
+                  } else {
+                    console.log(`No se encontró la actividad con ID ${registry.content_id}`);
+                    
+                    // Crear datos de actividad por defecto para evitar errores
+                    content.activity_data = {
+                      prompt: "Actividad no encontrada. Por favor, contacta al administrador.",
+                      system_instructions: "",
+                      initial_message: "No se pudo cargar esta actividad. Por favor, intenta más tarde.",
+                      max_exchanges: 1
+                    };
+                  }
+                } catch (activityError) {
+                  console.error(`Excepción al cargar actividad ${registry.content_id}:`, activityError);
+                }
+              }
+            } catch (error) {
+              console.error(`Error al cargar contenido específico para ${content.id}:`, error);
+            }
+          }
+          
+          console.log('Contenidos formateados:', formattedContents);
+          
+          // Actualizar el estado
+          setStageContent(formattedContents);
+          setAllStagesContent(prev => ({
+            ...prev,
+            [currentStage.id]: formattedContents
+          }));
+          
+          // Agregar logs detallados para depuración
+          console.log('========== DATOS DE CONTENIDO ==========');
+          console.log('Contenidos formateados completos:', JSON.stringify(formattedContents, null, 2));
+          console.log('Primer contenido:', formattedContents[0]);
+          if (formattedContents[0]?.content_type === 'video') {
+            console.log('Datos de video:', {
+              content: formattedContents[0].content,
+              metadata: formattedContents[0].metadata
+            });
+          } else if (formattedContents[0]?.content_type === 'activity') {
+            console.log('Datos de actividad:', {
+              content: formattedContents[0].content,
+              activity_data: formattedContents[0].activity_data
+            });
+          }
+          console.log('========================================');
+          
+          // Asegurarse de que el índice de contenido actual es válido
+          if (currentContentIndex >= formattedContents.length) {
+            setCurrentContentIndex(0);
+          }
+          
+          return;
+        }
+        
+        // Si no hay datos en la nueva estructura, intentar con la antigua (stage_content)
+        console.log(`No se encontraron contenidos en la nueva estructura para la etapa ${currentStage.id}, intentando con stage_content...`);
+        
+        const { data: legacyData, error: legacyError } = await supabase
           .from('stage_content')
           .select('*')
           .eq('stage_id', currentStage.id)
           .order('order_num');
           
-        if (error) throw error;
+        if (legacyError) {
+          console.error('Error al cargar contenidos desde stage_content:', legacyError);
+          throw legacyError;
+        }
         
-        const contentData = data || [];
+        console.log(`Encontrados ${legacyData?.length || 0} contenidos en la estructura antigua para la etapa ${currentStage.id}`);
+        
+        const contentData = legacyData || [];
         
         // Actualizar el estado
         setStageContent(contentData);
@@ -118,13 +377,22 @@ const StrategyProgram: React.FC = () => {
           ...prev,
           [currentStage.id]: contentData
         }));
+        
+        // Asegurarse de que el índice de contenido actual es válido
+        if (currentContentIndex >= contentData.length) {
+          setCurrentContentIndex(0);
+        }
       } catch (error) {
         console.error('Error loading stage content:', error);
         setError('Error al cargar el contenido de la etapa');
       }
     };
     
-    fetchStageContent();
+    // Verificar si ya se ha cargado el contenido para esta etapa
+    if (!contentLoadedRef.current[currentStage.id]) {
+      fetchStageContent();
+      contentLoadedRef.current[currentStage.id] = true;
+    }
   }, [currentStage, allStagesContent]);
 
   // Cargar contenido de todas las etapas para el esquema
@@ -135,9 +403,17 @@ const StrategyProgram: React.FC = () => {
       try {
         console.log('Cargando contenido de todas las etapas para el esquema...');
         
-        // Para cada etapa, cargar su contenido si aún no lo tenemos
+        // Crear una copia local para acumular todos los resultados
+        const newStagesContent: Record<string, DBStageContent[]> = {};
+        
+        // Para cada etapa, cargar su contenido
         for (const stage of currentProgram.stages) {
-          if (allStagesContent[stage.id]) continue;
+          // Verificar si ya tenemos el contenido en el estado
+          if (allStagesContent[stage.id] && allStagesContent[stage.id].length > 0) {
+            console.log(`Ya tenemos el contenido para la etapa ${stage.id} (${stage.name}), omitiendo...`);
+            newStagesContent[stage.id] = allStagesContent[stage.id];
+            continue;
+          }
           
           console.log(`Cargando contenido para la etapa ${stage.id} (${stage.name})...`);
           
@@ -200,12 +476,8 @@ const StrategyProgram: React.FC = () => {
               };
             }).filter(Boolean) as DBStageContent[]; // Filtrar elementos nulos y asegurar el tipo
             
-            // Actualizar el estado con los nuevos contenidos
-            setAllStagesContent(prev => {
-              const newState = { ...prev };
-              newState[stage.id] = formattedContents;
-              return newState;
-            });
+            // Guardar en nuestra copia local
+            newStagesContent[stage.id] = formattedContents;
             
             // Si esta es la etapa actual, actualizar también stageContent
             if (currentStage && currentStage.id === stage.id) {
@@ -231,24 +503,30 @@ const StrategyProgram: React.FC = () => {
           
           console.log(`Encontrados ${legacyData?.length || 0} contenidos en la estructura antigua para la etapa ${stage.id}`);
           
-          // Actualizar el estado con los contenidos antiguos
-          setAllStagesContent(prev => {
-            const newState = { ...prev };
-            newState[stage.id] = legacyData || [];
-            return newState;
-          });
+          // Guardar en nuestra copia local
+          newStagesContent[stage.id] = legacyData || [];
           
           // Si esta es la etapa actual, actualizar también stageContent
           if (currentStage && currentStage.id === stage.id) {
             setStageContent(legacyData || []);
           }
         }
+        
+        // Actualizar el estado una sola vez con todos los resultados
+        setAllStagesContent(prev => ({
+          ...prev,
+          ...newStagesContent
+        }));
       } catch (error) {
         console.error('Error loading all stages content:', error);
       }
     };
     
-    fetchAllStagesContent();
+    // Verificar si ya se ha realizado la carga inicial
+    if (!initialLoadDoneRef.current) {
+      fetchAllStagesContent();
+      initialLoadDoneRef.current = true;
+    }
   }, [currentProgram, currentStage]);
 
   // Actualizar el índice de la etapa actual cuando cambia
@@ -281,6 +559,67 @@ const StrategyProgram: React.FC = () => {
       window.removeEventListener('select-content', handleSelectContent as EventListener);
     };
   }, [currentStage]);
+
+  // Función para guardar el contenido visto
+  const saveViewedContent = async (contentId: string) => {
+    try {
+      // Verificar que el usuario esté autenticado
+      if (!user) {
+        console.log('No hay usuario autenticado, no se puede guardar el contenido visto');
+        return;
+      }
+      
+      // Verificar si ya existe un registro para este contenido
+      const { data: existingView, error: viewError } = await supabase
+        .from('viewed_contents')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('content_id', contentId)
+        .maybeSingle();
+      
+      if (viewError && viewError.code !== 'PGRST116') {
+        console.error('Error al verificar si el contenido ya ha sido visto:', viewError);
+        return;
+      }
+      
+      // Si ya existe, no hacer nada
+      if (existingView) {
+        console.log('El contenido ya ha sido marcado como visto anteriormente:', contentId);
+        return;
+      }
+      
+      // Si no existe, crear un nuevo registro
+      const { error: insertError } = await supabase
+        .from('viewed_contents')
+        .insert({
+          user_id: user.id,
+          content_id: contentId,
+          viewed_at: new Date().toISOString()
+        });
+      
+      if (insertError) {
+        console.error('Error al guardar contenido visto:', insertError);
+        
+        // Si hay un error de restricción de clave foránea, actualizar solo el estado local
+        if (insertError.code === '23503') {
+          console.log('No se pudo guardar en la base de datos, pero se actualizará el estado local');
+          setViewedContents(prev => ({
+            ...prev,
+            [contentId]: true
+          }));
+        }
+      } else {
+        console.log('Contenido marcado como visto correctamente:', contentId);
+        // Actualizar el estado local
+        setViewedContents(prev => ({
+          ...prev,
+          [contentId]: true
+        }));
+      }
+    } catch (error) {
+      console.error('Error en el proceso de contenido visto:', error);
+    }
+  };
 
   if (loading) {
     return (
@@ -343,52 +682,12 @@ const StrategyProgram: React.FC = () => {
               content={stageContent}
               currentIndex={currentContentIndex}
               onChangeContent={(index) => {
+                if (!user) return;
+                
+                // Usar la función saveViewedContent
+                saveViewedContent(stageContent[index].id);
+                
                 setCurrentContentIndex(index);
-                
-                // Marcar el contenido actual como visto
-                const contentId = stageContent[index].id;
-                setViewedContents(prev => ({
-                  ...prev,
-                  [contentId]: true
-                }));
-                
-                // Guardar en la base de datos que el usuario ha visto este contenido
-                (async () => {
-                  if (!user) return;
-                  
-                  try {
-                    // Verificar si ya existe un registro para este contenido
-                    const { data: existingData, error: checkError } = await supabase
-                      .from('viewed_contents')
-                      .select('*')
-                      .eq('user_id', user.id)
-                      .eq('content_id', contentId)
-                      .single();
-                    
-                    if (checkError && checkError.code !== 'PGRST116') {
-                      console.error('Error checking viewed content:', checkError);
-                      return;
-                    }
-                    
-                    // Si ya existe, no hacer nada
-                    if (existingData) return;
-                    
-                    // Si no existe, crear un nuevo registro
-                    const { error: insertError } = await supabase
-                      .from('viewed_contents')
-                      .insert({
-                        user_id: user.id,
-                        content_id: contentId,
-                        viewed_at: new Date().toISOString()
-                      });
-                    
-                    if (insertError) {
-                      console.error('Error saving viewed content:', insertError);
-                    }
-                  } catch (error) {
-                    console.error('Error in viewed content process:', error);
-                  }
-                })();
               }}
               viewedContents={viewedContents}
               hasNextStage={currentStageIndex < currentProgram.stages.length - 1}

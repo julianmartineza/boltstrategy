@@ -45,15 +45,35 @@ export function StageContent({
   // Determinar qué índice usar (externo o interno)
   const currentIndex = externalIndex !== undefined ? externalIndex : internalIndex;
   
-  if (!content.length) {
+  // Asegurarnos de que hay contenido para mostrar
+  if (!content || content.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow-sm p-6 w-full">
-        <p className="text-gray-500 text-center">No hay contenido disponible para esta etapa.</p>
+      <div className="p-4 text-center text-gray-500">
+        No hay contenido disponible para esta etapa.
       </div>
     );
   }
 
+  // Obtener el contenido actual
   const currentContent = content[currentIndex];
+  
+  // Logs detallados para depuración
+  console.log('========== DATOS EN STAGECOMPONENT ==========');
+  console.log('Contenido actual:', currentContent);
+  if (currentContent?.content_type === 'video') {
+    console.log('Datos de video en componente:', {
+      content: currentContent.content,
+      metadata: currentContent.metadata,
+      poster_url: currentContent.metadata?.poster_url
+    });
+  } else if (currentContent?.content_type === 'activity') {
+    console.log('Datos de actividad en componente:', {
+      content: currentContent.content,
+      activity_data: currentContent.activity_data
+    });
+  }
+  console.log('===========================================');
+
   const isFirstContent = currentIndex === 0;
   const isLastContent = currentIndex === content.length - 1;
 
@@ -92,11 +112,12 @@ export function StageContent({
       <div className="bg-white rounded-lg shadow-sm overflow-hidden w-full">
         <div className="p-6">
           <h3 className="text-xl font-semibold text-gray-900 mb-4">
-            {currentContent.title}
+            {currentContent?.title || 'Sin título'}
           </h3>
           
-          {currentContent.content_type === 'video' ? (
+          {currentContent?.content_type === 'video' ? (
             <div className="relative w-full">
+              {(() => { console.log('Renderizando video, content:', currentContent.content); return null; })()}
               {currentContent.content ? (
                 <VideoPlayer 
                   src={currentContent.content} 
@@ -113,8 +134,9 @@ export function StageContent({
                 </div>
               )}
             </div>
-          ) : currentContent.content_type === 'activity' ? (
+          ) : currentContent?.content_type === 'activity' ? (
             <div className="mt-6 w-full">
+              {(() => { console.log('Renderizando actividad, activity_data:', currentContent.activity_data); return null; })()}
               <div className="prose max-w-none mb-6 w-full">
                 <p>{currentContent.content}</p>
               </div>
@@ -141,7 +163,7 @@ export function StageContent({
             </div>
           ) : (
             <div className="prose max-w-none w-full">
-              {currentContent.content.split('\n').map((line, index) => {
+              {currentContent?.content.split('\n').map((line, index) => {
                 if (line.startsWith('# ')) {
                   return <h1 key={index} className="text-3xl font-bold mt-6 mb-4">{line.slice(2)}</h1>;
                 } else if (line.startsWith('## ')) {
