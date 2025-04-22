@@ -17,7 +17,7 @@ Este documento describe el diseño funcional y técnico del componente de sesion
 
 ## 2. Tablas y Relaciones
 
-### 2.1. Tabla `advisory_sessions`
+### 2.1. Tabla `advisory_sessions` (esto ya se implementó)
 Contiene la configuración de cada tipo de sesión.
 ```sql
 CREATE TABLE advisory_sessions (
@@ -81,11 +81,24 @@ Perfil de los asesores con integración a Google Calendar.
 CREATE TABLE advisors (
   id UUID PRIMARY KEY,
   user_id UUID REFERENCES user_profiles(id),
+  name VARCHAR(255),
+  bio TEXT,
+  specialty VARCHAR(255),
+  email VARCHAR(255),
+  phone VARCHAR(50),
+  photo_url TEXT,
   google_account_email VARCHAR(255),
   calendar_sync_token TEXT,
-  available BOOLEAN DEFAULT TRUE
+  available BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+La tabla `advisors` está directamente relacionada con `user_profiles` a través del campo `user_id`, lo que permite:
+- Mantener la autenticación y gestión de permisos en el sistema principal
+- Extender la información básica del usuario con datos específicos del rol de asesor
+- Facilitar la transición entre diferentes roles (un usuario puede ser asesor y también tener otros roles)
 
 ### 2.6. Tabla `advisor_assignments`
 Define qué asesor puede atender a qué empresa y en qué programa.
@@ -129,7 +142,42 @@ CREATE TABLE advisor_assignments (
 
 ---
 
-## 6. Recomendaciones de implementación
+## 6. Integración con el módulo de administrador
+
+### 6.1. Gestión de asesores
+El módulo de administrador existente debe ampliarse para incluir:
+- Una sección para crear y gestionar perfiles de asesores
+- Funcionalidad para asignar el rol de asesor a usuarios existentes
+- Interfaz para asignar asesores a empresas y programas específicos
+- Visualización del estado de disponibilidad de los asesores
+
+### 6.2. Ajustes en UserManager
+El componente UserManager actual debe modificarse para:
+- Incluir una opción para designar a un usuario como asesor
+- Permitir la creación del perfil de asesor asociado al usuario
+- Proporcionar acceso a la configuración de Google Calendar
+
+---
+
+## 7. Interfaz de usuario para asesores
+
+### 7.1. Panel de asesor
+Se debe implementar un panel específico para asesores que incluya:
+- Vista de calendario con sesiones programadas
+- Lista de empresas asignadas
+- Sección de actas pendientes por completar
+- Historial de sesiones realizadas
+- Perfil personal configurable
+
+### 7.2. Experiencia de usuario
+- El asesor debe poder acceder a información relevante de las empresas que asesora
+- Interfaz para completar actas post-sesión
+- Gestión de disponibilidad horaria
+- Notificaciones de nuevas sesiones agendadas
+
+---
+
+## 8. Recomendaciones de implementación
 
 - Pilotear primero en un programa específico.
 - Validar integración completa con agendamiento y reportes.
@@ -138,4 +186,3 @@ CREATE TABLE advisor_assignments (
 ---
 
 Este componente está diseñado para integrarse sin fricción al sistema actual y abrir la puerta a una experiencia más personalizada, rastreable y conectada dentro del proceso formativo.
-
