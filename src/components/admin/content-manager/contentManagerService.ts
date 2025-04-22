@@ -92,7 +92,16 @@ export const fetchStageContent = async (stageId: string): Promise<StageContent[]
       .order('order_num');
     
     if (error) throw error;
-    return data || [];
+    
+    // Asegurarse de que todos los contenidos tengan un título válido
+    const contentsWithValidTitles = (data || []).map(content => ({
+      ...content,
+      title: content.title || 'Sin título'
+    }));
+    
+    console.log('Contenidos cargados con títulos validados:', contentsWithValidTitles);
+    
+    return contentsWithValidTitles;
   } catch (error) {
     console.error('Error fetching stage content:', error);
     throw error;
@@ -259,7 +268,7 @@ export const getModuleContents = async (moduleId: string): Promise<UnifiedConten
           // 4. Unificar la información
           return {
             id: registryEntry.id,
-            title: registryEntry.title,
+            title: registryEntry.title || contentData.title || 'Sin título',
             content_type: registryEntry.content_type,
             registry_id: registryEntry.id,
             content_id: registryEntry.content_id,

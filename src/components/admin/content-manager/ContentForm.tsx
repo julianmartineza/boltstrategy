@@ -44,13 +44,12 @@ const ContentForm: React.FC<ContentFormProps> = ({
     // Cargar actividades disponibles para dependencias
     const fetchActivities = async () => {
       try {
-        // Modificar la consulta para seleccionar todo el content_metadata
+        // Modificar la consulta para no incluir content_metadata que no existe en la tabla
         const { data, error } = await supabase
           .from('content_registry')
           .select(`
             id,
-            title,
-            content_metadata
+            title
           `)
           .eq('content_type', 'activity');
         
@@ -61,7 +60,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
           const formattedData = data.map((item: any) => {
             return {
               id: item.id,
-              stage_name: item.content_metadata?.stage_name || 'Sin etapa',
+              stage_name: 'Actividad', // Valor por defecto ya que no tenemos stage_name
               title: item.title
             };
           });
@@ -112,6 +111,12 @@ const ContentForm: React.FC<ContentFormProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // Validar que el título no esté vacío
+    if (!formContent.title || formContent.title.trim() === '') {
+      alert('El título es obligatorio');
+      return;
+    }
 
     try {
       // Incluir las dependencias en el objeto formContent
@@ -195,19 +200,21 @@ const ContentForm: React.FC<ContentFormProps> = ({
           />
         </div>
 
-        {/* Campo para stage_name */}
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1">Nombre de la Etapa</label>
-          <input
-            type="text"
-            value={stageName}
-            onChange={(e) => setStageName(e.target.value)}
-            className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Nombre descriptivo de la etapa (ej: Identificación de Paradigmas)"
-            disabled={loading}
-          />
-          <p className="text-xs text-gray-500 mt-1">Este nombre se utilizará para referenciar esta actividad en dependencias</p>
-        </div>
+        {/* Campo para stage_name - Solo mostrar si no estamos en una etapa existente */}
+        {!content.stage_id && (
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Nombre de la Etapa</label>
+            <input
+              type="text"
+              value={stageName}
+              onChange={(e) => setStageName(e.target.value)}
+              className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Nombre descriptivo de la etapa (ej: Identificación de Paradigmas)"
+              disabled={loading}
+            />
+            <p className="text-xs text-gray-500 mt-1">Este nombre se utilizará para referenciar esta actividad en dependencias</p>
+          </div>
+        )}
         
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">

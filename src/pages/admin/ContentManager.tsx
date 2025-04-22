@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, PlusCircle } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 // Importar componentes refactorizados
 import ProgramSelector from '../../components/admin/content-manager/ProgramSelector';
@@ -7,11 +8,15 @@ import StageList from '../../components/admin/content-manager/StageList';
 import StageForm from '../../components/admin/content-manager/StageForm';
 import ContentForm from '../../components/admin/content-manager/ContentForm';
 import Notification from '../../components/admin/content-manager/Notification';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
 
 // Importar tipos y servicios
 import { Program, Stage, StageContent, ActivityData } from '../../components/admin/content-manager/types';
 import * as contentManagerService from '../../components/admin/content-manager/contentManagerService';
 import * as contentTransitionService from '../../services/contentTransitionService';
+import { debugAdvisorySessions } from '../../services/debugAdvisoryService';
+import { debugVideoContents } from '../../services/debugVideoService';
+import { debugTextContents } from '../../services/debugTextService';
 
 // Extender la interfaz StageContent para incluir propiedades opcionales de video
 interface ExtendedStageContent extends StageContent {
@@ -53,6 +58,15 @@ const ContentManager: React.FC = () => {
   });
   const [editingContent, setEditingContent] = useState<StageContent | null>(null);
   
+  // Estados para el diálogo de confirmación
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    contentId: '',
+    stageId: ''
+  });
+
   // Mostrar mensaje de éxito
   const showSuccessMessage = (message: string) => {
     setSuccessMessage(message);
@@ -117,34 +131,64 @@ const ContentManager: React.FC = () => {
         console.log('Contenidos cargados desde la estructura modular:', modularContents);
         
         // Convertir los contenidos al formato esperado por el componente
-        const adaptedContents = modularContents.map(content => ({
-          id: content.id,
-          title: content.title,
-          content: content.content || '',
-          content_type: content.content_type,
-          stage_id: stageId,
-          order_num: content.position,
-          // Mapear otros campos según el tipo de contenido
-          url: content.url,
-          activity_data: content.activity_data,
-          prompt_section: content.prompt_section,
-          system_instructions: content.system_instructions
-        } as StageContent));
+        const adaptedContents = modularContents.map(content => {
+          // Verificar y asegurar que el título esté presente
+          if (!content.title) {
+            console.warn(`Contenido sin título detectado:`, content);
+          }
+          
+          return {
+            id: content.id,
+            title: content.title || 'Sin título',
+            content: content.content || '',
+            content_type: content.content_type,
+            stage_id: stageId,
+            order_num: content.position,
+            // Mapear otros campos según el tipo de contenido
+            url: content.url,
+            activity_data: content.activity_data,
+            prompt_section: content.prompt_section,
+            system_instructions: content.system_instructions
+          } as StageContent;
+        });
+        
+        console.log('Contenidos adaptados para ContentList:', adaptedContents);
+        
+        // Cargar títulos adicionales para contenidos de texto
+        const contentsWithFixedTitles = await loadTextContentTitles(adaptedContents);
         
         // Actualizar el estado de contenidos
         setContents(prevContents => {
           const otherContents = prevContents.filter(c => c.stage_id !== stageId);
-          return [...otherContents, ...adaptedContents];
+          return [...otherContents, ...contentsWithFixedTitles];
         });
       } else {
         // Si no hay contenidos en la estructura modular, cargar desde la estructura antigua
         console.log('No se encontraron contenidos en la estructura modular, cargando desde stage_content');
         const legacyContents = await contentManagerService.fetchStageContent(stageId);
         
+        // Asegurarse de que todos los contenidos tengan un título
+        const contentsWithTitles = legacyContents.map(content => {
+          // Verificar y asegurar que el título esté presente
+          if (!content.title) {
+            console.warn(`Contenido legacy sin título detectado:`, content);
+          }
+          
+          return {
+            ...content,
+            title: content.title || 'Sin título'
+          };
+        });
+        
+        console.log('Contenidos legacy adaptados para ContentList:', contentsWithTitles);
+        
+        // Cargar títulos adicionales para contenidos de texto
+        const contentsWithFixedTitles = await loadTextContentTitles(contentsWithTitles);
+        
         // Actualizar el estado de contenidos
         setContents(prevContents => {
           const otherContents = prevContents.filter(c => c.stage_id !== stageId);
-          return [...otherContents, ...legacyContents];
+          return [...otherContents, ...contentsWithFixedTitles];
         });
       }
       
@@ -154,6 +198,55 @@ const ContentManager: React.FC = () => {
       setError(`Error al cargar contenido: ${error.message}`);
       setContentLoading(false);
     }
+  };
+
+  // Función para cargar títulos adicionales para contenidos de texto
+  const loadTextContentTitles = async (contents: StageContent[]): Promise<StageContent[]> => {
+    // Filtrar solo los contenidos de texto
+    const textContents = contents.filter(content => content.content_type === 'text');
+    
+    if (textContents.length === 0) {
+      return contents; // No hay contenidos de texto, devolver los originales
+    }
+    
+    console.log('Cargando títulos adicionales para', textContents.length, 'contenidos de texto');
+    
+    // Crear un mapa para actualizar los contenidos
+    const updatedContents = [...contents];
+    
+    // Procesar cada contenido de texto
+    for (const content of textContents) {
+      try {
+        // Intentar obtener el título directamente de text_contents
+        const { data, error } = await supabase
+          .from('text_contents')
+          .select('title')
+          .eq('id', content.id)
+          .maybeSingle();
+        
+        if (error) {
+          console.error('Error al cargar título para contenido', content.id, error);
+          continue;
+        }
+        
+        if (data && data.title) {
+          console.log(`Título encontrado para contenido ${content.id}: "${data.title}"`);
+          
+          // Actualizar el título en el array de contenidos
+          const index = updatedContents.findIndex(c => c.id === content.id);
+          if (index !== -1) {
+            updatedContents[index] = {
+              ...updatedContents[index],
+              title: data.title
+            };
+          }
+        }
+      } catch (error) {
+        console.error('Error al procesar título para contenido', content.id, error);
+      }
+    }
+    
+    return updatedContents;
   };
 
   // Alternar la expansión de una etapa
@@ -345,13 +438,12 @@ const ContentManager: React.FC = () => {
   };
 
   // Actualizar contenido existente
-  const handleUpdateContent = async (content: Partial<StageContent>, activityData?: ActivityData) => {
-    if (!content.id) return;
-    
+  const handleUpdateContent = async (content: StageContent, activityData?: ActivityData) => {
     try {
       setContentLoading(true);
       
-      const updatedContent = await contentManagerService.updateContent(content as StageContent, activityData);
+      // Determinar si se debe usar la estructura modular o la antigua
+      const updatedContent = await contentManagerService.updateContent(content, activityData);
       
       // Después de actualizar el contenido, recargar la lista completa para asegurar que se muestre correctamente
       if (content.stage_id) {
@@ -373,43 +465,160 @@ const ContentManager: React.FC = () => {
 
   // Eliminar contenido
   const handleDeleteContent = async (contentId: string, stageId: string) => {
-    if (!window.confirm('¿Estás seguro de que deseas eliminar este contenido?')) {
-      return;
+    console.log('handleDeleteContent llamado con contentId:', contentId, 'stageId:', stageId);
+    
+    // Buscar el contenido para obtener su título
+    const contentToDelete = contents.find(c => c.id === contentId);
+    console.log('Contenido a eliminar:', contentToDelete);
+    
+    if (contentToDelete) {
+      // Mostrar diálogo de confirmación
+      setConfirmDialog({
+        isOpen: true,
+        title: '¿Eliminar contenido?',
+        message: `¿Estás seguro de que deseas eliminar "${contentToDelete.title || 'Sin título'}"?`,
+        contentId,
+        stageId
+      });
+    } else {
+      console.error('No se encontró el contenido con ID:', contentId);
     }
+  };
+
+  // Función para confirmar la eliminación del contenido
+  const confirmDeleteContent = async () => {
+    const { contentId, stageId } = confirmDialog;
+    
+    // Cerrar el diálogo
+    setConfirmDialog({
+      isOpen: false,
+      title: '',
+      message: '',
+      contentId: '',
+      stageId: ''
+    });
+    
+    console.log('confirmDeleteContent llamado con contentId:', contentId, 'stageId:', stageId);
     
     try {
       setContentLoading(true);
       
-      // Intentar eliminar primero con la estructura modular
-      let success = false;
-      
+      // Verificar qué tipo de contenido es y qué ID tiene en las tablas específicas
       try {
-        success = await contentTransitionService.deleteContentWithNewStructure(contentId);
-      } catch (error) {
-        console.error('Error al eliminar contenido con estructura modular:', error);
-        // Si falla, intentar con la estructura antigua
-        success = false;
+        // Verificar en content_registry
+        const { data: registryData, error: registryError } = await supabase
+          .from('content_registry')
+          .select('*')
+          .or(`id.eq.${contentId},content_id.eq.${contentId}`);
+          
+        console.log('Datos encontrados en content_registry:', registryData, 'Error:', registryError);
+        
+        if (registryData && registryData.length > 0) {
+          // Si encontramos el registro, intentar eliminarlo directamente
+          const registryId = registryData[0].id;
+          const contentSpecificId = registryData[0].content_id;
+          const contentTable = registryData[0].content_table;
+          
+          console.log('Información del registro a eliminar:');
+          console.log('- Registry ID:', registryId);
+          console.log('- Content ID:', contentSpecificId);
+          console.log('- Content Table:', contentTable);
+          
+          // Eliminar primero las relaciones
+          console.log('Eliminando relaciones en program_module_contents...');
+          const { error: relationError } = await supabase
+            .from('program_module_contents')
+            .delete()
+            .eq('content_registry_id', registryId);
+            
+          console.log('Resultado de eliminar relaciones:', relationError ? 'Error: ' + JSON.stringify(relationError) : 'Éxito');
+          
+          // Eliminar el contenido específico
+          if (contentTable && contentSpecificId) {
+            console.log(`Eliminando contenido en ${contentTable}...`);
+            const { error: contentError } = await supabase
+              .from(contentTable)
+              .delete()
+              .eq('id', contentSpecificId);
+              
+            console.log('Resultado de eliminar contenido específico:', contentError ? 'Error: ' + JSON.stringify(contentError) : 'Éxito');
+          }
+          
+          // Finalmente, eliminar el registro
+          console.log('Eliminando registro en content_registry...');
+          const { error: deleteError } = await supabase
+            .from('content_registry')
+            .delete()
+            .eq('id', registryId);
+            
+          console.log('Resultado de eliminar registro:', deleteError ? 'Error: ' + JSON.stringify(deleteError) : 'Éxito');
+          
+          if (!deleteError) {
+            console.log('Contenido eliminado exitosamente');
+            setContents(prev => prev.filter(c => c.id !== contentId));
+            showSuccessMessage('Contenido eliminado exitosamente');
+            setContentLoading(false);
+            return;
+          }
+        }
+      } catch (directError) {
+        console.error('Error al intentar eliminar directamente:', directError);
       }
       
-      if (!success) {
-        // Usar la estructura antigua para eliminar el contenido
+      // Si llegamos aquí, intentar con el servicio de transición
+      try {
+        console.log('Intentando eliminar con estructura modular...');
+        const success = await contentTransitionService.deleteContentWithNewStructure(contentId);
+        
+        if (success) {
+          console.log('Contenido eliminado exitosamente con estructura modular');
+          // Después de eliminar el contenido, recargar la lista completa para asegurar que se muestre correctamente
+          await loadStageContent(stageId);
+          showSuccessMessage('Contenido eliminado exitosamente');
+          setContentLoading(false);
+          return;
+        } else {
+          console.error('No se pudo eliminar con estructura modular');
+        }
+      } catch (modularError) {
+        console.error('Error al eliminar con estructura modular:', modularError);
+      }
+      
+      // Como último recurso, intentar con la estructura antigua
+      try {
+        console.log('Intentando eliminar con estructura antigua...');
         const result = await contentManagerService.deleteContent(contentId);
-        success = result === true;
-      }
-      
-      if (success) {
-        // Después de eliminar el contenido, recargar la lista completa para asegurar que se muestre correctamente
-        await loadStageContent(stageId);
-        showSuccessMessage('Contenido eliminado exitosamente');
-      } else {
-        setError('No se pudo eliminar el contenido');
+        
+        if (result === true) {
+          console.log('Contenido eliminado exitosamente con estructura antigua');
+          // Después de eliminar el contenido, recargar la lista completa para asegurar que se muestre correctamente
+          await loadStageContent(stageId);
+          showSuccessMessage('Contenido eliminado exitosamente');
+        } else {
+          setError('No se pudo eliminar el contenido');
+        }
+      } catch (legacyError) {
+        console.error('Error al eliminar con estructura antigua:', legacyError);
+        setError('Error al eliminar contenido');
       }
       
       setContentLoading(false);
     } catch (error: any) {
+      console.error('Error general al eliminar contenido:', error);
       setError(`Error al eliminar contenido: ${error.message}`);
       setContentLoading(false);
     }
+  };
+  
+  // Función para cancelar la eliminación del contenido
+  const cancelDeleteContent = () => {
+    setConfirmDialog({
+      isOpen: false,
+      title: '',
+      message: '',
+      contentId: '',
+      stageId: ''
+    });
   };
 
   // Iniciar creación de contenido
@@ -420,13 +629,236 @@ const ContentManager: React.FC = () => {
       title: '',
       content: '',
       content_type: 'text',
-      order_num: contents.filter(c => c.stage_id === stageId).length
+      order_num: contents.filter(c => c.stage_id === stageId).length,
+      stage_id: stageId
     });
   };
 
   // Iniciar edición de contenido
-  const startContentEditing = (content: StageContent) => {
-    setEditingContent(content);
+  const startContentEditing = async (content: StageContent) => {
+    // Si es una sesión de asesoría, cargar los detalles completos
+    if (content.content_type === 'advisory_session') {
+      setContentLoading(true);
+      
+      // Ejecutar la función de depuración para verificar las sesiones de asesoría
+      await debugAdvisorySessions();
+      
+      try {
+        // Buscar el ID correcto en content_registry
+        const { data: registryData, error: registryError } = await supabase
+          .from('content_registry')
+          .select('*')
+          .eq('content_type', 'advisory_session');
+          
+        if (registryError) {
+          console.error('Error al buscar en content_registry:', registryError);
+          setEditingContent(content);
+          setContentLoading(false);
+          return;
+        }
+        
+        // Encontrar el registro que coincide con la sesión que queremos editar
+        const registryItem = registryData.find((item: any) => 
+          item.content_id === content.id || 
+          item.id === content.id
+        );
+        
+        if (!registryItem) {
+          console.warn('No se encontró el registro en content_registry para:', content.id);
+          setEditingContent(content);
+          setContentLoading(false);
+          return;
+        }
+        
+        console.log('Registro encontrado en content_registry:', registryItem);
+        
+        // Obtener los detalles de la sesión de asesoría
+        const { data: sessionData, error: sessionError } = await supabase
+          .from('advisory_sessions')
+          .select('*')
+          .eq('id', registryItem.content_id)
+          .single();
+          
+        if (sessionError) {
+          console.error('Error al obtener datos de advisory_sessions:', sessionError);
+          setEditingContent(content);
+          setContentLoading(false);
+          return;
+        }
+        
+        console.log('Datos de la sesión de asesoría:', sessionData);
+        
+        // Construir el objeto StageContent con los datos correctos
+        const advisorySessionDetails: StageContent = {
+          id: registryItem.id,
+          title: registryItem.title,
+          content: sessionData.description || '',
+          content_type: 'advisory_session' as 'advisory_session',
+          stage_id: content.stage_id,
+          order_num: content.order_num || 0,
+          content_metadata: {
+            duration: sessionData.duration || 60,
+            session_type: sessionData.session_type || 'individual',
+            advisory_session_id: sessionData.id
+          }
+        };
+        
+        console.log('Detalles de la sesión de asesoría construidos:', advisorySessionDetails);
+        setEditingContent(advisorySessionDetails);
+      } catch (error) {
+        console.error('Error al cargar detalles de la sesión de asesoría:', error);
+        setEditingContent(content);
+      }
+      setContentLoading(false);
+    } 
+    // Si es un contenido de texto, cargar los detalles completos
+    else if (content.content_type === 'text') {
+      setContentLoading(true);
+      
+      // Ejecutar la función de depuración para verificar los contenidos de texto
+      await debugTextContents();
+      
+      try {
+        // Buscar el ID correcto en content_registry
+        const { data: registryData, error: registryError } = await supabase
+          .from('content_registry')
+          .select('*')
+          .eq('content_type', 'text');
+          
+        if (registryError) {
+          console.error('Error al buscar en content_registry:', registryError);
+          setEditingContent(content);
+          setContentLoading(false);
+          return;
+        }
+        
+        // Encontrar el registro que coincide con el texto que queremos editar
+        const registryItem = registryData.find((item: any) => 
+          item.content_id === content.id || 
+          item.id === content.id
+        );
+        
+        if (!registryItem) {
+          console.warn('No se encontró el registro en content_registry para:', content.id);
+          
+          // Si no se encuentra en content_registry, podría ser un contenido antiguo en stage_content
+          // En este caso, usamos directamente el contenido que se pasó
+          setEditingContent(content);
+          setContentLoading(false);
+          return;
+        }
+        
+        console.log('Registro encontrado en content_registry:', registryItem);
+        
+        // Obtener los detalles del texto
+        const { data: textData, error: textError } = await supabase
+          .from('text_contents')
+          .select('*')
+          .eq('id', registryItem.content_id)
+          .single();
+          
+        if (textError) {
+          console.error('Error al obtener datos de text_contents:', textError);
+          setEditingContent(content);
+          setContentLoading(false);
+          return;
+        }
+        
+        console.log('Datos del texto:', textData);
+        
+        // Construir el objeto StageContent con los datos correctos
+        const textDetails: StageContent = {
+          id: registryItem.id,
+          title: registryItem.title || textData.title || 'Sin título',
+          content: textData.content || '',
+          content_type: 'text' as 'text',
+          stage_id: content.stage_id,
+          order_num: content.order_num || 0
+        };
+        
+        console.log('Detalles del texto construidos:', textDetails);
+        setEditingContent(textDetails);
+      } catch (error) {
+        console.error('Error al cargar detalles del texto:', error);
+        setEditingContent(content);
+      }
+      setContentLoading(false);
+    } 
+    // Si es un contenido de video, cargar los detalles completos
+    else if (content.content_type === 'video') {
+      setContentLoading(true);
+      
+      // Ejecutar la función de depuración para verificar los contenidos de video
+      await debugVideoContents();
+      
+      try {
+        // Buscar el ID correcto en content_registry
+        const { data: registryData, error: registryError } = await supabase
+          .from('content_registry')
+          .select('*')
+          .eq('content_type', 'video');
+          
+        if (registryError) {
+          console.error('Error al buscar en content_registry:', registryError);
+          setEditingContent(content);
+          setContentLoading(false);
+          return;
+        }
+        
+        // Encontrar el registro que coincide con el video que queremos editar
+        const registryItem = registryData.find((item: any) => 
+          item.content_id === content.id || 
+          item.id === content.id
+        );
+        
+        if (!registryItem) {
+          console.warn('No se encontró el registro en content_registry para:', content.id);
+          setEditingContent(content);
+          setContentLoading(false);
+          return;
+        }
+        
+        console.log('Registro encontrado en content_registry:', registryItem);
+        
+        // Obtener los detalles del video
+        const { data: videoData, error: videoError } = await supabase
+          .from('video_contents')
+          .select('*')
+          .eq('id', registryItem.content_id)
+          .single();
+          
+        if (videoError) {
+          console.error('Error al obtener datos de video_contents:', videoError);
+          setEditingContent(content);
+          setContentLoading(false);
+          return;
+        }
+        
+        console.log('Datos del video:', videoData);
+        
+        // Construir el objeto StageContent con los datos correctos
+        const videoDetails: StageContent = {
+          id: registryItem.id,
+          title: registryItem.title,
+          content: videoData.video_url || '',
+          content_type: 'video' as 'video',
+          stage_id: content.stage_id,
+          order_num: content.order_num || 0,
+          provider: videoData.source || 'youtube',
+          url: videoData.video_url || ''
+        };
+        
+        console.log('Detalles del video construidos:', videoDetails);
+        setEditingContent(videoDetails);
+      } catch (error) {
+        console.error('Error al cargar detalles del video:', error);
+        setEditingContent(content);
+      }
+      setContentLoading(false);
+    } 
+    else {
+      setEditingContent(content);
+    }
   };
 
   // Iniciar creación de etapa
@@ -535,19 +967,21 @@ const ContentManager: React.FC = () => {
           {isCreating && selectedStage && (
             <ContentForm 
               content={newContent}
-              onSave={handleCreateContent}
+              onSave={(content, activityData) => handleCreateContent(content, activityData)}
               onCancel={cancelContentForm}
               loading={contentLoading}
+              moduleId={selectedProgram}
             />
           )}
 
           {editingContent && (
             <ContentForm 
               content={editingContent}
-              onSave={handleUpdateContent}
+              onSave={(content, activityData) => handleUpdateContent(content as StageContent, activityData)}
               onCancel={cancelContentForm}
               loading={contentLoading}
               isEditing
+              moduleId={selectedProgram}
             />
           )}
 
@@ -570,6 +1004,15 @@ const ContentManager: React.FC = () => {
           Selecciona un programa para ver sus etapas.
         </div>
       )}
+      
+      {/* Renderizar el diálogo de confirmación */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        onConfirm={confirmDeleteContent}
+        onCancel={cancelDeleteContent}
+      />
     </div>
   );
 };

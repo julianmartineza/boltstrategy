@@ -146,7 +146,7 @@ export const getModuleContents = async (moduleId: string): Promise<UnifiedConten
         // Crear objeto unificado según el tipo de contenido
         const unifiedContent: UnifiedContent = {
           id: content.id,
-          title: registry.title,
+          title: registry.title || content.title || 'Sin título',
           content_type: registry.content_type,
           position: entry.position,
           registry_id: registry.id,
@@ -162,6 +162,8 @@ export const getModuleContents = async (moduleId: string): Promise<UnifiedConten
             unifiedContent.content = content.content;
             unifiedContent.format = content.format;
             unifiedContent.markdown_enabled = content.markdown_enabled;
+            // Registrar información de depuración
+            console.log(`Procesando texto: ID=${content.id}, Título en registry="${registry.title}", Título en content="${content.title}"`);
             break;
           case 'video':
             unifiedContent.url = content.video_url;
@@ -523,6 +525,8 @@ export const updateContentPosition = async (
  */
 export const deleteContent = async (registryId: string): Promise<boolean> => {
   try {
+    console.log('Iniciando eliminación de contenido con registryId:', registryId);
+    
     // 1. Obtener información del registro
     const { data: registry, error: registryError } = await supabase
       .from('content_registry')
@@ -530,35 +534,73 @@ export const deleteContent = async (registryId: string): Promise<boolean> => {
       .eq('id', registryId)
       .single();
     
-    if (registryError) throw registryError;
+    if (registryError) {
+      console.error('Error al obtener información del registro:', registryError);
+      
+      // Si no se encuentra el registro, intentar buscar por content_id
+      const { data: registryByContentId, error: contentIdError } = await supabase
+        .from('content_registry')
+        .select('*')
+        .eq('content_id', registryId)
+        .single();
+        
+      if (contentIdError) {
+        console.error('Error al buscar por content_id:', contentIdError);
+        throw registryError;
+      }
+      
+      if (registryByContentId) {
+        console.log('Registro encontrado por content_id:', registryByContentId);
+        return await deleteContent(registryByContentId.id);
+      }
+      
+      throw registryError;
+    }
+    
+    console.log('Información del registro obtenida:', registry);
     
     // 2. Eliminar la relación en program_module_contents
+    console.log('Eliminando relaciones en program_module_contents...');
     const { error: relationError } = await supabase
       .from('program_module_contents')
       .delete()
       .eq('content_registry_id', registryId);
     
-    if (relationError) throw relationError;
+    if (relationError) {
+      console.error('Error al eliminar relaciones:', relationError);
+    } else {
+      console.log('Relaciones eliminadas correctamente');
+    }
     
-    // 3. Eliminar el registro en content_registry
-    const { error: deleteRegistryError } = await supabase
-      .from('content_registry')
-      .delete()
-      .eq('id', registryId);
-    
-    if (deleteRegistryError) throw deleteRegistryError;
-    
-    // 4. Eliminar el contenido especializado, excepto si es una actividad
+    // 3. Eliminar el contenido especializado, excepto si es una actividad
     // Las actividades se mantienen en stage_content para compatibilidad
     if (registry.content_table !== 'stage_content') {
+      console.log(`Eliminando contenido especializado en ${registry.content_table}...`);
       const { error: contentError } = await supabase
         .from(registry.content_table)
         .delete()
         .eq('id', registry.content_id);
       
-      if (contentError) throw contentError;
+      if (contentError) {
+        console.error('Error al eliminar contenido especializado:', contentError);
+      } else {
+        console.log('Contenido especializado eliminado correctamente');
+      }
     }
     
+    // 4. Eliminar el registro en content_registry
+    console.log('Eliminando registro en content_registry...');
+    const { error: deleteRegistryError } = await supabase
+      .from('content_registry')
+      .delete()
+      .eq('id', registryId);
+    
+    if (deleteRegistryError) {
+      console.error('Error al eliminar registro:', deleteRegistryError);
+      throw deleteRegistryError;
+    }
+    
+    console.log('Registro eliminado correctamente');
     return true;
     
   } catch (error) {

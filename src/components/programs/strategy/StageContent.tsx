@@ -1,10 +1,21 @@
 import { useState } from 'react';
-import { Database } from '../../../lib/database.types';
 import VideoPlayer from '../../VideoPlayer';
 import { Chat } from '../../chat/Chat';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 
-type StageContent = Database['public']['Tables']['stage_content']['Row'];
+// Definición de tipo actualizada para incluir 'advisory_session'
+type StageContent = {
+  id: string;
+  stage_id: string;
+  content_type: 'text' | 'video' | 'activity' | 'advisory_session';
+  title: string;
+  content: string;
+  order_num: number;
+  created_at: string;
+  metadata: any;
+  activity_data: any | null;
+  content_metadata?: any;
+};
 
 interface StageContentProps {
   content: StageContent[];

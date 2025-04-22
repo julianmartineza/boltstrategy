@@ -4,13 +4,23 @@ import StrategyProgress from './StrategyProgress';
 import { StageContent } from './StageContent';
 import ProgramOutline from './ProgramOutline';
 import { supabase } from '../../../lib/supabase';
-import type { Database } from '../../../lib/database.types';
 import { AlertCircle, Menu, X } from 'lucide-react';
 import { useAuthStore } from '../../../store/authStore';
 import { useParams } from 'react-router-dom';
 
 // Tipo para los datos de contenido de etapa que vienen de la base de datos
-type DBStageContent = Database['public']['Tables']['stage_content']['Row'];
+type DBStageContent = {
+  id: string;
+  stage_id: string;
+  content_type: 'text' | 'video' | 'activity' | 'advisory_session';
+  title: string;
+  content: string;
+  order_num: number;
+  created_at: string;
+  metadata: any;
+  activity_data: any | null;
+  content_metadata?: any;
+};
 
 const StrategyProgram: React.FC = () => {
   const { 
@@ -123,22 +133,106 @@ const StrategyProgram: React.FC = () => {
     
     const fetchAllStagesContent = async () => {
       try {
+        console.log('Cargando contenido de todas las etapas para el esquema...');
+        
         // Para cada etapa, cargar su contenido si aún no lo tenemos
         for (const stage of currentProgram.stages) {
           if (allStagesContent[stage.id]) continue;
           
-          const { data, error } = await supabase
+          console.log(`Cargando contenido para la etapa ${stage.id} (${stage.name})...`);
+          
+          // Primero intentar cargar desde la nueva estructura (content_registry + program_module_contents)
+          const { data: moduleContents, error: moduleError } = await supabase
+            .from('program_module_contents')
+            .select(`
+              content_registry_id,
+              position,
+              content_registry (
+                id,
+                title,
+                content_type,
+                content_table,
+                content_id
+              )
+            `)
+            .eq('program_module_id', stage.id)
+            .order('position');
+            
+          if (moduleError) {
+            console.error('Error al cargar contenidos desde program_module_contents:', moduleError);
+            throw moduleError;
+          }
+          
+          if (moduleContents && moduleContents.length > 0) {
+            console.log(`Encontrados ${moduleContents.length} contenidos en la nueva estructura para la etapa ${stage.id}`);
+            
+            // Transformar los datos al formato esperado por el componente
+            const formattedContents = moduleContents.map(item => {
+              // Asegurarnos de que content_registry existe y tiene las propiedades necesarias
+              if (!item.content_registry) {
+                console.error('Elemento sin content_registry:', item);
+                return null;
+              }
+              
+              return {
+                id: item.content_registry.id,
+                title: item.content_registry.title || 'Sin título',
+                content_type: (item.content_registry.content_type || 'text') as 'text' | 'video' | 'activity' | 'advisory_session',
+                stage_id: stage.id,
+                order_num: item.position,
+                content: '',  // No necesitamos el contenido para el esquema
+                created_at: new Date().toISOString(), // Valor predeterminado para cumplir con el tipo
+                metadata: {}, // Valor predeterminado para cumplir con el tipo
+                activity_data: null, // Valor predeterminado para cumplir con el tipo
+                content_metadata: {
+                  content_registry_id: item.content_registry.id,
+                  content_specific_id: item.content_registry.content_id
+                }
+              };
+            }).filter(Boolean) as DBStageContent[]; // Filtrar elementos nulos y asegurar el tipo
+            
+            // Actualizar el estado con los nuevos contenidos
+            setAllStagesContent(prev => {
+              const newState = { ...prev };
+              newState[stage.id] = formattedContents;
+              return newState;
+            });
+            
+            // Si esta es la etapa actual, actualizar también stageContent
+            if (currentStage && currentStage.id === stage.id) {
+              setStageContent(formattedContents);
+            }
+            
+            continue;  // Pasar a la siguiente etapa
+          }
+          
+          // Si no hay datos en la nueva estructura, intentar con la antigua (stage_content)
+          console.log(`No se encontraron contenidos en la nueva estructura para la etapa ${stage.id}, intentando con stage_content...`);
+          
+          const { data: legacyData, error: legacyError } = await supabase
             .from('stage_content')
             .select('*')
             .eq('stage_id', stage.id)
             .order('order_num');
             
-          if (error) throw error;
+          if (legacyError) {
+            console.error('Error al cargar contenidos desde stage_content:', legacyError);
+            throw legacyError;
+          }
           
-          setAllStagesContent(prev => ({
-            ...prev,
-            [stage.id]: data || []
-          }));
+          console.log(`Encontrados ${legacyData?.length || 0} contenidos en la estructura antigua para la etapa ${stage.id}`);
+          
+          // Actualizar el estado con los contenidos antiguos
+          setAllStagesContent(prev => {
+            const newState = { ...prev };
+            newState[stage.id] = legacyData || [];
+            return newState;
+          });
+          
+          // Si esta es la etapa actual, actualizar también stageContent
+          if (currentStage && currentStage.id === stage.id) {
+            setStageContent(legacyData || []);
+          }
         }
       } catch (error) {
         console.error('Error loading all stages content:', error);
@@ -146,7 +240,7 @@ const StrategyProgram: React.FC = () => {
     };
     
     fetchAllStagesContent();
-  }, [currentProgram, allStagesContent]);
+  }, [currentProgram, allStagesContent, currentStage]);
 
   // Actualizar el índice de la etapa actual cuando cambia
   useEffect(() => {

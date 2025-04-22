@@ -278,25 +278,45 @@ export const updateContentWithNewStructure = async (
  */
 export const deleteContentWithNewStructure = async (contentId: string): Promise<boolean> => {
   try {
-    // Primero intentamos encontrar el registro en content_registry por content_id
-    const { data: registryData, error: registryError } = await supabase
+    console.log('Intentando eliminar contenido con ID:', contentId);
+    
+    // Primero intentamos encontrar el registro en content_registry por ID directo
+    const { data: registryByIdData, error: registryByIdError } = await supabase
+      .from('content_registry')
+      .select('*')
+      .eq('id', contentId)
+      .maybeSingle();
+    
+    if (registryByIdError && registryByIdError.code !== 'PGRST116') {
+      console.error('Error al buscar en content_registry por id:', registryByIdError);
+    }
+    
+    // Si encontramos el registro directamente por ID
+    if (registryByIdData) {
+      console.log('Contenido encontrado en content_registry por ID directo:', registryByIdData);
+      return await contentRegistryService.deleteContent(registryByIdData.id);
+    }
+    
+    // Si no lo encontramos por ID directo, intentamos por content_id
+    const { data: registryByContentIdData, error: registryByContentIdError } = await supabase
       .from('content_registry')
       .select('*')
       .eq('content_id', contentId)
       .maybeSingle();
     
-    if (registryError && registryError.code !== 'PGRST116') {
-      throw registryError;
+    if (registryByContentIdError && registryByContentIdError.code !== 'PGRST116') {
+      console.error('Error al buscar en content_registry por content_id:', registryByContentIdError);
     }
     
-    if (registryData) {
-      // El contenido está en la nueva estructura
-      return await contentRegistryService.deleteContent(registryData.id);
-    } else {
-      // El contenido está en la estructura antigua
-      await contentManagerService.deleteContent(contentId);
-      return true;
+    if (registryByContentIdData) {
+      console.log('Contenido encontrado en content_registry por content_id:', registryByContentIdData);
+      return await contentRegistryService.deleteContent(registryByContentIdData.id);
     }
+    
+    // Si no lo encontramos en ninguna de las dos formas, asumimos que está en la estructura antigua
+    console.log('Contenido no encontrado en content_registry, intentando eliminar de stage_content');
+    await contentManagerService.deleteContent(contentId);
+    return true;
     
   } catch (error) {
     console.error('Error al eliminar contenido con nueva estructura:', error);
