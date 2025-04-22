@@ -130,7 +130,37 @@ export const createContentWithNewStructure = async (
         // Obtener el contenido creado
         const newVideoContent = await contentRegistryService.getModuleContents(content.stage_id);
         const createdVideoContent = newVideoContent.find(c => c.registry_id === videoRegistryId);
-        return createdVideoContent ? { ...createdVideoContent, registry_id: videoRegistryId, url: content.url } : null;
+        return createdVideoContent ? { ...createdVideoContent, registry_id: videoRegistryId } : null;
+        
+      case 'advisory_session':
+        if (!content.title) {
+          throw new Error('Se requiere título para crear una sesión de asesoría');
+        }
+        
+        console.log('Creando sesión de asesoría en contentTransitionService:', {
+          stage_id: content.stage_id,
+          title: content.title,
+          description: content.content || '',
+          duration: content.duration
+        });
+        
+        // Crear la sesión de asesoría en la nueva estructura
+        const advisoryRegistryId = await contentRegistryService.createAdvisorySession(
+          content.stage_id,
+          content.title,
+          content.content || '', // Descripción (opcional)
+          position,
+          content.duration // Duración (opcional)
+        );
+        
+        if (advisoryRegistryId === null) {
+          throw new Error('Error al crear sesión de asesoría');
+        }
+        
+        // Obtener el contenido creado
+        const newAdvisoryContent = await contentRegistryService.getModuleContents(content.stage_id);
+        const createdAdvisoryContent = newAdvisoryContent.find(c => c.registry_id === advisoryRegistryId);
+        return createdAdvisoryContent ? { ...createdAdvisoryContent, registry_id: advisoryRegistryId } : null;
         
       case 'activity':
         // Para actividades, seguimos usando la estructura antigua
@@ -219,19 +249,20 @@ export const updateContentWithNewStructure = async (
         const { error: updateError } = await supabase
           .from('content_registry')
           .update({ 
-            title: content.title,
-            updated_at: new Date().toISOString()
+            title: content.title
           })
           .eq('id', registryData.id);
         
         if (updateError) throw updateError;
         
+        return content;
       } else if (content.content_type === 'video') {
         // Actualizar contenido de video
         const { error: videoError } = await supabase
           .from('video_contents')
           .update({ 
-            url: content.url
+            video_url: content.url || '',
+            source: content.provider || 'youtube'
           })
           .eq('id', content.id);
         
@@ -241,28 +272,80 @@ export const updateContentWithNewStructure = async (
         const { error: updateError } = await supabase
           .from('content_registry')
           .update({ 
-            title: content.title,
-            updated_at: new Date().toISOString()
+            title: content.title
           })
           .eq('id', registryData.id);
         
         if (updateError) throw updateError;
+        
+        return content;
+      } else if (content.content_type === 'advisory_session') {
+        // Verificar si tenemos el ID del registro en content_metadata
+        if (!content.content_metadata?.content_registry_id) {
+          throw new Error('No se encontró el ID del registro para actualizar la sesión de asesoría');
+        }
+        
+        console.log('Actualizando sesión de asesoría con ID de registro:', content.content_metadata.content_registry_id);
+        
+        // Obtener el ID del contenido específico
+        const { data: registryData, error: registryError } = await supabase
+          .from('content_registry')
+          .select('content_id')
+          .eq('id', content.content_metadata.content_registry_id)
+          .single();
+        
+        if (registryError) {
+          throw new Error(`Error al obtener el ID del contenido específico: ${registryError.message}`);
+        }
+        
+        console.log('ID del contenido específico:', registryData.content_id);
+        
+        // Preparar los datos para la actualización
+        const updateData: any = { 
+          title: content.title,
+          description: content.content || ''
+        };
+        
+        // Agregar duración si está presente
+        if (content.duration !== undefined) {
+          updateData.duration = content.duration;
+        } else if (content.content_metadata?.duration !== undefined) {
+          updateData.duration = content.content_metadata.duration;
+        }
+        
+        console.log('Datos para actualizar la sesión de asesoría:', updateData);
+        
+        // Actualizar la sesión de asesoría
+        const { error: advisoryError } = await supabase
+          .from('advisory_sessions')
+          .update(updateData)
+          .eq('id', registryData.content_id);
+        
+        if (advisoryError) {
+          throw new Error(`Error al actualizar la sesión de asesoría: ${advisoryError.message}`);
+        }
+        
+        // Actualizar el registro
+        const { error: updateError } = await supabase
+          .from('content_registry')
+          .update({ 
+            title: content.title
+          })
+          .eq('id', content.content_metadata.content_registry_id);
+        
+        if (updateError) {
+          throw new Error(`Error al actualizar el registro: ${updateError.message}`);
+        }
+        
+        return content;
       }
       
-      // Devolver el contenido actualizado
-      if (content.stage_id) {
-        const updatedContents = await contentRegistryService.getModuleContents(content.stage_id);
-        const updatedContent = updatedContents.find(c => c.content_id === content.id);
-        if (updatedContent) return updatedContent;
-      }
-      
+      // Si llegamos aquí, devolvemos el contenido original como fallback
+      return content;
     } else {
       // El contenido está en la estructura antigua
       return await contentManagerService.updateContent(content, activityData);
     }
-    
-    // Si llegamos aquí, devolvemos el contenido original como fallback
-    return content;
     
   } catch (error) {
     console.error('Error al actualizar contenido con nueva estructura:', error);

@@ -1,9 +1,19 @@
 import React from 'react';
 import { ChevronDown, ChevronRight, CheckCircle, Circle, FileText, Video, MessageSquare } from 'lucide-react';
-import type { Database } from '../../../lib/database.types';
 
 // Tipo para los datos de contenido de etapa que vienen de la base de datos
-type DBStageContent = Database['public']['Tables']['stage_content']['Row'];
+type DBStageContent = {
+  id: string;
+  stage_id: string;
+  content_type: 'text' | 'video' | 'activity' | 'advisory_session';
+  title: string;
+  content: string;
+  order_num: number;
+  created_at: string;
+  metadata: any;
+  activity_data: any | null;
+  content_metadata?: any;
+};
 
 // Definir el tipo Stage localmente ya que no está disponible en types
 interface Stage {

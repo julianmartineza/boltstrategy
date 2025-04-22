@@ -49,7 +49,31 @@ export interface VideoContent {
   source?: string;
   duration?: number;
   thumbnail_url?: string;
-  transcript?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Interfaz para sesiones de asesoría
+ */
+export interface AdvisorySession {
+  id: string;
+  title: string;
+  description?: string;
+  duration?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Interfaz para contenido de actividad especializado
+ */
+export interface ActivityContent {
+  id: string;
+  title: string;
+  activity_data: any;
+  prompt_section?: string;
+  system_instructions?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -486,6 +510,79 @@ export const registerExistingActivity = async (
     return registry.id;
   } catch (error) {
     console.error('Error al registrar actividad existente:', error);
+    return null;
+  }
+};
+
+/**
+ * Crea una nueva sesión de asesoría en la estructura modular
+ * 
+ * @param moduleId ID del módulo al que pertenece
+ * @param title Título de la sesión
+ * @param description Descripción de la sesión
+ * @param position Posición en el módulo
+ * @param duration Duración en minutos (opcional)
+ * @returns El ID de la sesión de asesoría creada o null si hay error
+ */
+export const createAdvisorySession = async (
+  moduleId: string,
+  title: string,
+  description: string,
+  position: number,
+  duration?: number
+): Promise<string | null> => {
+  try {
+    // 1. Crear el contenido especializado
+    const { data: advisorySession, error: advisorySessionError } = await supabase
+      .from('advisory_sessions')
+      .insert({
+        title,
+        description,
+        duration: duration || 30 // Valor por defecto de 30 minutos si no se especifica
+      })
+      .select()
+      .single();
+    
+    if (advisorySessionError) {
+      console.error('Error al crear sesión de asesoría:', advisorySessionError);
+      return null;
+    }
+    
+    // 2. Crear el registro en content_registry
+    const { data: registryEntry, error: registryError } = await supabase
+      .from('content_registry')
+      .insert({
+        title,
+        content_type: 'advisory_session',
+        content_id: advisorySession.id,
+        content_table: 'advisory_sessions'
+      })
+      .select()
+      .single();
+    
+    if (registryError) {
+      console.error('Error al crear registro de contenido:', registryError);
+      return null;
+    }
+    
+    // 3. Crear la relación en program_module_contents
+    const { error: relationError } = await supabase
+      .from('program_module_contents')
+      .insert({
+        program_module_id: moduleId,
+        content_registry_id: registryEntry.id,
+        position
+      });
+    
+    if (relationError) {
+      console.error('Error al crear relación de módulo-contenido:', relationError);
+      return null;
+    }
+    
+    // Retornar el ID de la sesión de asesoría creada
+    return registryEntry.id;
+  } catch (error) {
+    console.error('Error al crear sesión de asesoría:', error);
     return null;
   }
 };

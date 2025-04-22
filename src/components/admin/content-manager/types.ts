@@ -16,6 +16,7 @@ export interface StageContent {
   system_instructions?: string;
   provider?: string; // Proveedor de video (youtube, vimeo, etc.)
   url?: string; // URL del video para contenidos de tipo video
+  duration?: number; // Duración en minutos para sesiones de asesoría
 }
 
 export interface Stage {

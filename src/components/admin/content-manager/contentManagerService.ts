@@ -116,6 +116,11 @@ export const createContent = async (
     // Preparar los datos para la inserción
     const contentToInsert = { ...content };
     
+    // Eliminar el campo content_metadata si existe, ya que no está en la tabla stage_content
+    if ('content_metadata' in contentToInsert) {
+      delete contentToInsert.content_metadata;
+    }
+    
     // Si es una actividad, convertir los datos de actividad a JSON
     if (content.content_type === 'activity' && activityData) {
       contentToInsert.activity_data = activityData;
@@ -142,6 +147,11 @@ export const updateContent = async (
   try {
     // Preparar los datos para la actualización
     const contentToUpdate = { ...content };
+    
+    // Eliminar el campo content_metadata si existe, ya que no está en la tabla stage_content
+    if ('content_metadata' in contentToUpdate) {
+      delete contentToUpdate.content_metadata;
+    }
     
     // Si es una actividad, convertir los datos de actividad a JSON
     if (content.content_type === 'activity' && activityData) {

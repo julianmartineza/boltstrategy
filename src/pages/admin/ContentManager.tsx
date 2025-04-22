@@ -148,7 +148,13 @@ const ContentManager: React.FC = () => {
             url: content.url,
             activity_data: content.activity_data,
             prompt_section: content.prompt_section,
-            system_instructions: content.system_instructions
+            system_instructions: content.system_instructions,
+            duration: content.duration,
+            // Incluir la información de content_registry necesaria para actualizaciones
+            content_metadata: {
+              content_registry_id: content.registry_id,
+              content_specific_id: content.content_id
+            }
           } as StageContent;
         });
         
@@ -408,9 +414,45 @@ const ContentManager: React.FC = () => {
           // Fallback a la estructura antigua
           createdContent = await contentManagerService.createContent(contentToCreate, activityData);
         }
-      } else {
-        // Usar la estructura antigua para otros tipos de contenido
+      } else if (content.content_type === 'advisory_session') {
+        // Usar la estructura modular para sesiones de asesoría
+        try {
+          console.log('Creando sesión de asesoría con:', contentToCreate);
+          
+          const result = await contentTransitionService.createContentWithNewStructure(
+            contentToCreate,
+            undefined
+          );
+          
+          if (result) {
+            createdContent = result as StageContent;
+          } else {
+            throw new Error('No se pudo crear la sesión de asesoría con la nueva estructura');
+          }
+        } catch (error) {
+          console.error('Error al crear sesión de asesoría:', error);
+          throw error; // No intentar fallback para sesiones de asesoría
+        }
+      } else if (content.content_type === 'activity' && activityData) {
+        // Usar la estructura antigua solo para actividades de chat
         createdContent = await contentManagerService.createContent(contentToCreate, activityData);
+      } else {
+        // Para otros tipos, intentar primero con la estructura modular
+        try {
+          const result = await contentTransitionService.createContentWithNewStructure(
+            contentToCreate,
+            undefined
+          );
+          
+          if (result) {
+            createdContent = result as StageContent;
+          } else {
+            throw new Error('No se pudo crear el contenido con la nueva estructura');
+          }
+        } catch (error) {
+          console.error('Error al crear contenido con estructura modular:', error);
+          throw error; // No intentar fallback para tipos no soportados
+        }
       }
       
       // Después de crear el contenido, cargar la lista completa de contenidos para asegurar que se muestre correctamente
@@ -443,7 +485,170 @@ const ContentManager: React.FC = () => {
       setContentLoading(true);
       
       // Determinar si se debe usar la estructura modular o la antigua
-      const updatedContent = await contentManagerService.updateContent(content, activityData);
+      let updatedContent: StageContent;
+      
+      if (content.content_type === 'advisory_session') {
+        // Para sesiones de asesoría, usar siempre la estructura modular
+        try {
+          console.log('Actualizando sesión de asesoría con estructura modular:', content);
+          
+          // Intentar obtener el ID del registro en content_registry
+          let registryId = content.content_metadata?.content_registry_id;
+          
+          // Si no tenemos el ID en content_metadata, intentar buscarlo
+          if (!registryId) {
+            console.log('No se encontró content_registry_id en content_metadata, buscando en la base de datos...');
+            
+            // Intentar diferentes estrategias para encontrar el registro
+            
+            // 1. Buscar por content_id y content_type
+            let { data: registryData, error: registryError } = await supabase
+              .from('content_registry')
+              .select('id, content_id, content_type, content_table')
+              .eq('content_id', content.id)
+              .eq('content_type', 'advisory_session')
+              .maybeSingle();
+            
+            if (registryError && registryError.code !== 'PGRST116') {
+              console.error('Error al buscar el registro por content_id:', registryError);
+            }
+            
+            // 2. Si no se encuentra, buscar por título y tipo
+            if (!registryData) {
+              console.log('Buscando por título y tipo...');
+              const { data: titleData, error: titleError } = await supabase
+                .from('content_registry')
+                .select('id, content_id, content_type, content_table')
+                .eq('title', content.title)
+                .eq('content_type', 'advisory_session')
+                .maybeSingle();
+              
+              if (titleError && titleError.code !== 'PGRST116') {
+                console.error('Error al buscar el registro por título:', titleError);
+              }
+              
+              if (titleData) {
+                registryData = titleData;
+                console.log('Se encontró el registro por título:', registryData);
+              }
+            }
+            
+            // 3. Si aún no se encuentra, buscar en advisory_sessions directamente
+            if (!registryData) {
+              console.log('Buscando en advisory_sessions directamente...');
+              const { data: advisoryData, error: advisoryError } = await supabase
+                .from('advisory_sessions')
+                .select('id, title')
+                .eq('id', content.id)
+                .maybeSingle();
+              
+              if (advisoryError && advisoryError.code !== 'PGRST116') {
+                console.error('Error al buscar en advisory_sessions:', advisoryError);
+              }
+              
+              if (advisoryData) {
+                console.log('Se encontró la sesión de asesoría:', advisoryData);
+                
+                // Buscar o crear el registro en content_registry
+                const { data: linkedRegistry, error: linkedError } = await supabase
+                  .from('content_registry')
+                  .select('id')
+                  .eq('content_id', advisoryData.id)
+                  .eq('content_type', 'advisory_session')
+                  .maybeSingle();
+                
+                if (linkedError && linkedError.code !== 'PGRST116') {
+                  console.error('Error al buscar registro vinculado:', linkedError);
+                }
+                
+                if (linkedRegistry) {
+                  registryData = linkedRegistry;
+                  console.log('Se encontró el registro vinculado:', registryData);
+                } else {
+                  // Si no existe, crear un nuevo registro en content_registry
+                  console.log('Creando nuevo registro en content_registry...');
+                  const { data: newRegistry, error: newError } = await supabase
+                    .from('content_registry')
+                    .insert({
+                      title: advisoryData.title,
+                      content_type: 'advisory_session',
+                      content_table: 'advisory_sessions',
+                      content_id: advisoryData.id
+                    })
+                    .select()
+                    .single();
+                  
+                  if (newError) {
+                    console.error('Error al crear nuevo registro:', newError);
+                  } else if (newRegistry) {
+                    registryData = newRegistry;
+                    console.log('Se creó un nuevo registro:', registryData);
+                  }
+                }
+              }
+            }
+            
+            if (registryData) {
+              registryId = registryData.id;
+              console.log('Se encontró el ID del registro:', registryId);
+              
+              // Actualizar el content_id si es necesario
+              content = {
+                ...content,
+                id: registryData.content_id || content.id
+              };
+            } else {
+              console.error('No se pudo encontrar el registro en content_registry');
+            }
+          }
+          
+          if (!registryId) {
+            throw new Error('No se encontró el ID del registro para actualizar la sesión de asesoría');
+          }
+          
+          const result = await contentTransitionService.updateContentWithNewStructure(
+            {
+              ...content,
+              content_metadata: {
+                ...content.content_metadata,
+                content_registry_id: registryId
+              }
+            },
+            undefined
+          );
+          
+          if (result) {
+            updatedContent = result as StageContent;
+          } else {
+            throw new Error('No se pudo actualizar la sesión de asesoría');
+          }
+        } catch (error) {
+          console.error('Error al actualizar sesión de asesoría:', error);
+          throw error;
+        }
+      } else if (content.content_type === 'text' || content.content_type === 'video') {
+        // Para texto y video, intentar primero con la estructura modular
+        try {
+          const result = await contentTransitionService.updateContentWithNewStructure(
+            content,
+            undefined
+          );
+          
+          if (result) {
+            updatedContent = result as StageContent;
+          } else {
+            // Si falla, intentar con la estructura antigua
+            updatedContent = await contentManagerService.updateContent(content, activityData);
+          }
+        } catch (error) {
+          console.error('Error al actualizar contenido con estructura modular:', error);
+          // Fallback a la estructura antigua
+          updatedContent = await contentManagerService.updateContent(content, activityData);
+        }
+      } else {
+        // Para otros tipos (principalmente actividades), usar la estructura antigua
+        updatedContent = await contentManagerService.updateContent(content, activityData);
+      }
       
       // Después de actualizar el contenido, recargar la lista completa para asegurar que se muestre correctamente
       if (content.stage_id) {

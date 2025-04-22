@@ -174,10 +174,19 @@ const StrategyProgram: React.FC = () => {
                 return null;
               }
               
+              // Acceder a las propiedades de content_registry de forma segura
+              const registry = item.content_registry as unknown as {
+                id: string;
+                title: string;
+                content_type: string;
+                content_table: string;
+                content_id: string;
+              };
+              
               return {
-                id: item.content_registry.id,
-                title: item.content_registry.title || 'Sin título',
-                content_type: (item.content_registry.content_type || 'text') as 'text' | 'video' | 'activity' | 'advisory_session',
+                id: registry.id,
+                title: registry.title || 'Sin título',
+                content_type: (registry.content_type || 'text') as 'text' | 'video' | 'activity' | 'advisory_session',
                 stage_id: stage.id,
                 order_num: item.position,
                 content: '',  // No necesitamos el contenido para el esquema
@@ -185,8 +194,8 @@ const StrategyProgram: React.FC = () => {
                 metadata: {}, // Valor predeterminado para cumplir con el tipo
                 activity_data: null, // Valor predeterminado para cumplir con el tipo
                 content_metadata: {
-                  content_registry_id: item.content_registry.id,
-                  content_specific_id: item.content_registry.content_id
+                  content_registry_id: registry.id,
+                  content_specific_id: registry.content_id
                 }
               };
             }).filter(Boolean) as DBStageContent[]; // Filtrar elementos nulos y asegurar el tipo
@@ -240,7 +249,7 @@ const StrategyProgram: React.FC = () => {
     };
     
     fetchAllStagesContent();
-  }, [currentProgram, allStagesContent, currentStage]);
+  }, [currentProgram, currentStage]);
 
   // Actualizar el índice de la etapa actual cuando cambia
   useEffect(() => {
