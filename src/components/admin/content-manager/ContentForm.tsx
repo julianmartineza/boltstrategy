@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { StageContent, ActivityData } from './types';
 import { supabase } from '../../../lib/supabase';
+import { AdvisoryAllocationForm } from '../../advisory';
 
 interface ContentFormProps {
   content: Partial<StageContent>;
@@ -9,16 +10,19 @@ interface ContentFormProps {
   onCancel: () => void;
   loading: boolean;
   isEditing?: boolean;
+  moduleId?: string;
 }
 
-const ContentForm: React.FC<ContentFormProps> = ({ 
-  content, 
-  onSave, 
-  onCancel, 
-  loading, 
-  isEditing = false
+const ContentForm: React.FC<ContentFormProps> = ({
+  content,
+  onSave,
+  onCancel,
+  loading,
+  isEditing = false,
+  moduleId
 }) => {
   const [formContent, setFormContent] = useState<Partial<StageContent>>(content);
+  const [error, setError] = useState<string | null>(null);
   const [activityData, setActivityData] = useState<ActivityData>({
     prompt: '',
     initial_message: '',
@@ -30,23 +34,49 @@ const ContentForm: React.FC<ContentFormProps> = ({
   const [availableActivities, setAvailableActivities] = useState<{id: string, stage_name: string, title: string}[]>([]);
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
   const [stageName, setStageName] = useState<string>('');
+  const [contentType, setContentType] = useState<string>(formContent.content_type || 'text');
+  const [contentData, setContentData] = useState<{duration: number, session_type: string}>({duration: 60, session_type: 'individual'});
+  const [showAdvisoryAllocationForm, setShowAdvisoryAllocationForm] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string>('');
 
   useEffect(() => {
     // Cargar actividades disponibles para dependencias
-    const fetchAvailableActivities = async () => {
-      const { data, error } = await supabase
-        .from('stage_content')
-        .select('id, stage_name, title')
-        .eq('content_type', 'activity')
-        .order('created_at', { ascending: true });
-      
-      if (!error && data) {
-        setAvailableActivities(data);
+    const fetchActivities = async () => {
+      try {
+        // Modificar la consulta para seleccionar todo el content_metadata
+        const { data, error } = await supabase
+          .from('content_registry')
+          .select(`
+            id,
+            title,
+            content_metadata
+          `)
+          .eq('content_type', 'activity');
+        
+        if (error) throw error;
+        
+        if (data) {
+          // Usar una aserción de tipo para cada elemento
+          const formattedData = data.map((item: any) => {
+            return {
+              id: item.id,
+              stage_name: item.content_metadata?.stage_name || 'Sin etapa',
+              title: item.title
+            };
+          });
+          
+          setAvailableActivities(formattedData);
+        }
+      } catch (err) {
+        console.error('Error al cargar actividades:', err);
       }
     };
 
-    fetchAvailableActivities();
-  }, []);
+    if (formContent.content_type === 'activity') {
+      fetchActivities();
+    }
+  }, [formContent.content_type]);
 
   useEffect(() => {
     if (content.activity_data) {
@@ -81,21 +111,35 @@ const ContentForm: React.FC<ContentFormProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Incluir las dependencias en el objeto formContent
-    // Manejar stage_name de forma segura
-    const updatedContent = {
-      ...formContent,
-      dependencies: selectedDependencies
-    };
-    
-    // Solo añadir stage_name si tiene un valor
-    if (stageName) {
-      // Intentamos añadir stage_name, pero el servicio lo manejará si hay error
-      updatedContent.stage_name = stageName;
+    setError(null);
+
+    try {
+      // Incluir las dependencias en el objeto formContent
+      // Manejar stage_name de forma segura
+      const updatedContent: Partial<StageContent> = {
+        ...formContent,
+        dependencies: selectedDependencies
+      };
+      
+      // Solo añadir stage_name si tiene un valor
+      if (stageName) {
+        updatedContent.stage_name = stageName;
+      }
+      
+      // Si es una sesión de asesoría, procesar los datos específicos
+      if (contentType === 'advisory_session') {
+        updatedContent.content_type = 'advisory_session';
+        updatedContent.content_metadata = {
+          duration: contentData.duration,
+          session_type: contentData.session_type
+        };
+      }
+
+      onSave(updatedContent, activityData);
+    } catch (err) {
+      console.error('Error al procesar el formulario:', err);
+      setError('Error al procesar el formulario. Por favor, inténtalo de nuevo.');
     }
-    
-    onSave(updatedContent, activityData);
   };
 
   const handleAddDependency = (dependencyId: string) => {
@@ -108,6 +152,15 @@ const ContentForm: React.FC<ContentFormProps> = ({
     setSelectedDependencies(selectedDependencies.filter(id => id !== dependencyId));
   };
 
+  const contentTypes = [
+    { value: 'text', label: 'Texto' },
+    { value: 'video', label: 'Video' },
+    { value: 'document', label: 'Documento' },
+    { value: 'quiz', label: 'Cuestionario' },
+    { value: 'activity', label: 'Actividad' },
+    { value: 'advisory_session', label: 'Sesión de Asesoría' }
+  ];
+
   return (
     <div className="bg-gray-50 p-4 rounded-md mb-4 border border-gray-200">
       <h5 className="text-sm font-medium mb-3">
@@ -117,18 +170,15 @@ const ContentForm: React.FC<ContentFormProps> = ({
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">Tipo de Contenido</label>
           <select
-            value={formContent.content_type || 'text'}
-            onChange={(e) => setFormContent({ 
-              ...formContent, 
-              content_type: e.target.value as 'video' | 'text' | 'activity' 
-            })}
+            value={contentType}
+            onChange={(e) => setContentType(e.target.value)}
             className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             disabled={loading}
             required
           >
-            <option value="text">Texto</option>
-            <option value="video">Video</option>
-            <option value="activity">Actividad</option>
+            {contentTypes.map(type => (
+              <option key={type.value} value={type.value}>{type.label}</option>
+            ))}
           </select>
         </div>
         
@@ -161,9 +211,9 @@ const ContentForm: React.FC<ContentFormProps> = ({
         
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-1">
-            {formContent.content_type === 'video' ? 'URL del Video' : 'Contenido'}
+            {contentType === 'video' ? 'URL del Video' : 'Contenido'}
           </label>
-          {formContent.content_type === 'text' ? (
+          {contentType === 'text' ? (
             <textarea
               value={formContent.content || ''}
               onChange={(e) => setFormContent({ ...formContent, content: e.target.value })}
@@ -173,7 +223,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
               disabled={loading}
               required
             />
-          ) : formContent.content_type === 'activity' ? (
+          ) : contentType === 'activity' ? (
             <div className="space-y-3 border border-gray-200 p-3 rounded-md bg-gray-50">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Descripción de la Actividad</label>
@@ -276,8 +326,8 @@ const ContentForm: React.FC<ContentFormProps> = ({
                     {availableActivities
                       .filter(activity => activity.id !== formContent.id) // No permitir dependencia circular
                       .map(activity => (
-                        <option key={activity.id} value={activity.stage_name || activity.id}>
-                          {activity.stage_name || activity.title}
+                        <option key={activity.id} value={activity.id}>
+                          {activity.stage_name}: {activity.title}
                         </option>
                       ))}
                   </select>
@@ -286,10 +336,10 @@ const ContentForm: React.FC<ContentFormProps> = ({
                 {/* Lista de dependencias seleccionadas */}
                 <div className="space-y-1">
                   {selectedDependencies.map(dependency => {
-                    const activityInfo = availableActivities.find(a => a.stage_name === dependency || a.id === dependency);
+                    const activityInfo = availableActivities.find(a => a.id === dependency);
                     return (
                       <div key={dependency} className="flex items-center justify-between p-2 bg-gray-100 rounded-md">
-                        <span className="text-xs">{activityInfo?.stage_name || activityInfo?.title || dependency}</span>
+                        <span className="text-xs">{activityInfo?.stage_name}: {activityInfo?.title || dependency}</span>
                         <button
                           type="button"
                           onClick={() => handleRemoveDependency(dependency)}
@@ -304,18 +354,84 @@ const ContentForm: React.FC<ContentFormProps> = ({
                 </div>
               </div>
             </div>
+          ) : contentType === 'advisory_session' ? (
+            <div className="mt-4 p-4 border rounded-md bg-blue-50">
+              <h3 className="text-lg font-medium mb-2">Configuración de Sesión de Asesoría</h3>
+              
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">
+                  Duración (minutos)
+                </label>
+                <input
+                  type="number"
+                  value={contentData.duration}
+                  onChange={(e) => setContentData({
+                    ...contentData,
+                    duration: parseInt(e.target.value) || 60
+                  })}
+                  className="w-full p-2 border rounded"
+                  min="15"
+                  step="15"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Duración recomendada: 60 minutos (1 hora), 30 minutos (media hora), etc.
+                </p>
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">
+                  Tipo de sesión
+                </label>
+                <select
+                  value={contentData.session_type}
+                  onChange={(e) => setContentData({
+                    ...contentData,
+                    session_type: e.target.value
+                  })}
+                  className="w-full p-2 border rounded"
+                >
+                  <option value="individual">Individual (1 empresa)</option>
+                  <option value="group">Grupal (varias empresas)</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-gray-700 mb-2">
+                  Descripción
+                </label>
+                <textarea
+                  value={formContent.content || ''}
+                  onChange={(e) => setFormContent({ ...formContent, content: e.target.value })}
+                  className="w-full p-2 border rounded"
+                  rows={3}
+                  placeholder="Describe el propósito y objetivos de esta sesión de asesoría..."
+                />
+              </div>
+            </div>
           ) : (
             <input
               type="text"
-              value={formContent.url || ''}
-              onChange={(e) => setFormContent({ ...formContent, url: e.target.value })}
+              value={formContent.content || ''}
+              onChange={(e) => setFormContent({ ...formContent, content: e.target.value })}
               className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="https://player.vimeo.com/video/123456789"
+              placeholder={contentType === 'video' ? 'URL del video (YouTube, Vimeo, etc.)' : 'Contenido'}
               disabled={loading}
               required
             />
           )}
         </div>
+        
+        {error && (
+          <div className="mt-4 p-2 bg-red-100 text-red-700 rounded-md text-sm">
+            {error}
+          </div>
+        )}
+        
+        {showSuccessMessage && successMessage && (
+          <div className="mt-4 p-2 bg-green-100 text-green-700 rounded-md text-sm">
+            {successMessage}
+          </div>
+        )}
         
         <div className="flex justify-end space-x-2">
           <button
@@ -342,6 +458,37 @@ const ContentForm: React.FC<ContentFormProps> = ({
           </button>
         </div>
       </form>
+      
+      {/* Botón para asignar horas de asesoría si estamos editando una sesión de asesoría */}
+      {isEditing && contentType === 'advisory_session' && moduleId && (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => setShowAdvisoryAllocationForm(true)}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Asignar Horas de Asesoría
+          </button>
+        </div>
+      )}
+      
+      {/* Modal para asignar horas de asesoría */}
+      {showAdvisoryAllocationForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <AdvisoryAllocationForm
+              programModuleId={moduleId || ''}
+              onSubmit={() => {
+                setShowAdvisoryAllocationForm(false);
+                setSuccessMessage('Horas de asesoría asignadas correctamente');
+                setShowSuccessMessage(true);
+                setTimeout(() => setShowSuccessMessage(false), 3000);
+              }}
+              onCancel={() => setShowAdvisoryAllocationForm(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
-import { Loader2, CheckCircle, XCircle, UserPlus, Save, X } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, UserPlus, Save, X, UserCog } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 interface UserProfile {
   id: string;
   email: string;
   is_admin: boolean;
+  is_advisor?: boolean;
   created_at: string;
   programs?: {
     id: string;
@@ -33,6 +34,7 @@ const UserManager: React.FC = () => {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserIsAdmin, setNewUserIsAdmin] = useState(false);
+  const [newUserIsAdvisor, setNewUserIsAdvisor] = useState(false);
   const [processingAction, setProcessingAction] = useState(false);
 
   // Cargar usuarios y programas
@@ -82,6 +84,23 @@ const UserManager: React.FC = () => {
           }
         }
 
+        // Verificar qué usuarios son asesores
+        for (const user of formattedUsers) {
+          try {
+            const { data: advisor, error: advisorError } = await supabase
+              .from('advisors')
+              .select('id')
+              .eq('user_id', user.id)
+              .maybeSingle();
+            
+            if (!advisorError) {
+              user.is_advisor = !!advisor;
+            }
+          } catch (err) {
+            console.error(`Error al verificar si el usuario ${user.id} es asesor:`, err);
+          }
+        }
+
         setUsers(formattedUsers);
         setPrograms(programsData || []);
       } catch (err) {
@@ -128,6 +147,53 @@ const UserManager: React.FC = () => {
     } catch (err) {
       console.error('Error al cambiar rol de administrador:', err);
       setError('Error al cambiar el rol de administrador. Por favor, inténtalo de nuevo.');
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  // Cambiar rol de asesor
+  const toggleAdvisorStatus = async (userId: string, isAdvisor: boolean) => {
+    try {
+      setProcessingAction(true);
+      
+      if (isAdvisor) {
+        // Crear perfil de asesor
+        const user = users.find(u => u.id === userId);
+        if (!user) throw new Error('Usuario no encontrado');
+        
+        const { data, error } = await supabase.rpc('create_advisor', {
+          p_user_id: userId,
+          p_name: user.email.split('@')[0], // Nombre temporal basado en el email
+          p_bio: null,
+          p_specialty: null,
+          p_email: user.email,
+          p_phone: null,
+          p_photo_url: null,
+          p_google_account_email: null
+        });
+        
+        if (error) throw error;
+      } else {
+        // Eliminar perfil de asesor
+        const { error } = await supabase
+          .from('advisors')
+          .delete()
+          .eq('user_id', userId);
+        
+        if (error) throw error;
+      }
+
+      // Actualizar lista de usuarios
+      setUsers(users.map(u => 
+        u.id === userId ? { ...u, is_advisor: isAdvisor } : u
+      ));
+      
+      setSuccess(`Rol de asesor ${isAdvisor ? 'asignado' : 'removido'} exitosamente.`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      console.error('Error al cambiar rol de asesor:', err);
+      setError('Error al cambiar el rol de asesor. Por favor, inténtalo de nuevo.');
     } finally {
       setProcessingAction(false);
     }
@@ -194,11 +260,26 @@ const UserManager: React.FC = () => {
           });
         }
         
+        // Crear perfil de asesor si es necesario
+        if (newUserIsAdvisor) {
+          await supabase.rpc('create_advisor', {
+            p_user_id: data.user.id,
+            p_name: newUserEmail.split('@')[0], // Nombre temporal basado en el email
+            p_bio: null,
+            p_specialty: null,
+            p_email: newUserEmail,
+            p_phone: null,
+            p_photo_url: null,
+            p_google_account_email: null
+          });
+        }
+        
         // Añadir a la lista de usuarios
         const newUser: UserProfile = {
           id: data.user.id,
           email: data.user.email || newUserEmail,
           is_admin: newUserIsAdmin,
+          is_advisor: newUserIsAdvisor,
           created_at: new Date().toISOString(),
           programs: []
         };
@@ -208,6 +289,7 @@ const UserManager: React.FC = () => {
         setNewUserEmail('');
         setNewUserPassword('');
         setNewUserIsAdmin(false);
+        setNewUserIsAdvisor(false);
         setSuccess('Usuario creado exitosamente.');
         setTimeout(() => setSuccess(null), 3000);
       }
@@ -302,291 +384,280 @@ const UserManager: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-        <span className="ml-2 text-gray-600">Cargando usuarios...</span>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Gestión de Usuarios</h1>
+      
       {/* Mensajes de error y éxito */}
       {error && (
-        <div className="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg flex items-center justify-between">
-          <div className="flex items-center">
-            <XCircle className="h-5 w-5 mr-2" />
-            {error}
-          </div>
-          <button onClick={() => setError(null)} className="text-red-700">
-            <X className="h-5 w-5" />
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)}>
+            <X size={20} />
           </button>
         </div>
       )}
       
       {success && (
-        <div className="p-4 mb-4 text-sm text-green-700 bg-green-100 rounded-lg flex items-center justify-between">
-          <div className="flex items-center">
-            <CheckCircle className="h-5 w-5 mr-2" />
-            {success}
-          </div>
-          <button onClick={() => setSuccess(null)} className="text-green-700">
-            <X className="h-5 w-5" />
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between">
+          <span>{success}</span>
+          <button onClick={() => setSuccess(null)}>
+            <X size={20} />
           </button>
         </div>
       )}
       
       {/* Botón para añadir usuario */}
-      <div className="flex justify-end">
-        <button 
+      <div className="mb-4">
+        <button
+          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
           onClick={() => setShowAddUserModal(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center"
-          disabled={processingAction}
         >
-          <UserPlus size={16} className="mr-2" />
+          <UserPlus size={20} className="mr-2" />
           Añadir Usuario
         </button>
       </div>
       
-      {/* Tabla de usuarios */}
-      <div className="overflow-x-auto">
-        <table className="min-w-full bg-white border border-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Programas</th>
-              <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {users.map(user => (
-              <tr key={user.id} className={cn(
-                "hover:bg-gray-50",
-                user.id === currentUser?.id ? "bg-blue-50" : ""
-              )}>
-                <td className="py-4 px-4 text-sm text-gray-900">
-                  {user.email}
-                  {user.id === currentUser?.id && (
-                    <span className="ml-2 text-xs text-blue-600">(Tú)</span>
-                  )}
-                </td>
-                <td className="py-4 px-4 text-sm">
-                  <span className={cn(
-                    "px-2 py-1 rounded-full text-xs font-medium",
-                    user.is_admin 
-                      ? "bg-purple-100 text-purple-800" 
-                      : "bg-gray-100 text-gray-800"
-                  )}>
-                    {user.is_admin ? 'Administrador' : 'Usuario'}
-                  </span>
-                </td>
-                <td className="py-4 px-4 text-sm text-gray-900">
-                  {user.programs && user.programs.length > 0 
-                    ? user.programs.map(p => p.name).join(', ')
-                    : <span className="text-gray-400">Sin programas asignados</span>
-                  }
-                </td>
-                <td className="py-4 px-4 text-sm text-gray-900">
-                  <div className="flex space-x-2">
-                    <button 
-                      onClick={() => toggleAdminStatus(user.id, !user.is_admin)}
-                      className={cn(
-                        "text-xs px-2 py-1 rounded",
-                        user.is_admin
-                          ? "bg-red-100 text-red-700 hover:bg-red-200"
-                          : "bg-purple-100 text-purple-700 hover:bg-purple-200"
-                      )}
-                      disabled={processingAction || user.id === currentUser?.id}
-                    >
-                      {user.is_admin ? 'Quitar Admin' : 'Hacer Admin'}
-                    </button>
-                    
-                    <button 
-                      onClick={() => startEditingUser(user)}
-                      className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
-                      disabled={processingAction}
-                    >
-                      Programas
-                    </button>
-                    
-                    {user.id !== currentUser?.id && (
-                      <button 
-                        onClick={() => handleDeleteUser(user.id)}
-                        className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200"
-                        disabled={processingAction}
-                      >
-                        Eliminar
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+      {/* Modal para añadir usuario */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Añadir Nuevo Usuario</h2>
             
-            {users.length === 0 && (
-              <tr>
-                <td colSpan={4} className="py-4 px-4 text-sm text-gray-500 text-center">
-                  No hay usuarios para mostrar
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      
-      {/* Modal para editar programas de usuario */}
-      {editingUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="p-6">
-              <h3 className="text-lg font-medium mb-4">
-                Asignar Programas a {editingUser.email}
-              </h3>
+            <div className="mb-4">
+              <label className="block text-gray-700 mb-2">Correo Electrónico</label>
+              <input
+                type="email"
+                className="w-full p-2 border rounded"
+                value={newUserEmail}
+                onChange={(e) => setNewUserEmail(e.target.value)}
+                placeholder="correo@ejemplo.com"
+              />
+            </div>
+            
+            <div className="mb-4">
+              <label className="block text-gray-700 mb-2">Contraseña</label>
+              <input
+                type="password"
+                className="w-full p-2 border rounded"
+                value={newUserPassword}
+                onChange={(e) => setNewUserPassword(e.target.value)}
+                placeholder="Contraseña"
+              />
+            </div>
+            
+            <div className="mb-4">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={newUserIsAdmin}
+                  onChange={(e) => setNewUserIsAdmin(e.target.checked)}
+                />
+                <span>Administrador</span>
+              </label>
+            </div>
+            
+            <div className="mb-4">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={newUserIsAdvisor}
+                  onChange={(e) => setNewUserIsAdvisor(e.target.checked)}
+                />
+                <span>Asesor</span>
+              </label>
+            </div>
+            
+            <div className="flex justify-end">
+              <button
+                className="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-4 rounded mr-2"
+                onClick={() => {
+                  setShowAddUserModal(false);
+                  setNewUserEmail('');
+                  setNewUserPassword('');
+                  setNewUserIsAdmin(false);
+                  setNewUserIsAdvisor(false);
+                }}
+              >
+                Cancelar
+              </button>
               
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 mb-2">
-                  Selecciona los programas a los que este usuario tendrá acceso:
-                </p>
-                
-                <div className="max-h-60 overflow-y-auto border rounded p-2">
-                  {programs.length > 0 ? (
-                    programs.map(program => (
-                      <div key={program.id} className="flex items-center mb-2">
-                        <input
-                          type="checkbox"
-                          id={`program-${program.id}`}
-                          checked={selectedPrograms.includes(program.id)}
-                          onChange={() => handleProgramSelection(program.id)}
-                          className="h-4 w-4 text-blue-600 rounded"
-                        />
-                        <label htmlFor={`program-${program.id}`} className="ml-2 text-sm text-gray-700">
-                          {program.name}
-                        </label>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500 p-2">No hay programas disponibles</p>
-                  )}
-                </div>
-              </div>
-              
-              <div className="flex justify-end space-x-2">
-                <button
-                  onClick={cancelEditing}
-                  className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
-                  disabled={processingAction}
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleAssignPrograms}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center"
-                  disabled={processingAction}
-                >
-                  {processingAction ? (
-                    <>
-                      <Loader2 size={16} className="mr-2 animate-spin" />
-                      Guardando...
-                    </>
-                  ) : (
-                    <>
-                      <Save size={16} className="mr-2" />
-                      Guardar
-                    </>
-                  )}
-                </button>
-              </div>
+              <button
+                className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
+                onClick={handleAddUser}
+                disabled={processingAction}
+              >
+                {processingAction ? (
+                  <Loader2 size={20} className="mr-2 animate-spin" />
+                ) : (
+                  <Save size={20} className="mr-2" />
+                )}
+                Guardar
+              </button>
             </div>
           </div>
         </div>
       )}
       
-      {/* Modal para añadir usuario */}
-      {showAddUserModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="p-6">
-              <h3 className="text-lg font-medium mb-4">
-                Añadir Nuevo Usuario
-              </h3>
+      {/* Lista de usuarios */}
+      {loading ? (
+        <div className="flex justify-center items-center h-64">
+          <Loader2 size={40} className="animate-spin text-blue-500" />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full bg-white border border-gray-200">
+            <thead>
+              <tr>
+                <th className="py-2 px-4 border-b text-left">Correo</th>
+                <th className="py-2 px-4 border-b text-left">Fecha de Creación</th>
+                <th className="py-2 px-4 border-b text-left">Programas</th>
+                <th className="py-2 px-4 border-b text-left">Administrador</th>
+                <th className="py-2 px-4 border-b text-left">Asesor</th>
+                <th className="py-2 px-4 border-b text-left">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((user) => (
+                <tr key={user.id} className="hover:bg-gray-50">
+                  <td className="py-2 px-4 border-b">{user.email}</td>
+                  <td className="py-2 px-4 border-b">
+                    {new Date(user.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="py-2 px-4 border-b">
+                    {user.programs && user.programs.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {user.programs.map((program) => (
+                          <span
+                            key={program.id}
+                            className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded"
+                          >
+                            {program.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-gray-500">Sin programas</span>
+                    )}
+                  </td>
+                  <td className="py-2 px-4 border-b">
+                    <button
+                      className={cn(
+                        "flex items-center",
+                        user.is_admin ? "text-green-500" : "text-red-500"
+                      )}
+                      onClick={() => toggleAdminStatus(user.id, !user.is_admin)}
+                      disabled={processingAction}
+                    >
+                      {user.is_admin ? (
+                        <CheckCircle size={20} className="mr-1" />
+                      ) : (
+                        <XCircle size={20} className="mr-1" />
+                      )}
+                      {user.is_admin ? "Sí" : "No"}
+                    </button>
+                  </td>
+                  <td className="py-2 px-4 border-b">
+                    <button
+                      className={cn(
+                        "flex items-center",
+                        user.is_advisor ? "text-green-500" : "text-red-500"
+                      )}
+                      onClick={() => toggleAdvisorStatus(user.id, !user.is_advisor)}
+                      disabled={processingAction}
+                    >
+                      {user.is_advisor ? (
+                        <CheckCircle size={20} className="mr-1" />
+                      ) : (
+                        <XCircle size={20} className="mr-1" />
+                      )}
+                      {user.is_advisor ? "Sí" : "No"}
+                    </button>
+                  </td>
+                  <td className="py-2 px-4 border-b">
+                    <div className="flex space-x-2">
+                      <button
+                        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded text-sm"
+                        onClick={() => startEditingUser(user)}
+                      >
+                        Programas
+                      </button>
+                      
+                      {user.is_advisor && (
+                        <button
+                          className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-1 px-2 rounded text-sm flex items-center"
+                          onClick={() => window.location.href = `/admin/advisors/${user.id}`}
+                        >
+                          <UserCog size={16} className="mr-1" />
+                          Perfil Asesor
+                        </button>
+                      )}
+                      
+                      <button
+                        className="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded text-sm"
+                        onClick={() => handleDeleteUser(user.id)}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      
+      {/* Modal para asignar programas */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">
+              Asignar Programas a {editingUser.email}
+            </h2>
+            
+            <div className="mb-4 max-h-60 overflow-y-auto">
+              {programs.length > 0 ? (
+                programs.map((program) => (
+                  <div key={program.id} className="mb-2">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        className="mr-2"
+                        checked={selectedPrograms.includes(program.id)}
+                        onChange={() => handleProgramSelection(program.id)}
+                      />
+                      <span>{program.name}</span>
+                    </label>
+                  </div>
+                ))
+              ) : (
+                <p className="text-gray-500">No hay programas disponibles</p>
+              )}
+            </div>
+            
+            <div className="flex justify-end">
+              <button
+                className="bg-gray-300 hover:bg-gray-400 text-black font-bold py-2 px-4 rounded mr-2"
+                onClick={cancelEditing}
+              >
+                Cancelar
+              </button>
               
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                    Correo Electrónico
-                  </label>
-                  <input
-                    type="email"
-                    id="email"
-                    value={newUserEmail}
-                    onChange={(e) => setNewUserEmail(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="correo@ejemplo.com"
-                  />
-                </div>
-                
-                <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                    Contraseña
-                  </label>
-                  <input
-                    type="password"
-                    id="password"
-                    value={newUserPassword}
-                    onChange={(e) => setNewUserPassword(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Contraseña"
-                  />
-                </div>
-                
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="is-admin"
-                    checked={newUserIsAdmin}
-                    onChange={(e) => setNewUserIsAdmin(e.target.checked)}
-                    className="h-4 w-4 text-blue-600 rounded"
-                  />
-                  <label htmlFor="is-admin" className="ml-2 text-sm text-gray-700">
-                    Asignar rol de Administrador
-                  </label>
-                </div>
-              </div>
-              
-              <div className="flex justify-end space-x-2 mt-6">
-                <button
-                  onClick={() => {
-                    setShowAddUserModal(false);
-                    setNewUserEmail('');
-                    setNewUserPassword('');
-                    setNewUserIsAdmin(false);
-                  }}
-                  className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
-                  disabled={processingAction}
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleAddUser}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center"
-                  disabled={processingAction || !newUserEmail || !newUserPassword}
-                >
-                  {processingAction ? (
-                    <>
-                      <Loader2 size={16} className="mr-2 animate-spin" />
-                      Creando...
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus size={16} className="mr-2" />
-                      Crear Usuario
-                    </>
-                  )}
-                </button>
-              </div>
+              <button
+                className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex items-center"
+                onClick={handleAssignPrograms}
+                disabled={processingAction}
+              >
+                {processingAction ? (
+                  <Loader2 size={20} className="mr-2 animate-spin" />
+                ) : (
+                  <Save size={20} className="mr-2" />
+                )}
+                Guardar
+              </button>
             </div>
           </div>
         </div>

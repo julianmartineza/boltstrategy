@@ -2,13 +2,14 @@ export interface StageContent {
   id: string;
   title: string;
   content: string;
-  content_type: 'video' | 'text' | 'activity';
+  content_type: 'video' | 'text' | 'activity' | 'advisory_session';
   stage_id: string;
   order_num?: number;
   created_at?: string;
   updated_at?: string;
   activity_data?: ActivityData | string;
   metadata?: any;
+  content_metadata?: any;
   dependencies?: string[];
   stage_name?: string;
   prompt_section?: string;

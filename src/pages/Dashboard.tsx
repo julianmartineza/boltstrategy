@@ -3,17 +3,20 @@ import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useProgramStore } from '../store/programStore';
 import { supabase } from '../lib/supabase';
-import { Menu, X, User, LogOut, ChevronRight, Building2, BookOpen } from 'lucide-react';
+import { Menu, X, User, LogOut, ChevronRight, Building2, BookOpen, Calendar } from 'lucide-react';
 
 const StrategyProgram = React.lazy(() => import('../components/programs/strategy/StrategyProgram'));
 const CompanySetup = React.lazy(() => import('../components/CompanySetup'));
 const CompanyProfile = React.lazy(() => import('./CompanyProfile'));
 const AdminDashboard = React.lazy(() => import('./admin/AdminDashboard'));
+const AdvisorPanel = React.lazy(() => import('../components/advisory/AdvisorPanel'));
+const AdvisorManager = React.lazy(() => import('../components/admin/AdvisorManager'));
 
 export default function Dashboard() {
   const { signOut, user, isAdmin } = useAuthStore();
   const { userPrograms, loadUserPrograms } = useProgramStore();
   const [hasCompany, setHasCompany] = useState<boolean | null>(null);
+  const [isAdvisor, setIsAdvisor] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
@@ -57,6 +60,29 @@ export default function Dashboard() {
     };
 
     checkCompany();
+  }, [user]);
+
+  // Verificar si el usuario es asesor
+  useEffect(() => {
+    const checkAdvisorStatus = async () => {
+      if (!user) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('advisors')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        setIsAdvisor(!!data);
+      } catch (err) {
+        console.error('Error al verificar si el usuario es asesor:', err);
+        setIsAdvisor(false);
+      }
+    };
+
+    checkAdvisorStatus();
   }, [user]);
 
   // Cargar los programas asignados al usuario
@@ -161,6 +187,26 @@ export default function Dashboard() {
                 </>
               )}
               
+              {/* Panel de Asesor (solo visible para asesores) */}
+              {isAdvisor && (
+                <li>
+                  <Link
+                    to="/dashboard/advisor"
+                    className={`flex items-center px-4 py-3 text-sm ${
+                      location.pathname.includes('/dashboard/advisor') 
+                        ? 'bg-blue-50 text-blue-600 border-r-4 border-blue-600' 
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Calendar className="h-4 w-4 text-gray-500 mr-2" />
+                    <span className="ml-1">Panel de Asesor</span>
+                    {location.pathname.includes('/dashboard/advisor') && (
+                      <ChevronRight className="ml-auto h-5 w-5 text-blue-600" />
+                    )}
+                  </Link>
+                </li>
+              )}
+              
               <li>
                 <Link
                   to="/dashboard/company-profile"
@@ -199,21 +245,35 @@ export default function Dashboard() {
           {/* Perfil de usuario y logout */}
           <div className="border-t border-gray-200 p-4">
             <div className="relative">
-              <button 
+              <button
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="flex items-center w-full px-3 py-2 text-sm text-left text-gray-700 rounded-md hover:bg-gray-100"
+                className="flex items-center w-full text-left space-x-3"
               >
-                <User className="h-5 w-5 mr-2 text-gray-500" />
-                <span className="flex-1 truncate">{user?.email}</span>
+                <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                  <User className="h-6 w-6 text-gray-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {user?.email}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {isAdmin ? 'Administrador' : 'Usuario'}
+                    {isAdvisor && ' • Asesor'}
+                  </p>
+                </div>
               </button>
-              
+
+              {/* Menú desplegable de perfil */}
               {showProfileMenu && (
-                <div className="absolute bottom-full left-0 w-full mb-2 bg-white rounded-md shadow-lg border border-gray-200">
-                  <button 
-                    onClick={() => signOut()}
-                    className="flex items-center w-full px-4 py-2 text-sm text-left text-red-600 hover:bg-gray-50"
+                <div className="absolute bottom-full left-0 mb-2 w-full bg-white rounded-md shadow-lg py-1 z-10">
+                  <button
+                    onClick={() => {
+                      signOut();
+                      setShowProfileMenu(false);
+                    }}
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                   >
-                    <LogOut className="h-4 w-4 mr-2" />
+                    <LogOut className="h-4 w-4 mr-2 text-gray-500" />
                     Cerrar sesión
                   </button>
                 </div>
@@ -225,25 +285,29 @@ export default function Dashboard() {
 
       {/* Contenido principal */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header para móvil */}
-        <header className="bg-white shadow-sm p-4 md:hidden flex items-center">
-          <button onClick={toggleSidebar} className="mr-4">
-            <Menu className="h-6 w-6 text-gray-500" />
-          </button>
-          <h1 className="text-lg font-semibold text-gray-900">
-            {location.pathname === '/dashboard' && 'Dashboard'}
-            {location.pathname.includes('/dashboard/program') && 'Programa Estratégico'}
-            {location.pathname.includes('/dashboard/company-profile') && 'Perfil de Empresa'}
-            {location.pathname.includes('/dashboard/admin') && 'Panel de Administración'}
-          </h1>
+        {/* Barra superior para móvil */}
+        <header className="bg-white shadow-sm z-10 md:hidden">
+          <div className="px-4 py-2 flex items-center justify-between">
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-md text-gray-500 hover:text-gray-600 hover:bg-gray-100"
+            >
+              <Menu className="h-6 w-6" />
+            </button>
+            <div className="flex items-center">
+              <Building2 className="h-6 w-6 text-blue-600 mr-2" />
+              <h1 className="text-lg font-bold text-blue-600">Flowe</h1>
+            </div>
+            <div className="w-6"></div> {/* Espacio para equilibrar el diseño */}
+          </div>
         </header>
-        
-        {/* Área de contenido principal */}
-        <main className="flex-1 overflow-y-auto bg-gray-100 p-0 md:p-6">
+
+        {/* Área de contenido */}
+        <main className="flex-1 overflow-y-auto bg-gray-50 p-4">
           <React.Suspense
             fallback={
-              <div className="flex items-center justify-center h-[calc(100vh-4rem)] md:h-full">
-                <div className="animate-spin rounded-full h-24 w-24 sm:h-32 sm:w-32 border-b-2 border-blue-500" />
+              <div className="flex items-center justify-center h-full">
+                <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500" />
               </div>
             }
           >
@@ -286,6 +350,13 @@ export default function Dashboard() {
                   )
                 } 
               />
+              {/* Rutas para el panel de asesor */}
+              {isAdvisor && (
+                <Route 
+                  path="/advisor/*" 
+                  element={<AdvisorPanel />} 
+                />
+              )}
               {isAdmin && (
                 <>
                   <Route 
@@ -303,6 +374,11 @@ export default function Dashboard() {
                   <Route 
                     path="/admin/settings" 
                     element={<AdminDashboard />} 
+                  />
+                  {/* Ruta para la gestión de asesores */}
+                  <Route 
+                    path="/admin/advisors/:id" 
+                    element={<AdvisorManager />} 
                   />
                 </>
               )}
