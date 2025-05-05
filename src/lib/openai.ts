@@ -170,7 +170,7 @@ export async function generateBotResponse(
       messages: messages.map(m => ({ role: m.role as 'system' | 'user' | 'assistant', content: m.content })),
       model: 'gpt-4',
       temperature: 0.7,
-      max_tokens: 3000,
+      max_tokens: 1000,
       presence_penalty: 0.6,
       frequency_penalty: 0.3
     });
