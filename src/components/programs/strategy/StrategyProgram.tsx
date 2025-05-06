@@ -526,6 +526,27 @@ const StrategyProgram: React.FC = () => {
         return;
       }
       
+      // Verificar si el contenido existe en content_registry
+      const { data: contentExists, error: contentError } = await supabase
+        .from('content_registry')
+        .select('id')
+        .eq('id', contentId)
+        .maybeSingle();
+      
+      if (contentError) {
+        console.error('Error al verificar si el contenido existe:', contentError);
+      }
+      
+      // Si el contenido no existe en content_registry, solo actualizar el estado local
+      if (!contentExists) {
+        console.log('El contenido no existe en content_registry, solo se actualizará el estado local:', contentId);
+        setViewedContents(prev => ({
+          ...prev,
+          [contentId]: true
+        }));
+        return;
+      }
+      
       // Verificar si ya existe un registro para este contenido
       const { data: existingView, error: viewError } = await supabase
         .from('viewed_contents')
@@ -557,14 +578,12 @@ const StrategyProgram: React.FC = () => {
       if (insertError) {
         console.error('Error al guardar contenido visto:', insertError);
         
-        // Si hay un error de restricción de clave foránea, actualizar solo el estado local
-        if (insertError.code === '23503') {
-          console.log('No se pudo guardar en la base de datos, pero se actualizará el estado local');
-          setViewedContents(prev => ({
-            ...prev,
-            [contentId]: true
-          }));
-        }
+        // Actualizar solo el estado local en caso de error
+        console.log('No se pudo guardar en la base de datos, pero se actualizará el estado local');
+        setViewedContents(prev => ({
+          ...prev,
+          [contentId]: true
+        }));
       } else {
         console.log('Contenido marcado como visto correctamente:', contentId);
         // Actualizar el estado local

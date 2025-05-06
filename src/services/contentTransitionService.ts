@@ -20,7 +20,10 @@ export const getModuleContents = async (stageId: string) => {
     
     // Solo se usa la nueva estructura modular. Eliminado el fallback a la estructura antigua (stage_content).
     if (newStructureContents && newStructureContents.length > 0) {
-      console.log('Contenidos obtenidos de la nueva estructura modular');
+      // Solo mostrar el log en entorno de desarrollo
+      if (import.meta.env.DEV) {
+        console.log('Contenidos obtenidos de la nueva estructura modular');
+      }
       return newStructureContents;
     }
     // Si no hay contenidos, retornar arreglo vacío
@@ -179,11 +182,6 @@ export const createContent = async (
           finalActivityData.system_instructions = content.system_instructions;
         }
         
-        // Si hay step en content, lo agregamos
-        if (content.step) {
-          finalActivityData.step = content.step;
-        }
-        
         // Asegurarnos de que las dependencias se pasen correctamente
         if (content.dependencies) {
           finalActivityData.dependencies = content.dependencies;
@@ -251,13 +249,20 @@ export const updateContent = async (
         dependencies: []
       };
       
+      // Si activityData está vacío pero hay datos en content.activity_data, usamos esos
       if (Object.keys(finalActivityData).length === 0 && content.activity_data) {
-        finalActivityData = typeof content.activity_data === 'string' 
-          ? JSON.parse(content.activity_data) 
-          : content.activity_data;
+        try {
+          finalActivityData = typeof content.activity_data === 'string' 
+            ? JSON.parse(content.activity_data) 
+            : content.activity_data;
+          
+          console.log('Datos de actividad extraídos de content.activity_data:', finalActivityData);
+        } catch (error) {
+          console.error('Error al parsear activity_data:', error);
+        }
       }
       
-      // Asegurarnos de que prompt_section y system_instructions estén presentes en activityData
+      // Asegurarnos de que los campos importantes estén presentes
       if (content.prompt_section) {
         finalActivityData.prompt_section = content.prompt_section;
       }
@@ -271,21 +276,40 @@ export const updateContent = async (
         finalActivityData.dependencies = content.dependencies;
       }
       
-      console.log('Actualizando actividad con datos:', {
+      // Asegurarnos de que todos los campos requeridos estén presentes
+      finalActivityData = {
+        ...finalActivityData,
+        prompt: finalActivityData.prompt || '',
+        initial_message: finalActivityData.initial_message || '',
+        system_instructions: finalActivityData.system_instructions || '',
+        max_exchanges: finalActivityData.max_exchanges || 5,
+        step: finalActivityData.step || 1,
+        prompt_section: finalActivityData.prompt_section || '',
+        dependencies: finalActivityData.dependencies || []
+      };
+      
+      console.log('Actualizando actividad con datos completos:', {
         stage_id: content.stage_id,
         title: content.title,
-        prompt_section: content.prompt_section,
-        system_instructions: content.system_instructions,
-        dependencies: content.dependencies || finalActivityData.dependencies || []
+        activityData: finalActivityData,
+        prompt_section: finalActivityData.prompt_section,
+        system_instructions: finalActivityData.system_instructions,
+        dependencies: finalActivityData.dependencies
       });
+      
+      // Verificar que stage_id no sea undefined
+      if (!content.stage_id) {
+        console.error('Error: stage_id es undefined, no se puede actualizar la actividad');
+        throw new Error('stage_id es requerido para actualizar la actividad');
+      }
       
       // Actualizar el contenido de actividad en la nueva estructura
       const activityContent = await contentRegistryService.updateActivityContent(
         content.stage_id,
         content.title,
         finalActivityData,
-        content.prompt_section,
-        content.system_instructions
+        finalActivityData.prompt_section,
+        finalActivityData.system_instructions
       );
       
       if (activityContent) {

@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { UserInsight } from '../types';
-import { generateBotResponse } from './openai';
+import { generateBotResponse, generateEmbedding, findSimilarMessages } from './openai';
 
 // Definir la interfaz ChatMessage localmente para evitar problemas de importación
 interface ChatMessage {
@@ -45,20 +45,243 @@ export const getShortTermMemory = (): ChatMessage[] => {
 /**
  * Obtiene las dependencias de una actividad
  * @param activityId ID de la actividad
- * @returns Array de nombres de actividades dependientes
+ * @returns Array de IDs de actividades dependientes
  */
 export const fetchDependencies = async (activityId: string): Promise<string[]> => {
-  const { data, error } = await supabase
-    .from('activity_contents')
-    .select('dependencies')
-    .eq('id', activityId)
-    .single();
+  try {
+    console.log(`Buscando dependencias para actividad: ${activityId}`);
+    
+    // Verificar si el ID es un ID de registro en content_registry
+    let validActivityId = activityId;
+    
+    try {
+      const { data: registryData, error: registryError } = await supabase
+        .from('content_registry')
+        .select('content_id, content_type')
+        .eq('id', activityId)
+        .single();
+      
+      if (!registryError && registryData && registryData.content_type === 'activity') {
+        console.log(`✅ ID encontrado en content_registry, usando content_id: ${registryData.content_id}`);
+        validActivityId = registryData.content_id;
+      }
+    } catch (registryCheckError) {
+      console.log('No se encontró el ID en content_registry, usando el ID original');
+    }
+    
+    // Ahora buscar con el ID correcto
+    const { data, error } = await supabase
+      .from('activity_contents')
+      .select('dependencies, activity_data')
+      .eq('id', validActivityId)
+      .single();
 
-  if (error || !data?.dependencies) {
+    if (error) {
+      console.error('Error al obtener dependencias:', error);
+      return [];
+    }
+
+    // Conjunto para evitar duplicados
+    const dependenciesSet = new Set<string>();
+    
+    // Añadir dependencias de la columna independiente si existen
+    if (data?.dependencies && Array.isArray(data.dependencies)) {
+      data.dependencies.forEach(dep => dependenciesSet.add(dep));
+    }
+    
+    // Añadir dependencias del campo activity_data si existen
+    if (data?.activity_data?.dependencies && Array.isArray(data.activity_data.dependencies)) {
+      data.activity_data.dependencies.forEach(dep => dependenciesSet.add(dep));
+    }
+    
+    const dependencies = Array.from(dependenciesSet);
+    console.log(`Encontradas ${dependencies.length} dependencias para actividad ${validActivityId}:`, dependencies);
+    
+    return dependencies;
+  } catch (error) {
+    console.error('Error general en fetchDependencies:', error);
     return [];
   }
+};
 
-  return data.dependencies;
+/**
+ * Obtiene interacciones relevantes de actividades dependientes usando búsqueda vectorial
+ * @param userId ID del usuario
+ * @param dependencyIds Array de IDs de actividades dependientes
+ * @param userMessage Mensaje actual del usuario para búsqueda semántica
+ * @returns Datos de interacciones relevantes agrupadas por actividad
+ */
+export const fetchDependencyInteractions = async (
+  userId: string,
+  dependencyIds: string[],
+  userMessage: string
+): Promise<any[]> => {
+  try {
+    if (!userId || !dependencyIds || dependencyIds.length === 0 || !userMessage) {
+      console.log('Datos insuficientes para buscar interacciones de dependencias');
+      return [];
+    }
+    
+    console.log(`Buscando interacciones relevantes para ${dependencyIds.length} dependencias`);
+    
+    // Generar embedding para el mensaje del usuario
+    const userEmbedding = await generateEmbedding(userMessage);
+    
+    if (!userEmbedding || userEmbedding.length === 0) {
+      console.warn('No se pudo generar embedding para búsqueda de dependencias');
+      return [];
+    }
+    
+    // Resultados por actividad
+    const resultsByActivity: Record<string, any> = {};
+    
+    // Procesar cada actividad dependiente
+    for (const activityId of dependencyIds) {
+      // Verificar si el ID es un ID de registro en content_registry
+      let validActivityId = activityId;
+      
+      try {
+        const { data: registryData, error: registryError } = await supabase
+          .from('content_registry')
+          .select('content_id, content_type')
+          .eq('id', activityId)
+          .single();
+        
+        if (!registryError && registryData && registryData.content_type === 'activity') {
+          console.log(`✅ ID encontrado en content_registry, usando content_id: ${registryData.content_id}`);
+          validActivityId = registryData.content_id;
+        }
+      } catch (registryCheckError) {
+        console.log('No se encontró el ID en content_registry, usando el ID original');
+      }
+      
+      // Usar la función existente findSimilarMessages para cada actividad dependiente
+      const similarMessages = await findSimilarMessages(
+        userMessage,
+        userId,
+        validActivityId,
+        0.65, // Umbral de similitud un poco más bajo para capturar más contexto
+        3     // Limitar a 3 mensajes por actividad dependiente
+      );
+      
+      if (similarMessages && similarMessages.length > 0) {
+        // Obtener información de la actividad con el ID correcto
+        const { data: activityData } = await supabase
+          .from('activity_contents')
+          .select('title, prompt_section')
+          .eq('id', validActivityId)
+          .single();
+        
+        resultsByActivity[activityId] = {
+          activity_id: activityId,
+          title: activityData?.title || 'Actividad relacionada',
+          section: activityData?.prompt_section || '',
+          interactions: similarMessages
+        };
+      }
+    }
+    
+    // Convertir a array para el resultado final
+    const results = Object.values(resultsByActivity);
+    console.log(`Encontradas interacciones relevantes en ${results.length} actividades dependientes`);
+    
+    return results;
+  } catch (error) {
+    console.error('Error en fetchDependencyInteractions:', error);
+    return [];
+  }
+};
+
+/**
+ * Obtiene resúmenes de actividades dependientes
+ * @param userId ID del usuario
+ * @param dependencyIds Array de IDs de actividades dependientes
+ * @returns Resúmenes de las actividades dependientes
+ */
+export const fetchDependencySummaries = async (
+  userId: string,
+  dependencyIds: string[]
+): Promise<any[]> => {
+  try {
+    if (!userId || !dependencyIds || dependencyIds.length === 0) {
+      return [];
+    }
+    
+    console.log(`Buscando resúmenes para ${dependencyIds.length} dependencias`);
+    
+    // Verificar si los IDs son IDs de registro en content_registry
+    const validDependencyIds = await Promise.all(dependencyIds.map(async (depId) => {
+      try {
+        const { data: registryData, error: registryError } = await supabase
+          .from('content_registry')
+          .select('content_id, content_type')
+          .eq('id', depId)
+          .single();
+        
+        if (!registryError && registryData && registryData.content_type === 'activity') {
+          console.log(`✅ ID de dependencia encontrado en content_registry, usando content_id: ${registryData.content_id}`);
+          return registryData.content_id;
+        }
+        return depId; // Si no se encuentra o hay error, usar el ID original
+      } catch (registryCheckError) {
+        console.log(`No se encontró el ID ${depId} en content_registry, usando el ID original`);
+        return depId;
+      }
+    }));
+    
+    console.log('IDs de dependencias validados:', validDependencyIds);
+    
+    // Obtener resúmenes de chat_summaries
+    const { data: summaries, error } = await supabase
+      .from('chat_summaries')
+      .select('content, activity_id')
+      .eq('user_id', userId)
+      .in('activity_id', validDependencyIds);
+    
+    if (error) {
+      console.error('Error al obtener resúmenes de dependencias:', error);
+      return [];
+    }
+    
+    if (!summaries || summaries.length === 0) {
+      console.log('No se encontraron resúmenes para las dependencias');
+      return [];
+    }
+    
+    // Obtener información de las actividades para enriquecer los resúmenes
+    const { data: activities } = await supabase
+      .from('activity_contents')
+      .select('id, title, prompt_section')
+      .in('id', validDependencyIds);
+    
+    // Crear un mapa de ID a información de actividad
+    const activityInfo: Record<string, {title: string, section?: string}> = {};
+    if (activities) {
+      activities.forEach(activity => {
+        activityInfo[activity.id] = {
+          title: activity.title,
+          section: activity.prompt_section
+        };
+      });
+    }
+    
+    // Enriquecer los resúmenes con información de las actividades
+    const enrichedSummaries = summaries.map(summary => {
+      const info = activityInfo[summary.activity_id] || { title: 'Actividad relacionada' };
+      return {
+        activity_id: summary.activity_id,
+        title: info.title,
+        section: info.section,
+        content: summary.content
+      };
+    });
+    
+    console.log(`Encontrados ${enrichedSummaries.length} resúmenes para actividades dependientes`);
+    return enrichedSummaries;
+  } catch (error) {
+    console.error('Error en fetchDependencySummaries:', error);
+    return [];
+  }
 };
 
 /**
@@ -344,12 +567,73 @@ export async function generateContextForOpenAI(
       });
     }
     
-    // Añadir dependencias si están disponibles
+    // Añadir dependencias y su contenido si están disponibles
     if (dependencies && dependencies.length > 0) {
-      context.push({
-        role: 'system',
-        content: `Dependencias de la actividad: ${JSON.stringify(dependencies)}`
-      });
+      console.log(`Procesando ${dependencies.length} dependencias para actividad ${activityId}`);
+      
+      // 1. Obtener interacciones relevantes usando búsqueda vectorial
+      const relevantInteractions = await fetchDependencyInteractions(
+        userId,
+        dependencies,
+        userMessage
+      );
+      
+      if (relevantInteractions && relevantInteractions.length > 0) {
+        // Formatear las interacciones relevantes de manera estructurada
+        let interactionsContext = "Conversaciones previas relacionadas con tu consulta:\n\n";
+        
+        relevantInteractions.forEach(activity => {
+          interactionsContext += `## ${activity.title}\n`;
+          if (activity.section) interactionsContext += `Sección: ${activity.section}\n`;
+          
+          activity.interactions.forEach(interaction => {
+            const similarityPercentage = Math.round(interaction.similarity * 100);
+            interactionsContext += `[Similitud: ${similarityPercentage}%]\n`;
+            interactionsContext += `- Usuario: ${interaction.user_message}\n`;
+            interactionsContext += `- Asistente: ${interaction.ai_response}\n\n`;
+          });
+          
+          interactionsContext += "---\n\n";
+        });
+        
+        context.push({
+          role: 'system',
+          content: interactionsContext
+        });
+        
+        console.log('Añadido contexto de interacciones relevantes de actividades dependientes');
+      }
+      
+      // 2. Obtener resúmenes de las actividades dependientes
+      const dependencySummaries = await fetchDependencySummaries(userId, dependencies);
+      
+      if (dependencySummaries && dependencySummaries.length > 0) {
+        let summariesContext = "Resúmenes de actividades relacionadas:\n\n";
+        
+        dependencySummaries.forEach(summary => {
+          summariesContext += `## ${summary.title}\n`;
+          if (summary.section) summariesContext += `Sección: ${summary.section}\n`;
+          summariesContext += `${summary.content}\n\n`;
+          summariesContext += "---\n\n";
+        });
+        
+        context.push({
+          role: 'system',
+          content: summariesContext
+        });
+        
+        console.log('Añadido contexto de resúmenes de actividades dependientes');
+      }
+      
+      // Si no se encontró ninguna información relevante, al menos incluir los IDs
+      if (!relevantInteractions.length && !dependencySummaries.length) {
+        context.push({
+          role: 'system',
+          content: `Esta actividad tiene dependencias (${dependencies.join(', ')}), pero no se encontró información relevante.`
+        });
+        
+        console.log('No se encontró información relevante para las dependencias');
+      }
     }
     
     // Añadir resúmenes de memoria a largo plazo si están disponibles

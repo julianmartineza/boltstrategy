@@ -90,34 +90,35 @@ export interface ActivityData {
     min_responses?: number;
     required_topics?: string[];
   };
+  step?: number;
+  prompt_section?: string;
+  dependencies?: string[];
 }
 
 export interface ActivityContent {
   id: string;
   title: string;
-  content: string;
-  stage_id: string;
-  content_type: string;
-  order: number;
-  created_at: string;
-  updated_at: string;
-  system_instructions?: string;
+  content?: string;
+  stage_id?: string;
+  content_type: 'text' | 'video' | 'activity' | 'advisory_session';
+  order?: number;
+  user_id?: string;
+  stage_name?: string;
   prompt_section?: string;
+  activity_data?: ActivityData | string | any;
+  system_instructions?: string;
+  prompt?: string;
+  initial_message?: string;
   dependencies?: string[];
+  content_metadata?: any;
+  created_at?: string;
+  updated_at?: string;
   url?: string;
   provider?: string;
   duration?: number;
   session_type?: string;
-  activity_data?: any;
   step?: number;
-  stage_name?: string;
   order_num?: number;
-  content_metadata?: {
-    content_registry_id?: string;
-    duration?: number;
-    session_type?: string;
-    [key: string]: any;
-  };
 }
 
 export interface ActivityResponse {

@@ -43,12 +43,95 @@ export function useChatMessages(userId?: string, activityId?: string) {
     console.log(`Cargando mensajes para usuario ${userId} y actividad ${activityId}`);
     
     try {
-      const { data, error } = await supabase
+      // Verificar si el activity_id es válido
+      if (!activityId || activityId === 'undefined' || activityId === 'null') {
+        console.error('❌ No se pueden cargar mensajes: activity_id no válido', { activityId });
+        setMessagesLoaded(true);
+        isLoadingRef.current = false;
+        return;
+      }
+      
+      // Validar el ID de actividad (similar a saveInteractionWithEmbeddings)
+      let validActivityId = activityId;
+      let shouldCheckAlternativeId = true;
+      
+      // Paso 1: Intentar cargar mensajes con el ID original
+      let { data, error } = await supabase
         .from('activity_interactions')
         .select('user_message, ai_response, timestamp')
         .eq('user_id', userId)
         .eq('activity_id', activityId)
         .order('timestamp', { ascending: true });
+      
+      // Si encontramos mensajes, no necesitamos buscar IDs alternativos
+      if (!error && data && data.length > 0) {
+        shouldCheckAlternativeId = false;
+        console.log(`✅ Mensajes encontrados directamente con el ID original: ${activityId}`);
+      } else {
+        console.log(`⚠️ No se encontraron mensajes con el ID original: ${activityId}, buscando alternativas...`);
+      }
+      
+      // Paso 2: Si no encontramos mensajes, verificar si el ID está en content_registry
+      if (shouldCheckAlternativeId) {
+        // Verificar si el ID es un ID de content_registry
+        const { data: registryData, error: registryError } = await supabase
+          .from('content_registry')
+          .select('id, content_id, content_table, content_type')
+          .eq('id', activityId)
+          .maybeSingle();
+        
+        if (!registryError && registryData) {
+          console.log('✅ ID encontrado en content_registry como ID de registro:', registryData);
+          
+          // Si es una actividad, usar el content_id
+          if (registryData.content_type === 'activity' && registryData.content_table === 'activity_contents') {
+            validActivityId = registryData.content_id;
+            console.log('✅ Usando content_id como validActivityId:', validActivityId);
+            
+            // Intentar cargar mensajes con el ID validado
+            const { data: validData, error: validError } = await supabase
+              .from('activity_interactions')
+              .select('user_message, ai_response, timestamp')
+              .eq('user_id', userId)
+              .eq('activity_id', validActivityId)
+              .order('timestamp', { ascending: true });
+            
+            if (!validError) {
+              data = validData;
+              error = null;
+            }
+          }
+        } else {
+          // Paso 3: Verificar si existe una entrada en content_registry que mapee este ID como content_id
+          const { data: contentRegistryData, error: contentRegistryError } = await supabase
+            .from('content_registry')
+            .select('id')
+            .eq('content_table', 'activity_contents')
+            .eq('content_type', 'activity')
+            .eq('content_id', activityId)
+            .maybeSingle();
+          
+          if (!contentRegistryError && contentRegistryData && contentRegistryData.id) {
+            console.log('✅ Encontrado mapeo en content_registry a activity_contents:', contentRegistryData.id);
+            validActivityId = contentRegistryData.id;
+            
+            // Intentar cargar mensajes con el ID validado
+            const { data: validData, error: validError } = await supabase
+              .from('activity_interactions')
+              .select('user_message, ai_response, timestamp')
+              .eq('user_id', userId)
+              .eq('activity_id', validActivityId)
+              .order('timestamp', { ascending: true });
+            
+            if (!validError) {
+              data = validData;
+              error = null;
+            }
+          } else {
+            console.warn('⚠️ No se encontró mapeo en content_registry');
+          }
+        }
+      }
       
       if (error) {
         console.error('Error cargando mensajes:', error);

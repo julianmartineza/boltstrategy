@@ -97,9 +97,19 @@ export interface UnifiedContent {
   activity_data?: any;
   prompt_section?: string;
   system_instructions?: string;
+  // Campos específicos de sesiones de asesoría
+  duration?: number;
+  session_type?: string;
+  // Campos para dependencias
+  dependencies?: string[];
   // Metadatos
   created_at?: string;
   updated_at?: string;
+  // Campos adicionales para compatibilidad con ActivityContent
+  stage_id?: string;
+  stage_name?: string;
+  step?: number;
+  order_num?: number;
 }
 
 /**
@@ -392,7 +402,7 @@ export const createActivityContent = async (
     // Obtener datos del módulo para stage_id y stage_name
     const { data: moduleData, error: moduleError } = await supabase
       .from('strategy_stages')
-      .select('id, name')
+      .select('id, name, stage_name')
       .eq('id', moduleId)
       .single();
     
@@ -430,7 +440,7 @@ export const createActivityContent = async (
         prompt_section: extractedPromptSection,
         system_instructions: extractedSystemInstructions,
         stage_id: moduleId,
-        stage_name: moduleData.name,
+        stage_name: moduleData.stage_name || moduleData.name,
         order_num: position,
         step: extractedStep,
         dependencies: dependencies
@@ -508,7 +518,8 @@ export const updateActivityContent = async (
     });
 
     // 1. Buscar el registro existente en content_registry
-    const { data: registryData, error: registryError } = await supabase
+    let registryDataResult = null;
+    const { data: initialRegistryData, error: registryError } = await supabase
       .from('content_registry')
       .select('id, content_id, content_table, title')
       .eq('title', title)
@@ -520,15 +531,53 @@ export const updateActivityContent = async (
       return null;
     }
 
-    if (!registryData) {
-      console.error('No se encontró el registro de actividad para actualizar');
-      return null;
+    if (initialRegistryData) {
+      registryDataResult = initialRegistryData;
+      console.log('Registro encontrado por título:', registryDataResult);
+    } else {
+      console.log('No se encontró el registro de actividad por título, intentando buscar por ID...');
+      // Intentar buscar por content_id directamente
+      
+      // Primero, buscar en content_registry por content_id
+      const { data: registryByContentId } = await supabase
+        .from('content_registry')
+        .select('id, content_id, content_table, title')
+        .eq('content_id', moduleId)
+        .eq('content_type', 'activity')
+        .maybeSingle();
+        
+      if (registryByContentId) {
+        console.log('Registro encontrado por content_id en content_registry:', registryByContentId);
+        registryDataResult = registryByContentId;
+      } else {
+        console.log('No se encontró registro en content_registry por content_id, verificando directamente en activity_contents...');
+        // Si no se encuentra en content_registry, intentar directamente en activity_contents
+        const { data: directActivityData, error: directActivityError } = await supabase
+          .from('activity_contents')
+          .select('id, title')
+          .eq('id', moduleId)
+          .maybeSingle();
+          
+        if (directActivityError || !directActivityData) {
+          console.error('No se pudo encontrar la actividad ni por título ni por ID:', directActivityError);
+          return null;
+        }
+        
+        // Si encontramos la actividad directamente, creamos un objeto registryData simulado
+        console.log('Actividad encontrada directamente por ID:', directActivityData.id);
+        registryDataResult = {
+          id: 'direct-access',
+          content_id: directActivityData.id,
+          content_table: 'activity_contents',
+          title: directActivityData.title || title
+        };
+      }
     }
-
+    
     // Obtener datos del módulo para stage_id y stage_name
     const { data: moduleData, error: moduleError } = await supabase
       .from('strategy_stages')
-      .select('id, name')
+      .select('id, name, stage_name')
       .eq('id', moduleId)
       .single();
     
@@ -536,17 +585,19 @@ export const updateActivityContent = async (
       console.error('Error al obtener datos del módulo:', moduleError);
       // No retornamos null aquí para permitir que la actualización continúe
     }
-
+    
     // Extraer valores de activityData para guardarlos en campos específicos
     const activityDataObj = typeof activityData === 'string' 
       ? JSON.parse(activityData) 
       : activityData;
     
+    console.log('Datos de actividad recibidos:', activityDataObj);
+
     // Obtener valores específicos o usar los parámetros proporcionados
     const extractedPromptSection = promptSection || activityDataObj.prompt_section || '';
     const extractedSystemInstructions = systemInstructions || activityDataObj.system_instructions || '';
     const extractedStep = activityDataObj.step || 1;
-    
+
     // Extraer dependencias si existen en activityData
     let dependencies = [];
     if (activityDataObj.dependencies) {
@@ -555,19 +606,33 @@ export const updateActivityContent = async (
         : [activityDataObj.dependencies];
     }
 
+    // Asegurarnos de que activityData contenga todos los campos necesarios
+    const completeActivityData = {
+      ...activityDataObj,
+      prompt: activityDataObj.prompt || '',
+      initial_message: activityDataObj.initial_message || '',
+      system_instructions: extractedSystemInstructions,
+      max_exchanges: activityDataObj.max_exchanges || 5,
+      step: extractedStep,
+      prompt_section: extractedPromptSection,
+      dependencies: dependencies
+    };
+
+    console.log('Datos de actividad completos para guardar:', completeActivityData);
+
     // 2. Actualizar el contenido de actividad en activity_contents
     const { data: updatedActivityData, error: activityError } = await supabase
       .from('activity_contents')
       .update({
         title: title, // Asegurarnos de actualizar el título
-        activity_data: typeof activityData === 'string' ? activityData : JSON.stringify(activityData),
+        activity_data: JSON.stringify(completeActivityData),
         prompt_section: extractedPromptSection,
         system_instructions: extractedSystemInstructions,
         step: extractedStep,
         dependencies: dependencies,
-        stage_name: moduleData?.name || 'Actividad' // Actualizar el nombre del módulo
+        stage_name: moduleData?.stage_name || moduleData?.name || 'Actividad' // Actualizar el nombre del módulo
       })
-      .eq('id', registryData.content_id)
+      .eq('id', registryDataResult.content_id)
       .select()
       .single();
 
@@ -577,13 +642,13 @@ export const updateActivityContent = async (
     }
 
     // 3. Actualizar el registro en content_registry si es necesario
-    if (title !== registryData.title) {
+    if (title !== registryDataResult.title && registryDataResult.id !== 'direct-access') {
       const { error: updateRegistryError } = await supabase
         .from('content_registry')
         .update({ 
           title: title 
         })
-        .eq('id', registryData.id);
+        .eq('id', registryDataResult.id);
       
       if (updateRegistryError) {
         console.error('Error al actualizar registro:', updateRegistryError);
@@ -595,7 +660,7 @@ export const updateActivityContent = async (
     const { data: relationData, error: relationError } = await supabase
       .from('program_module_contents')
       .select('position')
-      .eq('content_registry_id', registryData.id)
+      .eq('content_registry_id', registryDataResult.id !== 'direct-access' ? registryDataResult.id : null)
       .eq('program_module_id', moduleId)
       .single();
 
@@ -609,10 +674,10 @@ export const updateActivityContent = async (
       title,
       content_type: 'activity',
       position: relationData?.position || 0,
-      registry_id: registryData.id,
+      registry_id: registryDataResult.id,
       content_id: updatedActivityData.id,
       content_table: 'activity_contents',
-      activity_data: activityData,
+      activity_data: completeActivityData,
       prompt_section: extractedPromptSection,
       system_instructions: extractedSystemInstructions,
       created_at: updatedActivityData.created_at,

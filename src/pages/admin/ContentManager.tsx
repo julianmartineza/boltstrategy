@@ -125,7 +125,9 @@ const ContentManager: React.FC = () => {
       const data = await contentTransitionService.getModuleContents(stageId);
       
       if (data && data.length > 0) {
-        console.log('Contenidos obtenidos:', data);
+        if (import.meta.env.DEV) {
+          console.log('Contenidos obtenidos:', data);
+        }
         
         // Adaptar los contenidos al formato esperado por ContentList
         const adaptedContents = data.map(content => {
@@ -149,10 +151,15 @@ const ContentManager: React.FC = () => {
           } as ActivityContent;
         });
         
-        console.log('Contenidos adaptados para ContentList:', adaptedContents);
+        if (import.meta.env.DEV) {
+          console.log('Contenidos adaptados para ContentList:', adaptedContents);
+        }
+        
         setContents(adaptedContents);
       } else {
-        console.log('No se encontraron contenidos para la etapa:', stageId);
+        if (import.meta.env.DEV) {
+          console.log('No se encontraron contenidos para la etapa:', stageId);
+        }
         setContents([]);
       }
       

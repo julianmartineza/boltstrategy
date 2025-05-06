@@ -36,60 +36,312 @@ export const chatService = {
       const activityId = activityContent.id;
       console.log(`Generando respuesta para actividad ${activityId} y usuario ${userId}`);
       
-      // Obtener el contexto de la conversación
-      const context = await getChatContext(userId, activityId);
-      
       // Obtener las instrucciones del sistema si están disponibles
-      const systemInstructions = activityContent.system_instructions || '';
+      let systemInstructions = null;
       
-      // Obtener información de la etapa y actividad
-      const stageName = activityContent.stage_name || 'Estrategia';
-      const activityTitle = activityContent.title || 'Consultoría';
-      
-      // Obtener plantilla de prompt si existe
-      const promptTemplate = activityContent.prompt_template || '';
-      console.log('Plantilla de prompt:', promptTemplate ? 'Disponible' : 'No disponible');
-      
-      if (userMessage === "Hola, ¿puedes ayudarme con esta actividad?") {
-        console.log('Generando respuesta de bienvenida');
+      // Intentar obtener las instrucciones del sistema de diferentes fuentes posibles
+      if (activityContent.system_instructions) {
+        systemInstructions = activityContent.system_instructions;
+      } else if (typeof activityContent.activity_data === 'object' && activityContent.activity_data?.system_instructions) {
+        systemInstructions = activityContent.activity_data.system_instructions;
+      } else if (typeof activityContent.activity_data === 'string') {
+        try {
+          const parsedData = JSON.parse(activityContent.activity_data);
+          systemInstructions = parsedData.system_instructions;
+        } catch (e) {
+          console.error('Error al parsear activity_data para obtener system_instructions:', e);
+        }
       }
       
-      // Filtrar los mensajes para que solo incluyan 'user' y 'assistant'
-      const filteredContext = context
-        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
-        .map(msg => ({
-          role: msg.role as 'user' | 'assistant', // Asegurar que el tipo sea correcto
-          content: msg.content
-        }));
+      // Obtener el prompt específico de la actividad
+      let activityPrompt = null;
       
-      // Crear el objeto de contexto en el formato esperado por generateBotResponse
-      const botContext = {
-        systemPrompt: systemInstructions || 
-          `Eres un consultor de estrategia ayudando con la etapa "${stageName}", específicamente en la actividad "${activityTitle}".
-          ${promptTemplate ? `\nInstrucciones específicas: ${promptTemplate}` : ''}`,
-        stage: stageName,
-        activity: activityTitle,
-        previousMessages: filteredContext,
-        context: company
-      };
+      // Intentar obtener el prompt de diferentes fuentes posibles
+      if (activityContent.prompt) {
+        activityPrompt = activityContent.prompt;
+      } else if (typeof activityContent.activity_data === 'object' && activityContent.activity_data?.prompt) {
+        activityPrompt = activityContent.activity_data.prompt;
+      } else if (typeof activityContent.activity_data === 'string') {
+        try {
+          const parsedData = JSON.parse(activityContent.activity_data);
+          activityPrompt = parsedData.prompt;
+        } catch (e) {
+          // Error ya registrado anteriormente
+        }
+      }
       
-      // Generar respuesta
-      const botResponse = await generateBotResponse(
-        userMessage, 
-        botContext,
+      // Obtener información del programa al que pertenece la actividad
+      let programContext = `Eres un consultor de negocios especializado`;
+      try {
+        // Primero intentamos obtener el programa desde stage_content
+        if (activityContent.stage_id) {
+          const { data: stageData } = await supabase
+            .from('strategy_stages')
+            .select('program_id')
+            .eq('id', activityContent.stage_id)
+            .single();
+          
+          if (stageData?.program_id) {
+            const { data: programData } = await supabase
+              .from('programs')
+              .select('title, description')
+              .eq('id', stageData.program_id)
+              .single();
+            
+            if (programData) {
+              programContext = `Eres un consultor de negocios especializado en ${programData.title}. ${programData.description || ''}`;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error al obtener información del programa:', error);
+      }
+      
+      // Construir el prompt completo para las instrucciones del sistema
+      let finalPrompt = `Responde a la siguiente consulta del usuario: "${userMessage}"`;
+      
+      if (activityPrompt) {
+        finalPrompt += `\n\nInstrucciones específicas para esta actividad: ${activityPrompt}`;
+      }
+      
+      if (systemInstructions) {
+        finalPrompt += `\n\nComportamiento esperado: ${systemInstructions}`;
+      }
+      
+      // Añadir información de la empresa si está disponible
+      if (company) {
+        finalPrompt += `\n\nInformación de la empresa: ${company.name}, Industria: ${company.industry}, Tamaño: ${company.size}`;
+      }
+      
+      // Importar la función generateContextForOpenAI para obtener el contexto completo
+      const { generateContextForOpenAI } = await import('../lib/chatMemoryService');
+      
+      // Generar el contexto completo que incluye historial, resúmenes y dependencias
+      const context = await generateContextForOpenAI(
         userId,
-        activityId
+        activityId,
+        userMessage,
+        finalPrompt
       );
       
-      // Limpiar interacciones antiguas si hay muchas
-      if (interactionCount > 10) {
-        await this.cleanUpOldInteractions(userId, activityId, interactionCount);
+      // Añadir el contexto del programa como primer mensaje del sistema
+      context.unshift({ role: 'system', content: programContext });
+      
+      // Log detallado del prompt solo en desarrollo
+      if (import.meta.env.DEV) {
+        console.log('\n🔎 [DEV ONLY] DETALLES DEL PROMPT CONSTRUIDO EN CHAT SERVICE:');
+        console.log('Contexto del programa:', programContext);
+        console.log('Prompt final:', finalPrompt);
+        console.log('Contexto de conversación:', context ? `${context.length - 2} mensajes previos` : 'Ninguno');
+        console.log('Mensaje del usuario:', userMessage);
+        console.log('-------------------------------------------\n');
       }
       
-      return botResponse;
+      // Generar la respuesta
+      const response = await generateBotResponse(context);
+      
+      // Guardar la interacción en la base de datos con embeddings
+      try {
+        // Importamos la función directamente para evitar problemas de importación circular
+        const { saveInteractionWithEmbeddings } = await import('../lib/openai');
+        await saveInteractionWithEmbeddings(userId, activityId, userMessage, response);
+        console.log('✅ Interacción guardada correctamente con embeddings');
+      } catch (error) {
+        console.error('Error al guardar interacción con embeddings:', error);
+        
+        // Intento de respaldo: guardar sin embeddings
+        try {
+          await supabase.from('activity_interactions').insert({
+            user_id: userId,
+            activity_id: activityId,
+            user_message: userMessage,
+            ai_response: response,
+            timestamp: new Date().toISOString()
+          });
+          console.log('✅ Interacción guardada correctamente sin embeddings (respaldo)');
+        } catch (backupError) {
+          console.error('Error al guardar interacción sin embeddings:', backupError);
+        }
+      }
+      
+      // Limpiar interacciones antiguas si hay demasiadas
+      if (interactionCount > 10) {
+        // Importar la función cleanUpInteractions para generar resúmenes
+        const { cleanUpInteractions } = await import('../lib/chatMemoryService');
+        await cleanUpInteractions(userId, activityId);
+      }
+      
+      return response;
     } catch (error) {
-      console.error('Error generando respuesta:', error);
-      return "Lo siento, ha ocurrido un error al generar una respuesta. Por favor, intenta de nuevo más tarde.";
+      console.error('Error al generar respuesta:', error);
+      return 'Lo siento, ha ocurrido un error al procesar tu mensaje. Por favor, intenta nuevamente.';
+    }
+  },
+  
+  /**
+   * Genera una respuesta inicial del bot sin necesidad de un mensaje del usuario
+   * @param activityContent Contenido de la actividad actual
+   * @param company Información de la empresa
+   * @param systemMessage Mensaje del sistema para guiar la generación
+   * @returns Respuesta generada
+   */
+  async generateInitialResponse(
+    activityContent: ActivityContent,
+    company?: any,
+    systemMessage?: { role: string, content: string }
+  ): Promise<string> {
+    try {
+      // Verificar si tenemos un ID de actividad válido
+      if (!activityContent || !activityContent.id) {
+        console.warn('⚠️ No hay ID de actividad válido para generar respuesta inicial');
+        return "Lo siento, no puedo iniciar la conversación porque falta información sobre la actividad actual.";
+      }
+      
+      // Obtener el userId del activityContent
+      const userId = activityContent.user_id;
+      if (!userId) {
+        console.warn('⚠️ No hay user_id en activityContent para generar respuesta inicial');
+        return "Lo siento, no puedo iniciar la conversación porque falta información sobre el usuario.";
+      }
+      
+      const activityId = activityContent.id;
+      console.log(`Generando respuesta inicial para actividad ${activityId} y usuario ${userId}`);
+      
+      // Obtener las instrucciones del sistema si están disponibles
+      let systemInstructions = null;
+      
+      // Intentar obtener las instrucciones del sistema de diferentes fuentes posibles
+      if (activityContent.system_instructions) {
+        systemInstructions = activityContent.system_instructions;
+      } else if (typeof activityContent.activity_data === 'object' && activityContent.activity_data?.system_instructions) {
+        systemInstructions = activityContent.activity_data.system_instructions;
+      } else if (typeof activityContent.activity_data === 'string') {
+        try {
+          const parsedData = JSON.parse(activityContent.activity_data);
+          systemInstructions = parsedData.system_instructions;
+        } catch (e) {
+          console.error('Error al parsear activity_data para obtener system_instructions:', e);
+        }
+      }
+      
+      // Obtener el prompt específico de la actividad
+      let activityPrompt = null;
+      
+      // Intentar obtener el prompt de diferentes fuentes posibles
+      if (activityContent.prompt) {
+        activityPrompt = activityContent.prompt;
+      } else if (typeof activityContent.activity_data === 'object' && activityContent.activity_data?.prompt) {
+        activityPrompt = activityContent.activity_data.prompt;
+      } else if (typeof activityContent.activity_data === 'string') {
+        try {
+          const parsedData = JSON.parse(activityContent.activity_data);
+          activityPrompt = parsedData.prompt;
+        } catch (e) {
+          // Error ya registrado anteriormente
+        }
+      }
+      
+      // Obtener información del programa al que pertenece la actividad
+      let programContext = `Eres un consultor de negocios especializado`;
+      try {
+        // Primero intentamos obtener el programa desde stage_content
+        if (activityContent.stage_id) {
+          const { data: stageData } = await supabase
+            .from('strategy_stages')
+            .select('program_id')
+            .eq('id', activityContent.stage_id)
+            .single();
+          
+          if (stageData?.program_id) {
+            const { data: programData } = await supabase
+              .from('programs')
+              .select('title, description')
+              .eq('id', stageData.program_id)
+              .single();
+            
+            if (programData) {
+              programContext = `Eres un consultor de negocios especializado en ${programData.title}. ${programData.description || ''}`;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error al obtener información del programa:', error);
+      }
+      
+      // Construir el prompt completo para las instrucciones del sistema
+      let finalPrompt = systemMessage?.content || 
+        `Inicia la conversación para la actividad "${activityContent.title}". Explica brevemente el propósito de esta actividad y cómo puede ayudar al usuario.`;
+      
+      if (activityPrompt) {
+        finalPrompt += `\n\nInstrucciones específicas para esta actividad: ${activityPrompt}`;
+      }
+      
+      if (systemInstructions) {
+        finalPrompt += `\n\nComportamiento esperado: ${systemInstructions}`;
+      }
+      
+      // Añadir información de la empresa si está disponible
+      if (company) {
+        finalPrompt += `\n\nInformación de la empresa: ${company.name}, Industria: ${company.industry}, Tamaño: ${company.size}`;
+      }
+      
+      // Importar la función generateContextForOpenAI para obtener el contexto completo
+      const { generateContextForOpenAI } = await import('../lib/chatMemoryService');
+      
+      // Generar el contexto completo que incluye historial, resúmenes y dependencias
+      const context = await generateContextForOpenAI(
+        userId,
+        activityId,
+        'INICIO_CONVERSACION',
+        finalPrompt
+      );
+      
+      // Añadir el contexto del programa como primer mensaje del sistema
+      context.unshift({ role: 'system', content: programContext });
+      
+      // Log detallado del prompt solo en desarrollo
+      if (import.meta.env.DEV) {
+        console.log('\n🔎 [DEV ONLY] DETALLES DEL PROMPT CONSTRUIDO EN CHAT SERVICE:');
+        console.log('Contexto del programa:', programContext);
+        console.log('Prompt final:', finalPrompt);
+        console.log('Contexto de conversación:', context ? `${context.length - 2} mensajes previos` : 'Ninguno');
+        console.log('Mensaje del sistema:', systemMessage?.content || 'No hay mensaje del sistema');
+        console.log('-------------------------------------------\n');
+      }
+      
+      // Generar la respuesta
+      const response = await generateBotResponse(context);
+      
+      // Guardar la interacción en la base de datos
+      try {
+        // Primero intentamos guardar con embeddings para mejorar la búsqueda vectorial
+        try {
+          // Importamos la función directamente para evitar problemas de importación circular
+          const { saveInteractionWithEmbeddings } = await import('../lib/openai');
+          await saveInteractionWithEmbeddings(userId, activityId, 'INICIO_CONVERSACION', response);
+          console.log('✅ Interacción inicial guardada correctamente con embeddings');
+        } catch (embeddingError) {
+          console.error('Error al guardar interacción inicial con embeddings:', embeddingError);
+          
+          // Si falla, guardamos sin embeddings como respaldo
+          await supabase.from('activity_interactions').insert({
+            user_id: userId,
+            activity_id: activityId,
+            user_message: 'INICIO_CONVERSACION',
+            ai_response: response,
+            interaction_type: 'initial',
+            timestamp: new Date().toISOString()
+          });
+          console.log('✅ Interacción inicial guardada sin embeddings (respaldo)');
+        }
+      } catch (error) {
+        console.error('Error al guardar la interacción inicial:', error);
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Error al generar respuesta inicial:', error);
+      return 'Lo siento, ha ocurrido un error al iniciar la conversación. Por favor, intenta nuevamente.';
     }
   },
   

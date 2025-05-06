@@ -4,6 +4,7 @@ import { ActivityData } from './types';
 import { ActivityContent } from '../../../types';
 import { supabase } from '../../../lib/supabase';
 import { AdvisoryAllocationForm } from '../../advisory';
+import InfoCallout from './InfoCallout';
 
 interface ContentFormProps {
   content: Partial<ActivityContent>;
@@ -30,7 +31,8 @@ const ContentForm: React.FC<ContentFormProps> = ({
     system_instructions: '',
     max_exchanges: 5,
     step: 1,
-    prompt_section: ''
+    prompt_section: '',
+    dependencies: []
   });
   const [availableActivities, setAvailableActivities] = useState<{id: string, content_id: string, stage_name: string, title: string}[]>([]);
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
@@ -45,8 +47,6 @@ const ContentForm: React.FC<ContentFormProps> = ({
     // Cargar actividades disponibles para dependencias
     const fetchActivities = async () => {
       try {
-        console.log('Cargando actividades disponibles para dependencias...');
-        
         // Consulta mejorada para obtener más información sobre las actividades
         const { data, error } = await supabase
           .from('content_registry')
@@ -61,8 +61,6 @@ const ContentForm: React.FC<ContentFormProps> = ({
         if (error) throw error;
         
         if (data) {
-          console.log('Actividades obtenidas de content_registry:', data);
-          
           // Obtener información adicional de activity_contents
           const activityIds = data.map((item: any) => item.content_id);
           const { data: activityContentsData, error: activityContentsError } = await supabase
@@ -71,8 +69,6 @@ const ContentForm: React.FC<ContentFormProps> = ({
             .in('id', activityIds);
           
           if (activityContentsError) throw activityContentsError;
-          
-          console.log('Datos de activity_contents:', activityContentsData);
           
           // Combinar los datos para tener información completa
           const formattedData = data.map((item: any) => {
@@ -85,15 +81,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
             };
           });
           
-          console.log('Actividades formateadas para el selector:', formattedData);
           setAvailableActivities(formattedData);
-          
-          // Verificar si las dependencias seleccionadas están en las actividades disponibles
-          if (selectedDependencies.length > 0) {
-            console.log('Dependencias seleccionadas:', selectedDependencies);
-            console.log('¿Las dependencias están en las actividades disponibles?', 
-              selectedDependencies.map(dep => formattedData.some(act => act.id === dep)));
-          }
         }
       } catch (err) {
         console.error('Error al cargar actividades:', err);
@@ -105,7 +93,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
     if (contentType === 'activity' || formContent.content_type === 'activity') {
       fetchActivities();
     }
-  }, [contentType, formContent.content_type, selectedDependencies]);
+  }, [contentType, formContent.content_type]);
 
   useEffect(() => {
     // Inicializar el tipo de contenido
@@ -116,9 +104,14 @@ const ContentForm: React.FC<ContentFormProps> = ({
     // Si hay datos de actividad, cargarlos
     if (content.activity_data) {
       try {
-        const parsedData = typeof content.activity_data === 'string' 
-          ? JSON.parse(content.activity_data) 
-          : content.activity_data;
+        let parsedData;
+        if (typeof content.activity_data === 'string') {
+          parsedData = JSON.parse(content.activity_data);
+        } else {
+          parsedData = content.activity_data;
+        }
+        
+        console.log('Datos de actividad cargados del contenido:', parsedData);
         
         setActivityData({
           prompt: parsedData.prompt || '',
@@ -126,7 +119,8 @@ const ContentForm: React.FC<ContentFormProps> = ({
           system_instructions: parsedData.system_instructions || '',
           max_exchanges: parsedData.max_exchanges || 5,
           step: parsedData.step || 1,
-          prompt_section: parsedData.prompt_section || ''
+          prompt_section: parsedData.prompt_section || '',
+          dependencies: parsedData.dependencies || []
         });
       } catch (error) {
         console.error('Error al parsear los datos de actividad:', error);
@@ -135,15 +129,12 @@ const ContentForm: React.FC<ContentFormProps> = ({
 
     // Cargar dependencias si existen
     if (content.dependencies && Array.isArray(content.dependencies)) {
-      console.log('Cargando dependencias desde el contenido:', content.dependencies);
       setSelectedDependencies(content.dependencies);
       
       // Si estamos editando, verificar las dependencias en la base de datos
       if (isEditing && content.id) {
         const fetchDependenciesFromDB = async () => {
           try {
-            console.log('Obteniendo content_id para:', content.id);
-            
             // Obtener el content_id de content_registry
             const { data: registryData, error: registryError } = await supabase
               .from('content_registry')
@@ -169,7 +160,6 @@ const ContentForm: React.FC<ContentFormProps> = ({
             }
             
             if (data?.dependencies && Array.isArray(data.dependencies)) {
-              console.log('Dependencias encontradas:', data.dependencies);
               setSelectedDependencies(data.dependencies);
             }
           } catch (err) {
@@ -222,14 +212,35 @@ const ContentForm: React.FC<ContentFormProps> = ({
       }
 
       // Si es una actividad, asegurarse de que se guarde como tipo 'activity'
+      // y que los datos de actividad estén completos
       if (contentType === 'activity') {
         updatedContent.content_type = 'activity';
-        console.log('Guardando actividad con datos:', { 
-          content: updatedContent, 
-          activityData 
-        });
+        
+        // Asegurarnos de que los datos de actividad estén completos
+        const completeActivityData = {
+          ...activityData,
+          prompt: activityData.prompt || '',
+          initial_message: activityData.initial_message || '',
+          system_instructions: activityData.system_instructions || '',
+          max_exchanges: activityData.max_exchanges || 5,
+          step: activityData.step || 1,
+          prompt_section: activityData.prompt_section || '',
+          dependencies: selectedDependencies || []
+        };
+        
+        console.log('Enviando datos de actividad completos:', completeActivityData);
+        
+        // Guardar también los campos específicos en el objeto principal
+        updatedContent.prompt_section = completeActivityData.prompt_section;
+        updatedContent.system_instructions = completeActivityData.system_instructions;
+        updatedContent.step = completeActivityData.step;
+        
+        // Llamar a onSave con los datos completos
+        onSave(updatedContent, completeActivityData);
+        return;
       }
 
+      // Para otros tipos de contenido
       onSave(updatedContent, activityData);
     } catch (err) {
       console.error('Error al procesar el formulario:', err);
@@ -240,27 +251,19 @@ const ContentForm: React.FC<ContentFormProps> = ({
   const handleAddDependency = (dependencyId: string) => {
     if (!dependencyId) return;
     
-    console.log('Añadiendo dependencia:', dependencyId);
-    
     if (!selectedDependencies.includes(dependencyId)) {
       const newDependencies = [...selectedDependencies, dependencyId];
-      console.log('Nueva lista de dependencias:', newDependencies);
       setSelectedDependencies(newDependencies);
       
       // Si estamos editando, actualizar también en la base de datos
       if (isEditing && content.id) {
         updateDependenciesInDB(newDependencies);
       }
-    } else {
-      console.log('La dependencia ya existe en la lista');
     }
   };
 
   const handleRemoveDependency = (dependencyId: string) => {
-    console.log('Eliminando dependencia:', dependencyId);
-    
     const newDependencies = selectedDependencies.filter(id => id !== dependencyId);
-    console.log('Nueva lista de dependencias después de eliminar:', newDependencies);
     setSelectedDependencies(newDependencies);
     
     // Si estamos editando, actualizar también en la base de datos
@@ -274,8 +277,6 @@ const ContentForm: React.FC<ContentFormProps> = ({
     if (!content.id) return;
     
     try {
-      console.log('Actualizando dependencias para el ID de registro:', content.id);
-      
       // Primero obtenemos el content_id de content_registry
       const { data: registryData, error: registryError } = await supabase
         .from('content_registry')
@@ -289,8 +290,6 @@ const ContentForm: React.FC<ContentFormProps> = ({
       }
       
       const contentId = registryData.content_id;
-      console.log('Content ID obtenido:', contentId);
-      console.log('Nuevas dependencias a guardar:', dependencies);
       
       // Actualizar en activity_contents usando el content_id
       const { error: activityError } = await supabase
@@ -301,8 +300,6 @@ const ContentForm: React.FC<ContentFormProps> = ({
       if (activityError) {
         console.error('Error al actualizar dependencias en activity_contents:', activityError);
       } else {
-        console.log('Dependencias actualizadas correctamente en activity_contents');
-        
         // Mostrar mensaje de éxito
         setSuccessMessage('Dependencias actualizadas correctamente');
         setShowSuccessMessage(true);
@@ -394,7 +391,14 @@ const ContentForm: React.FC<ContentFormProps> = ({
             <div className="space-y-3 border border-gray-200 p-3 rounded-md bg-gray-50">
               {/* Eliminamos el campo de descripción ya que no es útil para las actividades */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Prompt para el Asistente IA</label>
+                <div className="flex items-center mb-1">
+                  <label className="text-xs font-medium text-gray-700">Prompt para el Asistente IA</label>
+                  <InfoCallout 
+                    title="Prompt para el Asistente IA" 
+                    description="Define el objetivo específico de la actividad y guía el comportamiento del asistente."
+                    example="ayuda al emprendedor a identificar el problema"
+                  />
+                </div>
                 <textarea
                   value={activityData.prompt}
                   onChange={(e) => setActivityData({ ...activityData, prompt: e.target.value })}
@@ -404,9 +408,17 @@ const ContentForm: React.FC<ContentFormProps> = ({
                   disabled={loading}
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">Se incluye en el contexto enviado a la IA como parte del mensaje de sistema y orienta la conversación hacia un objetivo específico.</p>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Mensaje Inicial</label>
+                <div className="flex items-center mb-1">
+                  <label className="text-xs font-medium text-gray-700">Mensaje Inicial</label>
+                  <InfoCallout 
+                    title="Mensaje Inicial" 
+                    description="Define el primer mensaje que enviará el asistente cuando el usuario inicie la conversación."
+                    example="hola, dime tu idea para saber tu problema"
+                  />
+                </div>
                 <textarea
                   value={activityData.initial_message}
                   onChange={(e) => setActivityData({ ...activityData, initial_message: e.target.value })}
@@ -416,9 +428,17 @@ const ContentForm: React.FC<ContentFormProps> = ({
                   disabled={loading}
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">Se muestra cuando el usuario hace clic en "Iniciar conversación" y ayuda a guiar al usuario desde el principio.</p>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Instrucciones del Sistema</label>
+                <div className="flex items-center mb-1">
+                  <label className="text-xs font-medium text-gray-700">Instrucciones del Sistema</label>
+                  <InfoCallout 
+                    title="Instrucciones del Sistema" 
+                    description="Proporciona instrucciones detalladas sobre cómo debe comportarse el asistente, qué enfoque debe tomar y qué tipo de respuestas debe dar."
+                    example="actúa como experto en emprendimiento para identificar problemas"
+                  />
+                </div>
                 <textarea
                   value={activityData.system_instructions}
                   onChange={(e) => setActivityData({ ...activityData, system_instructions: e.target.value })}
@@ -428,6 +448,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
                   disabled={loading}
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">Se utiliza como el mensaje de sistema principal enviado a la IA y define la "personalidad" del asistente.</p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Máximo de Intercambios</label>
@@ -468,8 +489,17 @@ const ContentForm: React.FC<ContentFormProps> = ({
               
               {/* Sección de dependencias */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Dependencias</label>
-                <p className="text-xs text-gray-500 mb-2">Selecciona actividades previas cuya información será utilizada como contexto</p>
+                <div className="flex items-center mb-1">
+                  <label className="text-xs font-medium text-gray-700">Dependencias</label>
+                  <InfoCallout 
+                    title="Dependencias" 
+                    description="Define qué actividades previas deben completarse antes de esta actividad y cuyos resultados pueden ser relevantes."
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mb-2">
+                  Permite al sistema cargar información de actividades anteriores, proporcionando contexto adicional 
+                  al asistente sobre el progreso del usuario y ayudando a crear una experiencia de aprendizaje coherente.
+                </p>
                 
                 <div className="mb-2">
                   <select

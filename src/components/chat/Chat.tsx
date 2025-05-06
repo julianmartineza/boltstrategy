@@ -165,15 +165,11 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
     }
   };
 
-  // Manejar el inicio de la conversación con un mensaje predeterminado
+  // Iniciar la conversación
   const handleStartConversation = async () => {
-    console.log('[handleStartConversation] Iniciando...');
-    console.log('[handleStartConversation] stageContentId prop:', stageContentId);
-    console.log('[handleStartConversation] activityContent state:', activityContent);
-    
     if (!user || !user.id) {
-      console.error('[handleStartConversation] No hay usuario autenticado');
-      addAIMessage('Por favor, inicia sesión para continuar con la actividad.', { type: 'error' });
+      console.error('[handleStartConversation] No hay usuario logueado');
+      addAIMessage('Por favor, inicia sesión para comenzar la conversación.', { type: 'error' });
       return;
     }
     
@@ -202,10 +198,6 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
     setIsLoading(true);
     
     try {
-      // Añadir mensaje predeterminado del usuario - Mensaje más simple
-      const defaultMessage = "Hola, ¿puedes ayudarme con esta actividad?";
-      addUserMessage(defaultMessage);
-      
       // Asegurarnos de que el objeto activityContent tenga los campos necesarios
       const enrichedActivityContent = {
         ...activityContent,
@@ -231,23 +223,61 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
         });
       }
       
-      // Generar respuesta del bot
-      const botResponse = await chatService.generateResponse(
-        defaultMessage,
-        enrichedActivityContent,
-        company,
-        interactionCount
-      );
+      // Obtener el mensaje inicial configurado
+      let initialMessage = null;
       
-      // Verificar si la respuesta contiene un mensaje de error de límite de cuota
-      if (botResponse && botResponse.includes("límite de uso de la API")) {
-        addAIMessage(botResponse, { type: 'error', isQuotaError: true });
-      } else {
-        // Añadir respuesta del bot a la UI
-        addAIMessage(botResponse);
+      // Intentar obtener el mensaje inicial de diferentes fuentes posibles
+      if (typeof enrichedActivityContent.activity_data === 'object' && enrichedActivityContent.activity_data?.initial_message) {
+        initialMessage = enrichedActivityContent.activity_data.initial_message;
+      } else if (typeof enrichedActivityContent.activity_data === 'string') {
+        try {
+          const parsedData = JSON.parse(enrichedActivityContent.activity_data);
+          initialMessage = parsedData.initial_message;
+        } catch (e) {
+          console.error('Error al parsear activity_data:', e);
+        }
+      } else if (enrichedActivityContent.initial_message) {
+        initialMessage = enrichedActivityContent.initial_message;
+      }
+      
+      console.log('Mensaje inicial encontrado:', initialMessage ? 'Sí' : 'No');
+      
+      if (initialMessage && initialMessage.trim() !== '') {
+        console.log('Usando mensaje inicial configurado:', initialMessage.substring(0, 50) + (initialMessage.length > 50 ? '...' : ''));
+        
+        // Mostrar directamente el mensaje inicial configurado sin mensaje previo del usuario
+        addAIMessage(initialMessage);
         
         // Mostrar botón de insight después de la respuesta
         showInsightButtonAfterResponse();
+      } else {
+        console.log('No hay mensaje inicial configurado, generando respuesta con la API');
+        
+        // No hay mensaje inicial configurado, así que generaremos uno basado en la actividad
+        // Primero, añadimos un mensaje del sistema (invisible para el usuario) para iniciar la conversación
+        const systemMessage = {
+          role: 'system',
+          content: `Inicia la conversación para la actividad "${enrichedActivityContent.title || 'Actividad'}". 
+                   Explica brevemente el propósito de esta actividad y cómo puede ayudar al usuario.`
+        };
+        
+        // Generar respuesta del bot usando la API sin mensaje previo del usuario
+        const botResponse = await chatService.generateInitialResponse(
+          enrichedActivityContent,
+          company,
+          systemMessage
+        );
+        
+        // Verificar si la respuesta contiene un mensaje de error de límite de cuota
+        if (botResponse && botResponse.includes("límite de uso de la API")) {
+          addAIMessage(botResponse, { type: 'error', isQuotaError: true });
+        } else {
+          // Añadir respuesta del bot a la UI
+          addAIMessage(botResponse);
+          
+          // Mostrar botón de insight después de la respuesta
+          showInsightButtonAfterResponse();
+        }
       }
     } catch (error) {
       console.error('Error starting conversation:', error);

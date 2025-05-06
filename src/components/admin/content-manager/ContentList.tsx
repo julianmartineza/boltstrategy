@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Edit, Trash2 } from 'lucide-react';
 import { ActivityContent } from '../../../types/index';
 import { debugContentList } from '../../../services/debugContentList';
@@ -20,26 +20,43 @@ const ContentList: React.FC<ContentListProps> = ({
 }) => {
   const stageContents = contents.filter(content => content.stage_id === stageId)
     .sort((a, b) => (a.order || 0) - (b.order || 0));
-
-  // Depuración: Mostrar contenidos para esta etapa
-  console.log('Contenidos para la etapa', stageId, stageContents);
   
-  // Usar la función de depuración detallada
+  // Crear la referencia fuera del useEffect
+  const hasLoggedRef = useRef(false);
+
+  // Usar la función de depuración detallada solo en desarrollo
   useEffect(() => {
-    debugContentList(contents, stageId);
-    
-    // Verificar específicamente los contenidos de texto
-    const textContents = stageContents.filter(content => content.content_type === 'text');
-    if (textContents.length > 0) {
-      console.log('=== DEPURACIÓN ESPECÍFICA DE CONTENIDOS DE TEXTO EN LA LISTA ===');
-      textContents.forEach((content, index) => {
-        console.log(`Contenido de texto #${index + 1}:`);
-        console.log(`ID: ${content.id}`);
-        console.log(`Título: "${content.title}"`);
-        console.log(`Tipo: ${content.content_type}`);
-        console.log(`Objeto completo:`, content);
-      });
+    // Solo ejecutar en desarrollo y una vez por renderizado
+    if (import.meta.env.DEV) {
+      // Resetear la bandera cuando cambian los contenidos
+      if (contents.length > 0 && !hasLoggedRef.current) {
+        hasLoggedRef.current = true;
+        
+        // Depuración: Mostrar contenidos para esta etapa
+        console.log('Contenidos para la etapa', stageId, stageContents);
+        
+        // Usar la función de depuración detallada
+        debugContentList(contents, stageId);
+        
+        // Verificar específicamente los contenidos de texto
+        const textContents = stageContents.filter(content => content.content_type === 'text');
+        if (textContents.length > 0) {
+          console.log('=== DEPURACIÓN ESPECÍFICA DE CONTENIDOS DE TEXTO EN LA LISTA ===');
+          textContents.forEach((content, index) => {
+            console.log(`Contenido de texto #${index + 1}:`);
+            console.log(`ID: ${content.id}`);
+            console.log(`Título: "${content.title}"`);
+            console.log(`Tipo: ${content.content_type}`);
+            console.log(`Objeto completo:`, content);
+          });
+        }
+      }
     }
+    
+    // Limpiar la referencia cuando cambian los contenidos
+    return () => {
+      hasLoggedRef.current = false;
+    };
   }, [contents, stageId, stageContents]);
 
   if (stageContents.length === 0) {

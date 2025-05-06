@@ -17,14 +17,6 @@ const openai = new OpenAI({
   dangerouslyAllowBrowser: true // Note: In production, API calls should go through your backend
 });
 
-interface ChatContext {
-  systemPrompt?: string;
-  stage: string;
-  activity: string;
-  previousMessages: Array<{role: 'user' | 'assistant', content: string}>;
-  context?: any;
-}
-
 export interface SimilarMessage {
   id: string;
   user_message: string;
@@ -270,75 +262,40 @@ export async function saveInteractionWithEmbeddings(
 // Caché para respuestas de bienvenida para evitar solicitudes duplicadas
 const welcomeResponseCache = new Map<string, string>();
 
+/**
+ * Genera una respuesta del bot usando el modelo de OpenAI
+ * @param messages Mensajes para generar la respuesta
+ * @returns Respuesta generada
+ */
 export async function generateBotResponse(
-  input: string, 
-  context: ChatContext,
-  userId?: string,
-  activityId?: string
-) {
+  messages: Array<{role: string, content: string}>
+): Promise<string> {
   try {
-    // Para mensajes de bienvenida, verificar si ya tenemos una respuesta en caché
-    const isWelcomeMessage = input === "Hola, ¿puedes ayudarme con esta actividad?";
-    
-    // Asegurarse de que la clave sea siempre un string
-    const welcomeCacheKey = activityId ? `${activityId}-welcome` : 'default-welcome';
-    
-    if (isWelcomeMessage && welcomeResponseCache.has(welcomeCacheKey)) {
-      console.log('🔍 Usando respuesta de bienvenida en caché para actividad:', activityId || 'desconocida');
-      const cachedResponse = welcomeResponseCache.get(welcomeCacheKey);
-      return cachedResponse || "Lo siento, no pude recuperar la respuesta en caché.";
-    }
-    
-    // Si tenemos userId y activityId, buscamos mensajes similares
-    let relevantMessages: SimilarMessage[] = [];
-    if (userId && activityId && !isWelcomeMessage) { // No buscar mensajes similares para el mensaje de bienvenida
-      try {
-        console.log(`🔍 Buscando mensajes similares para usuario ${userId} y actividad ${activityId}`);
-        relevantMessages = await findSimilarMessages(input, userId, activityId);
-        console.log('📊 Mensajes similares encontrados:', relevantMessages.length);
-      } catch (error) {
-        console.error('❌ Error buscando mensajes similares, continuando sin ellos:', error);
-      }
-    }
-    
-    const messages = [
-      {
-        role: 'system',
-        content: context.systemPrompt || `You are an AI strategy consultant helping with the "${context.stage}" stage, 
-        specifically the "${context.activity}" activity. Use the provided context to guide the conversation effectively.`
-      },
-      // Add context if available
-      ...(context.context ? [{
-        role: 'system',
-        content: `Context Information: ${JSON.stringify(context.context)}`
-      }] : []),
-      // Add relevant previous messages if available
-      ...(relevantMessages.length > 0 ? [{
-        role: 'system',
-        content: `Mensajes relevantes de conversaciones anteriores:\n${relevantMessages
-          .map(m => `Usuario: ${m.user_message}\nAsistente: ${m.ai_response}`)
-          .join('\n\n')}`
-      }] : []),
-      // Add previous conversation context (from current session)
-      ...context.previousMessages,
-      // Add current user input
-      {
-        role: 'user',
-        content: input
-      }
-    ];
-
+    // Solo mostrar logs resumidos en producción
     console.log(`📤 Enviando solicitud a OpenAI para generar respuesta usando modelo: ${CHAT_MODEL}`);
     console.log('📝 Estructura de mensajes:', JSON.stringify(messages.map(m => ({
       role: m.role,
       content_preview: m.content.substring(0, 50) + (m.content.length > 50 ? '...' : '')
     })), null, 2));
     
+    // Logs detallados solo en desarrollo
+    if (import.meta.env.DEV) {
+      console.log('🔍 [DEV ONLY] PROMPT COMPLETO ENVIADO A OPENAI:');
+      messages.forEach((msg, index) => {
+        console.log(`\n--- MENSAJE ${index + 1} (${msg.role.toUpperCase()}) ---`);
+        console.log(msg.content);
+        console.log('-------------------------------------------');
+      });
+    }
+    
     try {
       console.time('⏱️ Tiempo de respuesta OpenAI');
       
       const completion = await openai.chat.completions.create({
-        messages: messages.map(m => ({ role: m.role as 'system' | 'user' | 'assistant', content: m.content })),
+        messages: messages.map(m => ({ 
+          role: m.role as 'system' | 'user' | 'assistant', 
+          content: m.content 
+        })),
         model: CHAT_MODEL,
         temperature: 0.7,
         max_tokens: 1000,
@@ -347,49 +304,27 @@ export async function generateBotResponse(
       });
 
       console.timeEnd('⏱️ Tiempo de respuesta OpenAI');
-      console.log('📥 Respuesta recibida de OpenAI:', {
-        id: completion.id,
-        model: completion.model,
-        usage: completion.usage,
-        finish_reason: completion.choices[0].finish_reason
-      });
-
-      const response = completion.choices[0].message.content || "";
+      
+      const response = completion.choices[0]?.message?.content || 'Lo siento, no pude generar una respuesta.';
       
       // Guardar respuesta de bienvenida en caché
-      if (isWelcomeMessage && response) {
-        welcomeResponseCache.set(welcomeCacheKey, response);
+      if (messages[0].role === 'user' && messages[0].content === "Hola, ¿puedes ayudarme con esta actividad?" && response) {
+        welcomeResponseCache.set('default-welcome', response);
       }
       
-      // Si tenemos userId y activityId, guardamos la interacción con embeddings
-      if (userId && activityId && response) {
-        // Usamos un catch para evitar que los errores al guardar interrumpan el flujo
-        console.log('💾 Guardando interacción con embeddings');
-        saveInteractionWithEmbeddings(userId, activityId, input, response)
-          .catch(err => console.error('❌ Error guardando interacción:', err));
-      }
-
       return response;
     } catch (error: any) {
-      // Si es un error de límite de cuota, devolvemos un mensaje amigable
+      console.error('❌ Error en la API de OpenAI:', error);
+      
+      // Verificar si es un error de límite de uso
       if (error.status === 429) {
-        console.error('⚠️ Error de límite de cuota en OpenAI:', error);
-        return "Lo siento, en este momento no puedo procesar tu solicitud debido a que se ha alcanzado el límite de uso de la API. Por favor, intenta más tarde o contacta al administrador del sistema para resolver este problema.";
+        return "Lo siento, se ha alcanzado el límite de uso de la API. Por favor, intenta de nuevo más tarde.";
       }
       
-      // Para otros errores, mostrar detalles y lanzar excepción
-      console.error('❌ Error en la solicitud a OpenAI:', error);
-      console.error('Detalles del error:', {
-        mensaje: error.message,
-        status: error.status,
-        tipo: error.type,
-        stack: error.stack
-      });
-      
-      throw error;
+      return "Lo siento, ha ocurrido un error al generar la respuesta. Por favor, intenta de nuevo.";
     }
   } catch (error) {
-    console.error('❌ Error general en generateBotResponse:', error);
-    return "Lo siento, ha ocurrido un error al procesar tu mensaje. Por favor, intenta de nuevo más tarde.";
+    console.error('Error general en generateBotResponse:', error);
+    return "Lo siento, ha ocurrido un error inesperado. Por favor, intenta de nuevo más tarde.";
   }
 }
