@@ -53,28 +53,7 @@ export const debugTextContents = async () => {
       }
     }
     
-    // 4. Verificar también en stage_content (para contenidos antiguos)
-    const { data: stageContentData, error: stageContentError } = await supabase
-      .from('stage_content')
-      .select('*')
-      .eq('content_type', 'text');
-      
-    if (stageContentError) {
-      console.error('Error al consultar stage_content:', stageContentError);
-    } else {
-      console.log(`Encontrados ${stageContentData.length} registros en stage_content de tipo text:`, stageContentData);
-      
-      if (stageContentData && stageContentData.length > 0) {
-        console.log('=== ANÁLISIS DE CONTENIDOS DE TEXTO ANTIGUOS ===');
-        for (const content of stageContentData) {
-          console.log(`Content ID: ${content.id}`);
-          console.log(`Título: "${content.title}"`);
-          console.log(`Stage ID: ${content.stage_id}`);
-          console.log(`Primeros 100 caracteres: ${content.content?.substring(0, 100)}...`);
-          console.log('---');
-        }
-      }
-    }
+    // Eliminada la verificación en stage_content: ya no es relevante tras la migración total
     
     console.log('=== FIN DE DEPURACIÓN ===');
   } catch (error) {

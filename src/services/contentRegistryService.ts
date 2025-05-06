@@ -20,7 +20,6 @@ export interface ContentRegistry {
 export interface ProgramModuleContent {
   id: string;
   program_module_id: string;
-  content_type: string;
   content_registry_id: string;
   position: number;
   created_at?: string;
@@ -70,7 +69,6 @@ export interface AdvisorySession {
  */
 export interface ActivityContent {
   id: string;
-  title: string;
   activity_data: any;
   prompt_section?: string;
   system_instructions?: string;
@@ -99,10 +97,6 @@ export interface UnifiedContent {
   activity_data?: any;
   prompt_section?: string;
   system_instructions?: string;
-  // Campos para compatibilidad con StageContent
-  stage_id?: string;
-  order_num?: number;
-  program_module_id?: string;
   // Metadatos
   created_at?: string;
   updated_at?: string;
@@ -186,15 +180,12 @@ export const getModuleContents = async (moduleId: string): Promise<UnifiedConten
             unifiedContent.content = content.content;
             unifiedContent.format = content.format;
             unifiedContent.markdown_enabled = content.markdown_enabled;
-            // Registrar información de depuración
-            console.log(`Procesando texto: ID=${content.id}, Título en registry="${registry.title}", Título en content="${content.title}"`);
             break;
           case 'video':
             unifiedContent.url = content.video_url;
             unifiedContent.provider = content.source;
             break;
           case 'activity':
-            unifiedContent.content = content.content;
             unifiedContent.activity_data = content.activity_data;
             unifiedContent.prompt_section = content.prompt_section;
             unifiedContent.system_instructions = content.system_instructions;
@@ -379,7 +370,7 @@ export const createVideoContent = async (
  * @param position Posición en el módulo
  * @param promptSection Sección de la actividad
  * @param systemInstructions Instrucciones del sistema
- * @returns El contenido unificado creado
+ * @returns El ID del contenido creado o null si hay error
  */
 export const createActivityContent = async (
   moduleId: string,
@@ -388,42 +379,88 @@ export const createActivityContent = async (
   position: number,
   promptSection?: string,
   systemInstructions?: string
-): Promise<UnifiedContent | null> => {
+): Promise<string | null> => {
   try {
-    // 1. Crear el contenido especializado
+    console.log('Creando actividad con estructura modular:', {
+      moduleId,
+      title,
+      promptSection,
+      systemInstructions,
+      position
+    });
+    
+    // Obtener datos del módulo para stage_id y stage_name
+    const { data: moduleData, error: moduleError } = await supabase
+      .from('strategy_stages')
+      .select('id, name')
+      .eq('id', moduleId)
+      .single();
+    
+    if (moduleError) {
+      console.error('Error al obtener datos del módulo:', moduleError);
+      return null;
+    }
+    
+    console.log('Datos del módulo obtenidos:', moduleData);
+    
+    // Extraer valores de activityData para guardarlos en campos específicos
+    const activityDataObj = typeof activityData === 'string' 
+      ? JSON.parse(activityData) 
+      : activityData;
+    
+    // Obtener valores específicos o usar los parámetros proporcionados
+    const extractedPromptSection = promptSection || activityDataObj.prompt_section || '';
+    const extractedSystemInstructions = systemInstructions || activityDataObj.system_instructions || '';
+    const extractedStep = activityDataObj.step || 1;
+    
+    // Extraer dependencias si existen en activityData
+    let dependencies = [];
+    if (activityDataObj.dependencies) {
+      dependencies = Array.isArray(activityDataObj.dependencies) 
+        ? activityDataObj.dependencies 
+        : [activityDataObj.dependencies];
+    }
+    
+    // Crear la actividad en activity_contents
     const { data: activityContent, error: activityError } = await supabase
       .from('activity_contents')
       .insert({
-        activity_data: activityData,
-        prompt_section: promptSection,
-        system_instructions: systemInstructions
+        title,
+        activity_data: typeof activityData === 'string' ? activityData : JSON.stringify(activityData),
+        prompt_section: extractedPromptSection,
+        system_instructions: extractedSystemInstructions,
+        stage_id: moduleId,
+        stage_name: moduleData.name,
+        order_num: position,
+        step: extractedStep,
+        dependencies: dependencies
       })
       .select()
       .single();
     
     if (activityError) {
-      console.error('Error al crear contenido de actividad:', activityError);
+      console.error('Error al crear actividad:', activityError);
       return null;
     }
     
-    // 2. Crear el registro en content_registry
+    // Crear el registro en content_registry
     const { data: registryEntry, error: registryError } = await supabase
       .from('content_registry')
       .insert({
         title,
         content_type: 'activity',
-        content_id: activityContent.id,
-        content_table: 'activity_contents'
+        content_table: 'activity_contents',
+        content_id: activityContent.id
       })
       .select()
       .single();
     
     if (registryError) {
-      console.error('Error al crear registro de contenido:', registryError);
+      console.error('Error al crear registro en content_registry:', registryError);
       return null;
     }
     
-    // 3. Crear la relación en program_module_contents
+    // Crear la relación con el módulo
     const { error: relationError } = await supabase
       .from('program_module_contents')
       .insert({
@@ -433,39 +470,169 @@ export const createActivityContent = async (
       });
     
     if (relationError) {
-      console.error('Error al crear relación de módulo-contenido:', relationError);
+      console.error('Error al crear relación con el módulo:', relationError);
       return null;
     }
     
-    // Retornar el contenido unificado
-    return {
-      id: registryEntry.id,
-      title: registryEntry.title,
-      content_type: registryEntry.content_type,
-      registry_id: registryEntry.id,
-      content_id: activityContent.id,
-      content_table: 'activity_contents',
-      activity_data: activityContent.activity_data,
-      prompt_section: activityContent.prompt_section,
-      system_instructions: activityContent.system_instructions,
-      position,
-      program_module_id: moduleId,
-      created_at: registryEntry.created_at,
-      updated_at: registryEntry.updated_at
-    };
+    // Retornar el ID del contenido creado
+    return registryEntry.id;
   } catch (error) {
-    console.error('Error al crear contenido de actividad:', error);
+    console.error('Error al crear actividad:', error);
+    return null;
+  }
+};
+
+/**
+ * Actualiza un contenido de actividad existente en la estructura modular
+ * 
+ * @param moduleId ID del módulo al que pertenece
+ * @param title Título del contenido
+ * @param activityData Datos de la actividad
+ * @param promptSection Sección de la actividad
+ * @param systemInstructions Instrucciones del sistema
+ * @returns El contenido unificado actualizado
+ */
+export const updateActivityContent = async (
+  moduleId: string,
+  title: string,
+  activityData: any,
+  promptSection?: string,
+  systemInstructions?: string
+): Promise<UnifiedContent | null> => {
+  try {
+    console.log('Actualizando actividad con estructura modular:', {
+      moduleId,
+      title,
+      promptSection,
+      systemInstructions
+    });
+
+    // 1. Buscar el registro existente en content_registry
+    const { data: registryData, error: registryError } = await supabase
+      .from('content_registry')
+      .select('id, content_id, content_table, title')
+      .eq('title', title)
+      .eq('content_type', 'activity')
+      .maybeSingle();
+
+    if (registryError) {
+      console.error('Error al buscar registro de actividad:', registryError);
+      return null;
+    }
+
+    if (!registryData) {
+      console.error('No se encontró el registro de actividad para actualizar');
+      return null;
+    }
+
+    // Obtener datos del módulo para stage_id y stage_name
+    const { data: moduleData, error: moduleError } = await supabase
+      .from('strategy_stages')
+      .select('id, name')
+      .eq('id', moduleId)
+      .single();
+    
+    if (moduleError) {
+      console.error('Error al obtener datos del módulo:', moduleError);
+      // No retornamos null aquí para permitir que la actualización continúe
+    }
+
+    // Extraer valores de activityData para guardarlos en campos específicos
+    const activityDataObj = typeof activityData === 'string' 
+      ? JSON.parse(activityData) 
+      : activityData;
+    
+    // Obtener valores específicos o usar los parámetros proporcionados
+    const extractedPromptSection = promptSection || activityDataObj.prompt_section || '';
+    const extractedSystemInstructions = systemInstructions || activityDataObj.system_instructions || '';
+    const extractedStep = activityDataObj.step || 1;
+    
+    // Extraer dependencias si existen en activityData
+    let dependencies = [];
+    if (activityDataObj.dependencies) {
+      dependencies = Array.isArray(activityDataObj.dependencies) 
+        ? activityDataObj.dependencies 
+        : [activityDataObj.dependencies];
+    }
+
+    // 2. Actualizar el contenido de actividad en activity_contents
+    const { data: updatedActivityData, error: activityError } = await supabase
+      .from('activity_contents')
+      .update({
+        title: title, // Asegurarnos de actualizar el título
+        activity_data: typeof activityData === 'string' ? activityData : JSON.stringify(activityData),
+        prompt_section: extractedPromptSection,
+        system_instructions: extractedSystemInstructions,
+        step: extractedStep,
+        dependencies: dependencies,
+        stage_name: moduleData?.name || 'Actividad' // Actualizar el nombre del módulo
+      })
+      .eq('id', registryData.content_id)
+      .select()
+      .single();
+
+    if (activityError) {
+      console.error('Error al actualizar actividad:', activityError);
+      return null;
+    }
+
+    // 3. Actualizar el registro en content_registry si es necesario
+    if (title !== registryData.title) {
+      const { error: updateRegistryError } = await supabase
+        .from('content_registry')
+        .update({ 
+          title: title 
+        })
+        .eq('id', registryData.id);
+      
+      if (updateRegistryError) {
+        console.error('Error al actualizar registro:', updateRegistryError);
+        // No retornamos null aquí para permitir que la actualización continúe
+      }
+    }
+
+    // 4. Obtener la relación con el módulo para la posición
+    const { data: relationData, error: relationError } = await supabase
+      .from('program_module_contents')
+      .select('position')
+      .eq('content_registry_id', registryData.id)
+      .eq('program_module_id', moduleId)
+      .single();
+
+    if (relationError) {
+      console.error('Error al obtener relación de módulo:', relationError);
+    }
+
+    // 5. Construir y devolver el contenido unificado
+    const unifiedContent: UnifiedContent = {
+      id: updatedActivityData.id,
+      title,
+      content_type: 'activity',
+      position: relationData?.position || 0,
+      registry_id: registryData.id,
+      content_id: updatedActivityData.id,
+      content_table: 'activity_contents',
+      activity_data: activityData,
+      prompt_section: extractedPromptSection,
+      system_instructions: extractedSystemInstructions,
+      created_at: updatedActivityData.created_at,
+      updated_at: updatedActivityData.updated_at
+    };
+
+    return unifiedContent;
+  } catch (error) {
+    console.error('Error al actualizar actividad:', error);
     return null;
   }
 };
 
 /**
  * Registra una actividad existente en la estructura modular
- * Nota: Este método no crea una nueva actividad, solo la registra en el nuevo sistema
+ * Ahora solo soporta activity_contents
  * 
  * @param moduleId ID del módulo al que pertenece
  * @param title Título del contenido
- * @param activityId ID de la actividad existente en stage_content
+ * @param activityId ID de la actividad existente en activity_contents
  * @param position Posición en el módulo
  * @returns El ID del registro de contenido creado o null si hay error
  */
@@ -482,14 +649,14 @@ export const registerExistingActivity = async (
       .insert({
         title,
         content_type: 'activity',
-        content_table: 'stage_content',
+        content_table: 'activity_contents',
         content_id: activityId
       })
       .select()
       .single();
     
     if (registryError) {
-      console.error('Error al crear registro de contenido:', registryError);
+      console.error('Error al registrar actividad existente:', registryError);
       return null;
     }
     
@@ -633,24 +800,6 @@ export const deleteContent = async (registryId: string): Promise<boolean> => {
     
     if (registryError) {
       console.error('Error al obtener información del registro:', registryError);
-      
-      // Si no se encuentra el registro, intentar buscar por content_id
-      const { data: registryByContentId, error: contentIdError } = await supabase
-        .from('content_registry')
-        .select('*')
-        .eq('content_id', registryId)
-        .single();
-        
-      if (contentIdError) {
-        console.error('Error al buscar por content_id:', contentIdError);
-        throw registryError;
-      }
-      
-      if (registryByContentId) {
-        console.log('Registro encontrado por content_id:', registryByContentId);
-        return await deleteContent(registryByContentId.id);
-      }
-      
       throw registryError;
     }
     
@@ -669,20 +818,17 @@ export const deleteContent = async (registryId: string): Promise<boolean> => {
       console.log('Relaciones eliminadas correctamente');
     }
     
-    // 3. Eliminar el contenido especializado, excepto si es una actividad
-    // Las actividades se mantienen en stage_content para compatibilidad
-    if (registry.content_table !== 'stage_content') {
-      console.log(`Eliminando contenido especializado en ${registry.content_table}...`);
-      const { error: contentError } = await supabase
-        .from(registry.content_table)
-        .delete()
-        .eq('id', registry.content_id);
-      
-      if (contentError) {
-        console.error('Error al eliminar contenido especializado:', contentError);
-      } else {
-        console.log('Contenido especializado eliminado correctamente');
-      }
+    // 3. Eliminar el contenido especializado
+    console.log(`Eliminando contenido especializado en ${registry.content_table}...`);
+    const { error: contentError } = await supabase
+      .from(registry.content_table)
+      .delete()
+      .eq('id', registry.content_id);
+    
+    if (contentError) {
+      console.error('Error al eliminar contenido especializado:', contentError);
+    } else {
+      console.log('Contenido especializado eliminado correctamente');
     }
     
     // 4. Eliminar el registro en content_registry

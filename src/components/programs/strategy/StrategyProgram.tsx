@@ -113,7 +113,7 @@ const StrategyProgram: React.FC = () => {
           return;
         }
         
-        // Primero intentar cargar desde la nueva estructura (content_registry + program_module_contents)
+        // Cargar contenido desde la nueva estructura (content_registry + program_module_contents)
         console.log(`Buscando contenidos en la nueva estructura para la etapa ${currentStage.id}...`);
         const { data: moduleContents, error: moduleError } = await supabase
           .from('program_module_contents')
@@ -349,38 +349,14 @@ const StrategyProgram: React.FC = () => {
           if (currentContentIndex >= formattedContents.length) {
             setCurrentContentIndex(0);
           }
-          
-          return;
-        }
-        
-        // Si no hay datos en la nueva estructura, intentar con la antigua (stage_content)
-        console.log(`No se encontraron contenidos en la nueva estructura para la etapa ${currentStage.id}, intentando con stage_content...`);
-        
-        const { data: legacyData, error: legacyError } = await supabase
-          .from('stage_content')
-          .select('*')
-          .eq('stage_id', currentStage.id)
-          .order('order_num');
-          
-        if (legacyError) {
-          console.error('Error al cargar contenidos desde stage_content:', legacyError);
-          throw legacyError;
-        }
-        
-        console.log(`Encontrados ${legacyData?.length || 0} contenidos en la estructura antigua para la etapa ${currentStage.id}`);
-        
-        const contentData = legacyData || [];
-        
-        // Actualizar el estado
-        setStageContent(contentData);
-        setAllStagesContent(prev => ({
-          ...prev,
-          [currentStage.id]: contentData
-        }));
-        
-        // Asegurarse de que el índice de contenido actual es válido
-        if (currentContentIndex >= contentData.length) {
-          setCurrentContentIndex(0);
+        } else {
+          // Si no hay contenidos, dejar el estado vacío
+          setStageContent([]);
+          setAllStagesContent(prev => ({
+            ...prev,
+            [currentStage.id]: []
+          }));
+          if (currentContentIndex !== 0) setCurrentContentIndex(0);
         }
       } catch (error) {
         console.error('Error loading stage content:', error);
@@ -417,7 +393,7 @@ const StrategyProgram: React.FC = () => {
           
           console.log(`Cargando contenido para la etapa ${stage.id} (${stage.name})...`);
           
-          // Primero intentar cargar desde la nueva estructura (content_registry + program_module_contents)
+          // Cargar contenido desde la nueva estructura (content_registry + program_module_contents)
           const { data: moduleContents, error: moduleError } = await supabase
             .from('program_module_contents')
             .select(`
@@ -486,29 +462,10 @@ const StrategyProgram: React.FC = () => {
             
             continue;  // Pasar a la siguiente etapa
           }
-          
-          // Si no hay datos en la nueva estructura, intentar con la antigua (stage_content)
-          console.log(`No se encontraron contenidos en la nueva estructura para la etapa ${stage.id}, intentando con stage_content...`);
-          
-          const { data: legacyData, error: legacyError } = await supabase
-            .from('stage_content')
-            .select('*')
-            .eq('stage_id', stage.id)
-            .order('order_num');
-            
-          if (legacyError) {
-            console.error('Error al cargar contenidos desde stage_content:', legacyError);
-            throw legacyError;
-          }
-          
-          console.log(`Encontrados ${legacyData?.length || 0} contenidos en la estructura antigua para la etapa ${stage.id}`);
-          
-          // Guardar en nuestra copia local
-          newStagesContent[stage.id] = legacyData || [];
-          
-          // Si esta es la etapa actual, actualizar también stageContent
+          // Si no hay contenidos, dejar el estado vacío
+          newStagesContent[stage.id] = [];
           if (currentStage && currentStage.id === stage.id) {
-            setStageContent(legacyData || []);
+            setStageContent([]);
           }
         }
         

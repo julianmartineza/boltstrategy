@@ -1,12 +1,12 @@
 import React, { useEffect } from 'react';
 import { Edit, Trash2 } from 'lucide-react';
-import { StageContent } from './types';
+import { ActivityContent } from '../../../types/index';
 import { debugContentList } from '../../../services/debugContentList';
 
 interface ContentListProps {
-  contents: StageContent[];
+  contents: ActivityContent[];
   stageId: string;
-  onEdit: (content: StageContent) => void;
+  onEdit: (content: ActivityContent) => void;
   onDelete: (contentId: string, stageId: string) => void;
   loading: boolean;
 }
@@ -19,7 +19,7 @@ const ContentList: React.FC<ContentListProps> = ({
   loading 
 }) => {
   const stageContents = contents.filter(content => content.stage_id === stageId)
-    .sort((a, b) => (a.order_num || 0) - (b.order_num || 0));
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
 
   // Depuración: Mostrar contenidos para esta etapa
   console.log('Contenidos para la etapa', stageId, stageContents);
@@ -64,53 +64,26 @@ const ContentList: React.FC<ContentListProps> = ({
         <tbody className="bg-white divide-y divide-gray-200">
           {stageContents.map((content) => (
             <tr key={content.id}>
-              <td className="px-4 py-2 whitespace-nowrap">
-                <div className="text-xs text-gray-900">{content.order_num}</div>
-              </td>
-              <td className="px-4 py-2 whitespace-nowrap">
-                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                  ${content.content_type === 'video' ? 'bg-purple-100 text-purple-800' : 
-                    content.content_type === 'activity' ? 'bg-green-100 text-green-800' : 
-                    content.content_type === 'advisory_session' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-blue-100 text-blue-800'}`}
-                >
-                  {content.content_type === 'video' ? 'Video' : 
-                   content.content_type === 'activity' ? 'Actividad' : 
-                   content.content_type === 'advisory_session' ? 'Asesoría' : 'Texto'}
-                </span>
-              </td>
-              <td className="px-4 py-2 whitespace-nowrap">
-                <div className="text-xs font-medium text-gray-900">
-                  {content.title ? content.title : 'Sin título'}
-                </div>
-                {content.content_type === 'text' && !content.title && (
-                  <div className="text-xs text-red-500">
-                    ID: {content.id}
-                  </div>
-                )}
-              </td>
+              <td className="px-4 py-2 whitespace-nowrap">{content.order}</td>
+              <td className="px-4 py-2 whitespace-nowrap">{content.content_type}</td>
+              <td className="px-4 py-2">{content.title}</td>
               <td className="px-4 py-2 whitespace-nowrap text-right text-xs font-medium">
-                <div className="flex justify-end space-x-2">
-                  <button
-                    onClick={() => onEdit(content)}
-                    className="text-blue-600 hover:text-blue-900"
-                    disabled={loading}
-                  >
-                    <Edit className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      console.log('Botón eliminar clickeado para contenido:', content);
-                      console.log('ID del contenido:', content.id);
-                      console.log('ID de la etapa:', stageId);
-                      onDelete(content.id, stageId);
-                    }}
-                    className="text-red-600 hover:text-red-900"
-                    disabled={loading}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
+                <button
+                  onClick={() => onEdit(content)}
+                  className="text-blue-600 hover:text-blue-900 mr-2"
+                  title="Editar"
+                  disabled={loading}
+                >
+                  <Edit className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => onDelete(content.id, stageId)}
+                  className="text-red-600 hover:text-red-900"
+                  title="Eliminar"
+                  disabled={loading}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </td>
             </tr>
           ))}

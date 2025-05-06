@@ -1,91 +1,58 @@
+import { ActivityContent } from '../types';
 import { generateBotResponse } from '../lib/openai';
-import { 
-  generateContextForOpenAI,
-  cleanUpInteractions
-} from '../lib/chatMemoryService';
 import { supabase } from '../lib/supabase';
 
 export const chatService = {
-  // Generar respuesta del bot
-  generateResponse: async (
-    userMessage: string, 
-    activityContent: any, 
-    company: any = null,
+  /**
+   * Genera una respuesta del bot basada en un mensaje del usuario
+   * @param userMessage Mensaje del usuario
+   * @param activityContent Contenido de la actividad actual
+   * @param company Información de la empresa
+   * @param interactionCount Número de interacciones previas
+   * @returns Respuesta generada
+   */
+  async generateResponse(
+    userMessage: string,
+    activityContent: ActivityContent,
+    company?: any,
     interactionCount: number = 0
-  ) => {
+  ): Promise<string> {
     try {
-      // Extraer información necesaria para el contexto
-      const userId = activityContent?.user_id || '';
-      const activityId = activityContent?.id || '';
-      const stageName = activityContent?.stage_name || 'Consultoría';
-      const activityTitle = activityContent?.title || 'Conversación';
+      console.log('Generando respuesta para mensaje:', userMessage.substring(0, 50) + (userMessage.length > 50 ? '...' : ''));
       
-      // Verificar que tenemos los datos necesarios
+      // Verificar si tenemos un ID de actividad válido
+      if (!activityContent || !activityContent.id) {
+        console.warn('⚠️ No hay ID de actividad válido para generar respuesta contextual');
+        return "Lo siento, no puedo procesar tu solicitud porque falta información sobre la actividad actual.";
+      }
+      
+      // Obtener el userId del activityContent
+      const userId = activityContent.user_id;
       if (!userId) {
-        console.error('Error: userId no disponible para generar respuesta');
-        return 'Lo siento, no puedo procesar tu mensaje porque no se ha identificado correctamente el usuario. Por favor, intenta recargar la página.';
+        console.warn('⚠️ No hay user_id en activityContent para generar respuesta contextual');
+        return "Lo siento, no puedo procesar tu solicitud porque falta información sobre el usuario.";
       }
       
-      if (!activityId) {
-        console.error('Error: activityId no disponible para generar respuesta');
-        return 'Lo siento, no puedo procesar tu mensaje porque no se ha identificado correctamente la actividad. Por favor, intenta recargar la página.';
-      }
+      const activityId = activityContent.id;
+      console.log(`Generando respuesta para actividad ${activityId} y usuario ${userId}`);
       
-      console.log('Generando respuesta con:', { userId, activityId, stageName, activityTitle });
+      // Obtener el contexto de la conversación
+      const context = await getChatContext(userId, activityId);
       
-      // Obtener instrucciones específicas de la actividad
-      const systemInstructions = activityContent?.activity_data?.system_instructions || '';
-      const promptTemplate = activityContent?.activity_data?.prompt || activityContent?.content || '';
+      // Obtener las instrucciones del sistema si están disponibles
+      const systemInstructions = activityContent.system_instructions || '';
       
-      console.log('Instrucciones del sistema:', systemInstructions ? 'Disponibles' : 'No disponibles');
+      // Obtener información de la etapa y actividad
+      const stageName = activityContent.stage_name || 'Estrategia';
+      const activityTitle = activityContent.title || 'Consultoría';
+      
+      // Obtener plantilla de prompt si existe
+      const promptTemplate = activityContent.prompt_template || '';
       console.log('Plantilla de prompt:', promptTemplate ? 'Disponible' : 'No disponible');
       
-      // Determinar si es el primer mensaje (mensaje de bienvenida)
-      const isFirstMessage = userMessage === "Hola, ¿puedes ayudarme con esta actividad?";
-      
-      // Para el primer mensaje, usamos un contexto más simple pero con las instrucciones específicas
-      if (isFirstMessage) {
+      if (userMessage === "Hola, ¿puedes ayudarme con esta actividad?") {
         console.log('Generando respuesta de bienvenida');
-        
-        // Crear un contexto para el primer mensaje que incluya las instrucciones específicas
-        const botContext = {
-          systemPrompt: systemInstructions || 
-            `Eres un consultor de estrategia ayudando con la actividad "${activityTitle}" en la etapa "${stageName}". 
-            Da una bienvenida breve y concisa (máximo 1 párrafo) explicando el propósito de esta actividad.
-            ${promptTemplate ? `\nInstrucciones específicas: ${promptTemplate}` : ''}
-            No incluyas información detallada sobre la empresa ni historial de conversaciones previas.`,
-          stage: stageName || '',
-          activity: activityTitle || '',
-          previousMessages: [] as Array<{role: 'user' | 'assistant', content: string}>,
-          context: company ? { 
-            name: company.name,
-            industry: company.industry
-          } : null
-        };
-        
-        // Generar respuesta con el contexto específico
-        const botResponse = await generateBotResponse(
-          userMessage, 
-          botContext,
-          userId,
-          activityId
-        );
-        
-        if (!botResponse) {
-          throw new Error('No se pudo generar una respuesta de bienvenida');
-        }
-        
-        return botResponse;
       }
-      
-      // Para mensajes normales, usamos el contexto completo con las instrucciones específicas
-      // Generar contexto para la API de OpenAI
-      const context = await generateContextForOpenAI(
-        userId,
-        activityId,
-        userMessage,
-        systemInstructions // Pasar las instrucciones específicas al contexto
-      );
       
       // Filtrar los mensajes para que solo incluyan 'user' y 'assistant'
       const filteredContext = context
@@ -114,86 +81,139 @@ export const chatService = {
         activityId
       );
       
-      if (!botResponse) {
-        throw new Error('No se pudo generar una respuesta');
-      }
-      
       // Limpiar interacciones antiguas si hay muchas
       if (interactionCount > 10) {
-        await chatService.cleanUpOldInteractions(userId, activityId, interactionCount);
+        await this.cleanUpOldInteractions(userId, activityId, interactionCount);
       }
       
       return botResponse;
     } catch (error) {
-      console.error('Error generating bot response:', error);
-      throw error;
+      console.error('Error generando respuesta:', error);
+      return "Lo siento, ha ocurrido un error al generar una respuesta. Por favor, intenta de nuevo más tarde.";
     }
   },
   
-  // Procesar comandos especiales
+  // Procesar comandos especiales en los mensajes
   processSpecialCommands: (message: string) => {
-    // Comando para guardar insight
-    if (message.startsWith('/guardar ')) {
-      const insightContent = message.substring('/guardar '.length).trim();
-      return {
-        type: 'save_insight',
-        content: insightContent
-      };
+    // Comando para limpiar el chat
+    if (message.trim().toLowerCase() === '/clear') {
+      return { type: 'clear_chat', content: '' };
     }
     
-    // Comando para limpiar el chat
-    if (message === '/limpiar') {
-      return {
-        type: 'clear_chat'
-      };
+    // Comando para guardar un insight
+    if (message.trim().toLowerCase().startsWith('/save ')) {
+      const content = message.substring(6).trim();
+      if (content) {
+        return { type: 'save_insight', content };
+      }
     }
     
     // No es un comando especial
-    return {
-      type: 'normal_message',
-      content: message
-    };
+    return { type: 'normal', content: message };
   },
   
-  // Limpiar interacciones antiguas
-  cleanUpOldInteractions: async (userId: string, activityId: string, interactionCount: number) => {
-    // Si hay más de 10 interacciones, limpiar las más antiguas
-    if (interactionCount > 10) {
-      try {
-        await cleanUpInteractions(userId, activityId);
-        return true;
-      } catch (error) {
-        console.error('Error cleaning up interactions:', error);
-        return false;
-      }
-    }
-    return false;
-  },
-  
-  // Obtener dependencias de una actividad
-  fetchDependencies: async (activityId: string) => {
+  // Limpiar interacciones antiguas para mantener el rendimiento
+  cleanUpOldInteractions: async (userId: string, activityId: string, currentCount: number) => {
     try {
+      // Solo mantener las últimas 10 interacciones
+      const keepCount = 10;
+      
+      if (currentCount <= keepCount) {
+        return; // No hay necesidad de limpiar
+      }
+      
+      console.log(`Limpiando interacciones antiguas para usuario ${userId} y actividad ${activityId}`);
+      
+      // Obtener todas las interacciones ordenadas por fecha
       const { data, error } = await supabase
-        .from('stage_content')
-        .select('dependencies')
-        .eq('id', activityId)
-        .single();
-
+        .from('activity_interactions')
+        .select('id, timestamp')
+        .eq('user_id', userId)
+        .eq('activity_id', activityId)
+        .order('timestamp', { ascending: true });
+      
       if (error) {
-        console.error('Error fetching dependencies:', error);
-        return [];
+        console.error('Error obteniendo interacciones para limpiar:', error);
+        return;
       }
-
-      if (!data || !data.dependencies) {
-        console.log('No se encontraron dependencias para la actividad:', activityId);
-        return [];
+      
+      if (!data || data.length <= keepCount) {
+        return; // No hay suficientes interacciones para limpiar
       }
-
-      console.log('Dependencias encontradas:', data.dependencies);
-      return data.dependencies;
+      
+      // Calcular cuántas interacciones eliminar
+      const deleteCount = data.length - keepCount;
+      const idsToDelete = data.slice(0, deleteCount).map(item => item.id);
+      
+      // Eliminar las interacciones más antiguas
+      const { error: deleteError } = await supabase
+        .from('activity_interactions')
+        .delete()
+        .in('id', idsToDelete);
+      
+      if (deleteError) {
+        console.error('Error eliminando interacciones antiguas:', deleteError);
+      } else {
+        console.log(`Se eliminaron ${deleteCount} interacciones antiguas`);
+      }
     } catch (error) {
-      console.error('Error fetching dependencies:', error);
-      return [];
+      console.error('Error en cleanUpOldInteractions:', error);
     }
   }
 };
+
+// Interfaz para los mensajes del contexto
+interface ContextMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+/**
+ * Obtiene el contexto de la conversación para un usuario y actividad específicos
+ * @param userId ID del usuario
+ * @param activityId ID de la actividad
+ * @returns Array de mensajes para el contexto
+ */
+async function getChatContext(userId: string, activityId: string): Promise<ContextMessage[]> {
+  try {
+    // Obtener las últimas 5 interacciones para este usuario y actividad
+    const { data, error } = await supabase
+      .from('activity_interactions')
+      .select('user_message, ai_response, timestamp')
+      .eq('user_id', userId)
+      .eq('activity_id', activityId)
+      .order('timestamp', { ascending: true })
+      .limit(5);
+    
+    if (error) {
+      console.error('Error obteniendo contexto de chat:', error);
+      return [];
+    }
+    
+    if (!data || data.length === 0) {
+      return [];
+    }
+    
+    // Convertir las interacciones en formato de contexto para OpenAI
+    const context: ContextMessage[] = [];
+    
+    data.forEach(interaction => {
+      // Añadir mensaje del usuario
+      context.push({
+        role: 'user',
+        content: interaction.user_message
+      });
+      
+      // Añadir respuesta de la IA
+      context.push({
+        role: 'assistant',
+        content: interaction.ai_response
+      });
+    });
+    
+    return context;
+  } catch (error) {
+    console.error('Error en getChatContext:', error);
+    return [];
+  }
+}

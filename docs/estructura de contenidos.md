@@ -1,8 +1,34 @@
 # Nueva Estructura Modular para la Gestión de Contenidos en Programas
 
+> **Actualización (2025-05-02):**
+> 
+> La migración completa de la arquitectura legacy basada en `stage_content` ha finalizado. Toda la lógica, los componentes y los datos ahora utilizan exclusivamente la estructura modular moderna basada en `activity_contents`, `content_registry` y tablas especializadas. La tabla `stage_content` ha sido eliminada de la base de datos y del código fuente.
+
 Este documento describe la evolución de la arquitectura para la gestión de contenidos dentro de programas formativos. La nueva estructura busca reemplazar progresivamente la tabla `stage_content` como fuente única, y establecer una arquitectura modular que facilite la escalabilidad, especialización y mantenimiento del sistema.
 
-Esta evolución **no reemplaza ni elimina de inmediato la lógica existente** en `ProgramsManager.tsx` y `ContentManager.tsx`, sino que **se integra de forma progresiva** para mantener retrocompatibilidad. El objetivo es permitir que ambos esquemas (viejo y nuevo) convivan durante el periodo de transición.
+---
+
+## Estado actual de la arquitectura
+
+- **La tabla `stage_content` y toda su lógica han sido eliminadas** del código y la base de datos.
+- **No existen referencias ni claves foráneas** hacia `stage_content` en ninguna tabla.
+- **La única fuente de verdad** para actividades y contenidos es `activity_contents`, gestionada y orquestada a través de `content_registry` y `program_module_contents`.
+- Todos los componentes y servicios han sido refactorizados para operar únicamente sobre la arquitectura modular.
+
+---
+
+## Historial de migración
+
+1. **Identificación y limpieza de referencias legacy:**
+   - Eliminación de tipos, imports y lógica relacionada con `StageContent` en el código.
+   - Refactorización de componentes y servicios para usar `ActivityContent` y la nueva arquitectura.
+2. **Migración de datos y validación de integridad:**
+   - Verificación de que todos los registros de `user_insights` y `chat_summaries` referencian IDs válidos en `activity_contents`.
+   - Eliminación de claves foráneas antiguas y creación de nuevas apuntando a la estructura moderna.
+3. **Eliminación definitiva de la tabla legacy:**
+   - Borrado seguro de la tabla `stage_content` usando `CASCADE`.
+4. **Pruebas y validación:**
+   - Pruebas funcionales y de integridad referencial para asegurar la correcta operación de la plataforma.
 
 ---
 
@@ -62,7 +88,7 @@ Ejemplos:
 - `text_contents`
 - `video_contents`
 - `advisory_sessions`
-- `stage_content` (usada exclusivamente para `chat_activity`)
+- `activity_contents` (usada exclusivamente para `chat_activity`)
 
 Cada tabla tiene su estructura propia optimizada para ese tipo.
 
@@ -71,7 +97,7 @@ Cada tabla tiene su estructura propia optimizada para ese tipo.
 ## 4. Compatibilidad y transición progresiva
 
 ### Decisión técnica:
-- `stage_content` se mantendrá como tabla **especializada** para el tipo `chat_activity`.
+- `activity_contents` se mantiene como tabla **especializada** para el tipo `chat_activity`.
 - Este tipo también será registrado en `content_registry` y secuenciado en `program_module_contents`.
 - Esto permite mantener el componente actual de chat sin reescritura, pero bajo las reglas nuevas.
 
@@ -179,4 +205,3 @@ No es necesario tocar ni extender `stage_content`.
 ---
 
 Este documento debe guiar la evolución del gestor de contenidos dentro de los programas, y es la base sobre la que se integran componentes como asesorías, workshops, quizzes u otros en el futuro.
-

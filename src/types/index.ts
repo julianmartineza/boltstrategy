@@ -104,11 +104,24 @@ export interface ActivityContent {
   system_instructions?: string;
   prompt_section?: string;
   dependencies?: string[];
+  url?: string;
+  provider?: string;
+  duration?: number;
+  session_type?: string;
+  activity_data?: any;
+  step?: number;
+  stage_name?: string;
+  order_num?: number;
+  content_metadata?: {
+    content_registry_id?: string;
+    duration?: number;
+    session_type?: string;
+    [key: string]: any;
+  };
 }
 
 export interface ActivityResponse {
   id: string;
-  stage_content_id: string;
   content: any;
   created_at: string;
   user_id: string;
@@ -137,6 +150,7 @@ export interface Message {
     activity?: string;
     type?: 'question' | 'response' | 'guidance' | 'summary' | 'error' | 'system';
     progress?: number;
+    isQuotaError?: boolean;
   };
   activity?: {
     step: number;

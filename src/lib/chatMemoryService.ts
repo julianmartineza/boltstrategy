@@ -49,7 +49,7 @@ export const getShortTermMemory = (): ChatMessage[] => {
  */
 export const fetchDependencies = async (activityId: string): Promise<string[]> => {
   const { data, error } = await supabase
-    .from('stage_content')
+    .from('activity_contents')
     .select('dependencies')
     .eq('id', activityId)
     .single();

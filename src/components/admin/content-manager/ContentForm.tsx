@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, X } from 'lucide-react';
-import { StageContent, ActivityData } from './types';
+import { ActivityData } from './types';
+import { ActivityContent } from '../../../types';
 import { supabase } from '../../../lib/supabase';
 import { AdvisoryAllocationForm } from '../../advisory';
 
 interface ContentFormProps {
-  content: Partial<StageContent>;
-  onSave: (content: Partial<StageContent>, activityData: ActivityData) => void;
+  content: Partial<ActivityContent>;
+  onSave: (content: Partial<ActivityContent>, activityData: ActivityData) => void;
   onCancel: () => void;
   loading: boolean;
   isEditing?: boolean;
@@ -21,7 +22,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
   isEditing = false,
   moduleId
 }) => {
-  const [formContent, setFormContent] = useState<Partial<StageContent>>(content);
+  const [formContent, setFormContent] = useState<Partial<ActivityContent>>(content);
   const [error, setError] = useState<string | null>(null);
   const [activityData, setActivityData] = useState<ActivityData>({
     prompt: '',
@@ -31,7 +32,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
     step: 1,
     prompt_section: ''
   });
-  const [availableActivities, setAvailableActivities] = useState<{id: string, stage_name: string, title: string}[]>([]);
+  const [availableActivities, setAvailableActivities] = useState<{id: string, content_id: string, stage_name: string, title: string}[]>([]);
   const [selectedDependencies, setSelectedDependencies] = useState<string[]>([]);
   const [stageName, setStageName] = useState<string>('');
   const [contentType, setContentType] = useState<string>(formContent.content_type || 'text');
@@ -44,40 +45,75 @@ const ContentForm: React.FC<ContentFormProps> = ({
     // Cargar actividades disponibles para dependencias
     const fetchActivities = async () => {
       try {
-        // Modificar la consulta para no incluir content_metadata que no existe en la tabla
+        console.log('Cargando actividades disponibles para dependencias...');
+        
+        // Consulta mejorada para obtener más información sobre las actividades
         const { data, error } = await supabase
           .from('content_registry')
           .select(`
             id,
-            title
+            title,
+            content_id,
+            content_type
           `)
           .eq('content_type', 'activity');
         
         if (error) throw error;
         
         if (data) {
-          // Usar una aserción de tipo para cada elemento
+          console.log('Actividades obtenidas de content_registry:', data);
+          
+          // Obtener información adicional de activity_contents
+          const activityIds = data.map((item: any) => item.content_id);
+          const { data: activityContentsData, error: activityContentsError } = await supabase
+            .from('activity_contents')
+            .select('id, title, stage_name')
+            .in('id', activityIds);
+          
+          if (activityContentsError) throw activityContentsError;
+          
+          console.log('Datos de activity_contents:', activityContentsData);
+          
+          // Combinar los datos para tener información completa
           const formattedData = data.map((item: any) => {
+            const activityContent = activityContentsData?.find((ac: any) => ac.id === item.content_id);
             return {
-              id: item.id,
-              stage_name: 'Actividad', // Valor por defecto ya que no tenemos stage_name
-              title: item.title
+              id: item.id, // ID del registro, que es lo que se guarda en dependencies
+              content_id: item.content_id, // ID real de la actividad
+              stage_name: activityContent?.stage_name || 'Actividad', // Usar stage_name de activity_contents si está disponible
+              title: item.title || activityContent?.title || 'Sin título'
             };
           });
           
+          console.log('Actividades formateadas para el selector:', formattedData);
           setAvailableActivities(formattedData);
+          
+          // Verificar si las dependencias seleccionadas están en las actividades disponibles
+          if (selectedDependencies.length > 0) {
+            console.log('Dependencias seleccionadas:', selectedDependencies);
+            console.log('¿Las dependencias están en las actividades disponibles?', 
+              selectedDependencies.map(dep => formattedData.some(act => act.id === dep)));
+          }
         }
       } catch (err) {
         console.error('Error al cargar actividades:', err);
       }
     };
 
-    if (formContent.content_type === 'activity') {
+    // Cargar actividades disponibles cuando el tipo seleccionado sea 'activity'
+    // o cuando el contenido existente sea de tipo 'activity'
+    if (contentType === 'activity' || formContent.content_type === 'activity') {
       fetchActivities();
     }
-  }, [formContent.content_type]);
+  }, [contentType, formContent.content_type, selectedDependencies]);
 
   useEffect(() => {
+    // Inicializar el tipo de contenido
+    if (content.content_type) {
+      setContentType(content.content_type);
+    }
+    
+    // Si hay datos de actividad, cargarlos
     if (content.activity_data) {
       try {
         const parsedData = typeof content.activity_data === 'string' 
@@ -93,20 +129,63 @@ const ContentForm: React.FC<ContentFormProps> = ({
           prompt_section: parsedData.prompt_section || ''
         });
       } catch (error) {
-        console.error('Error parsing activity data:', error);
+        console.error('Error al parsear los datos de actividad:', error);
       }
     }
 
     // Cargar dependencias si existen
-    if (content.dependencies) {
+    if (content.dependencies && Array.isArray(content.dependencies)) {
+      console.log('Cargando dependencias desde el contenido:', content.dependencies);
       setSelectedDependencies(content.dependencies);
+      
+      // Si estamos editando, verificar las dependencias en la base de datos
+      if (isEditing && content.id) {
+        const fetchDependenciesFromDB = async () => {
+          try {
+            console.log('Obteniendo content_id para:', content.id);
+            
+            // Obtener el content_id de content_registry
+            const { data: registryData, error: registryError } = await supabase
+              .from('content_registry')
+              .select('content_id')
+              .eq('id', content.id)
+              .single();
+            
+            if (registryError || !registryData?.content_id) {
+              console.error('Error o no se encontró content_id:', registryError);
+              return;
+            }
+            
+            // Obtener dependencias usando content_id
+            const { data, error } = await supabase
+              .from('activity_contents')
+              .select('dependencies')
+              .eq('id', registryData.content_id)
+              .single();
+            
+            if (error) {
+              console.error('Error al obtener dependencias:', error);
+              return;
+            }
+            
+            if (data?.dependencies && Array.isArray(data.dependencies)) {
+              console.log('Dependencias encontradas:', data.dependencies);
+              setSelectedDependencies(data.dependencies);
+            }
+          } catch (err) {
+            console.error('Error general:', err);
+          }
+        };
+        
+        fetchDependenciesFromDB();
+      }
     }
 
     // Cargar stage_name si existe
     if (content.stage_name) {
       setStageName(content.stage_name);
     }
-  }, [content]);
+  }, [content, isEditing]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,9 +200,11 @@ const ContentForm: React.FC<ContentFormProps> = ({
     try {
       // Incluir las dependencias en el objeto formContent
       // Manejar stage_name de forma segura
-      const updatedContent: Partial<StageContent> = {
+      const updatedContent: Partial<ActivityContent> = {
         ...formContent,
-        dependencies: selectedDependencies
+        dependencies: selectedDependencies,
+        // Asegurarse de que el tipo de contenido sea el seleccionado
+        content_type: contentType as 'text' | 'video' | 'activity' | 'advisory_session'
       };
       
       // Solo añadir stage_name si tiene un valor
@@ -140,6 +221,15 @@ const ContentForm: React.FC<ContentFormProps> = ({
         };
       }
 
+      // Si es una actividad, asegurarse de que se guarde como tipo 'activity'
+      if (contentType === 'activity') {
+        updatedContent.content_type = 'activity';
+        console.log('Guardando actividad con datos:', { 
+          content: updatedContent, 
+          activityData 
+        });
+      }
+
       onSave(updatedContent, activityData);
     } catch (err) {
       console.error('Error al procesar el formulario:', err);
@@ -148,13 +238,83 @@ const ContentForm: React.FC<ContentFormProps> = ({
   };
 
   const handleAddDependency = (dependencyId: string) => {
+    if (!dependencyId) return;
+    
+    console.log('Añadiendo dependencia:', dependencyId);
+    
     if (!selectedDependencies.includes(dependencyId)) {
-      setSelectedDependencies([...selectedDependencies, dependencyId]);
+      const newDependencies = [...selectedDependencies, dependencyId];
+      console.log('Nueva lista de dependencias:', newDependencies);
+      setSelectedDependencies(newDependencies);
+      
+      // Si estamos editando, actualizar también en la base de datos
+      if (isEditing && content.id) {
+        updateDependenciesInDB(newDependencies);
+      }
+    } else {
+      console.log('La dependencia ya existe en la lista');
     }
   };
 
   const handleRemoveDependency = (dependencyId: string) => {
-    setSelectedDependencies(selectedDependencies.filter(id => id !== dependencyId));
+    console.log('Eliminando dependencia:', dependencyId);
+    
+    const newDependencies = selectedDependencies.filter(id => id !== dependencyId);
+    console.log('Nueva lista de dependencias después de eliminar:', newDependencies);
+    setSelectedDependencies(newDependencies);
+    
+    // Si estamos editando, actualizar también en la base de datos
+    if (isEditing && content.id) {
+      updateDependenciesInDB(newDependencies);
+    }
+  };
+  
+  // Función para actualizar las dependencias directamente en la base de datos
+  const updateDependenciesInDB = async (dependencies: string[]) => {
+    if (!content.id) return;
+    
+    try {
+      console.log('Actualizando dependencias para el ID de registro:', content.id);
+      
+      // Primero obtenemos el content_id de content_registry
+      const { data: registryData, error: registryError } = await supabase
+        .from('content_registry')
+        .select('content_id')
+        .eq('id', content.id)
+        .single();
+      
+      if (registryError || !registryData?.content_id) {
+        console.error('Error o no se encontró content_id:', registryError);
+        return;
+      }
+      
+      const contentId = registryData.content_id;
+      console.log('Content ID obtenido:', contentId);
+      console.log('Nuevas dependencias a guardar:', dependencies);
+      
+      // Actualizar en activity_contents usando el content_id
+      const { error: activityError } = await supabase
+        .from('activity_contents')
+        .update({ dependencies })
+        .eq('id', contentId);
+      
+      if (activityError) {
+        console.error('Error al actualizar dependencias en activity_contents:', activityError);
+      } else {
+        console.log('Dependencias actualizadas correctamente en activity_contents');
+        
+        // Mostrar mensaje de éxito
+        setSuccessMessage('Dependencias actualizadas correctamente');
+        setShowSuccessMessage(true);
+        
+        // Ocultar el mensaje después de 3 segundos
+        setTimeout(() => {
+          setShowSuccessMessage(false);
+        }, 3000);
+      }
+    } catch (err) {
+      console.error('Error al actualizar dependencias:', err);
+    }
   };
 
   const contentTypes = [
@@ -232,18 +392,7 @@ const ContentForm: React.FC<ContentFormProps> = ({
             />
           ) : contentType === 'activity' ? (
             <div className="space-y-3 border border-gray-200 p-3 rounded-md bg-gray-50">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Descripción de la Actividad</label>
-                <textarea
-                  value={formContent.content || ''}
-                  onChange={(e) => setFormContent({ ...formContent, content: e.target.value })}
-                  className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  rows={2}
-                  placeholder="Breve descripción de la actividad"
-                  disabled={loading}
-                  required
-                />
-              </div>
+              {/* Eliminamos el campo de descripción ya que no es útil para las actividades */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Prompt para el Asistente IA</label>
                 <textarea
@@ -342,11 +491,18 @@ const ContentForm: React.FC<ContentFormProps> = ({
                 
                 {/* Lista de dependencias seleccionadas */}
                 <div className="space-y-1">
+                  {selectedDependencies.length === 0 && (
+                    <p className="text-xs text-gray-500 italic">No hay dependencias seleccionadas</p>
+                  )}
                   {selectedDependencies.map(dependency => {
                     const activityInfo = availableActivities.find(a => a.id === dependency);
                     return (
                       <div key={dependency} className="flex items-center justify-between p-2 bg-gray-100 rounded-md">
-                        <span className="text-xs">{activityInfo?.stage_name}: {activityInfo?.title || dependency}</span>
+                        <span className="text-xs">
+                          {activityInfo 
+                            ? `${activityInfo.stage_name || 'Actividad'}: ${activityInfo.title}` 
+                            : `ID: ${dependency} (No encontrada)`}
+                        </span>
                         <button
                           type="button"
                           onClick={() => handleRemoveDependency(dependency)}

@@ -1,10 +1,10 @@
 import { supabase } from '../lib/supabase';
-import { StageContent } from '../components/admin/content-manager/types';
+import { ActivityContent } from '../types/index';
 
 /**
  * Crea una sesión de asesoría y la registra en el content_registry
  */
-export const createAdvisorySession = async (content: Partial<StageContent>): Promise<StageContent> => {
+export const createAdvisorySession = async (content: Partial<ActivityContent>): Promise<ActivityContent> => {
   try {
     // 1. Crear la sesión de asesoría en la tabla advisory_sessions
     const { data: advisorySession, error: advisoryError } = await supabase
@@ -12,8 +12,8 @@ export const createAdvisorySession = async (content: Partial<StageContent>): Pro
       .insert([{
         title: content.title,
         description: content.content,
-        duration: content.content_metadata?.duration || 60,
-        session_type: content.content_metadata?.session_type || 'individual',
+        duration: content.duration || 60, // Usar campo moderno
+        session_type: content.session_type || 'individual', // Usar campo moderno
         preparation_instructions: '',
         advisor_notes: ''
       }])
@@ -44,25 +44,28 @@ export const createAdvisorySession = async (content: Partial<StageContent>): Pro
         .insert([{
           program_module_id: content.stage_id,
           content_registry_id: registryData.id,
-          position: content.order_num || 0
+          position: content.order || 0
         }]);
 
       if (relationError) throw relationError;
     }
 
-    // 4. Devolver un objeto compatible con StageContent para mantener la interfaz
+    // 4. Devolver un objeto compatible con ActivityContent para mantener la interfaz moderna
     return {
       id: registryData.id,
       title: content.title || '',
       content: content.content || '',
       content_type: 'advisory_session',
       stage_id: content.stage_id || '',
-      order_num: content.order_num || 0,
-      content_metadata: {
-        duration: content.content_metadata?.duration || 60,
-        session_type: content.content_metadata?.session_type || 'individual',
-        advisory_session_id: advisorySession.id
-      }
+      order: content.order || 0,
+      created_at: registryData.created_at,
+      updated_at: registryData.updated_at,
+      dependencies: [],
+      system_instructions: '',
+      prompt_section: '',
+      // duration y session_type pueden ser agregados como campos modernos si tu modelo ActivityContent los define
+      duration: content.duration || 60,
+      session_type: content.session_type || 'individual',
     };
   } catch (error) {
     console.error('Error creating advisory session:', error);
@@ -73,7 +76,7 @@ export const createAdvisorySession = async (content: Partial<StageContent>): Pro
 /**
  * Actualiza una sesión de asesoría existente
  */
-export const updateAdvisorySession = async (content: StageContent): Promise<StageContent> => {
+export const updateAdvisorySession = async (content: ActivityContent): Promise<ActivityContent> => {
   try {
     // Obtener el ID de la sesión de asesoría desde content_registry
     const { data: registryData, error: registryError } = await supabase
@@ -90,8 +93,8 @@ export const updateAdvisorySession = async (content: StageContent): Promise<Stag
       .update({
         title: content.title,
         description: content.content,
-        duration: content.content_metadata?.duration || 60,
-        session_type: content.content_metadata?.session_type || 'individual',
+        duration: content.duration || 60,
+        session_type: content.session_type || 'individual',
         updated_at: new Date()
       })
       .eq('id', registryData.content_id)
@@ -100,36 +103,10 @@ export const updateAdvisorySession = async (content: StageContent): Promise<Stag
 
     if (advisoryError) throw advisoryError;
 
-    // Actualizar el registro en content_registry
-    const { error: updateRegistryError } = await supabase
-      .from('content_registry')
-      .update({
-        title: content.title,
-        updated_at: new Date()
-      })
-      .eq('id', content.id);
-
-    if (updateRegistryError) throw updateRegistryError;
-
-    // Si hay un stage_id, actualizar la posición en program_module_contents
-    if (content.stage_id) {
-      const { error: relationError } = await supabase
-        .from('program_module_contents')
-        .update({
-          position: content.order_num || 0
-        })
-        .eq('content_registry_id', content.id)
-        .eq('program_module_id', content.stage_id);
-
-      if (relationError) throw relationError;
-    }
-
+    // Devolver el objeto actualizado como ActivityContent
     return {
       ...content,
-      content_metadata: {
-        ...content.content_metadata,
-        advisory_session_id: registryData.content_id
-      }
+      updated_at: new Date().toISOString()
     };
   } catch (error) {
     console.error('Error updating advisory session:', error);
@@ -293,90 +270,44 @@ export const deleteAdvisorySession = async (contentId: string, advisorySessionId
 /**
  * Obtiene los detalles de una sesión de asesoría desde content_registry y advisory_sessions
  */
-export const getAdvisorySessionDetails = async (contentId: string): Promise<StageContent | null> => {
+export const getAdvisorySessionDetails = async (contentId: string): Promise<ActivityContent | null> => {
   try {
-    console.log('Intentando obtener detalles para contentId:', contentId);
-    
-    // 1. Verificar si el contenido existe en content_registry
-    const { data: registryData, error: registryError } = await supabase
+    // Obtener los datos del registro
+    const { data: registryItem, error: registryError } = await supabase
       .from('content_registry')
       .select('*')
-      .eq('id', contentId);
+      .eq('id', contentId)
+      .single();
+    if (registryError) throw registryError;
 
-    if (registryError) {
-      console.error('Error al obtener registro de content_registry:', registryError);
-      return null;
-    }
-    
-    console.log('Datos de content_registry:', registryData);
-    
-    if (!registryData || registryData.length === 0) {
-      console.warn('No se encontró el registro en content_registry:', contentId);
-      return null;
-    }
-
-    const contentRegistryItem = registryData[0];
-    
-    // Verificar si es una sesión de asesoría
-    if (contentRegistryItem.content_type !== 'advisory_session') {
-      console.warn('El contenido no es una sesión de asesoría:', contentRegistryItem.content_type);
-      return null;
-    }
-
-    // 2. Obtener los detalles de la sesión de asesoría
-    const { data: sessionData, error: sessionError } = await supabase
+    // Obtener los datos de la sesión de asesoría
+    const { data: advisorySession, error: advisoryError } = await supabase
       .from('advisory_sessions')
       .select('*')
-      .eq('id', contentRegistryItem.content_id);
+      .eq('id', registryItem.content_id)
+      .single();
+    if (advisoryError) throw advisoryError;
 
-    if (sessionError) {
-      console.error('Error al obtener datos de advisory_sessions:', sessionError);
-      return null;
-    }
-    
-    console.log('Datos de advisory_sessions:', sessionData);
-    
-    if (!sessionData || sessionData.length === 0) {
-      console.warn('No se encontró la sesión de asesoría:', contentRegistryItem.content_id);
-      return null;
-    }
-
-    const advisorySession = sessionData[0];
-
-    // 3. Obtener la relación con el módulo del programa
-    const { data: relationData, error: relationError } = await supabase
-      .from('program_module_contents')
-      .select('*')
-      .eq('content_registry_id', contentId);
-
-    if (relationError) {
-      console.error('Error al obtener relación de program_module_contents:', relationError);
-    }
-    
-    console.log('Datos de program_module_contents:', relationData);
-
-    const relation = relationData && relationData.length > 0 ? relationData[0] : null;
-
-    // 4. Construir el objeto StageContent con toda la información
-    const result: StageContent = {
-      id: contentRegistryItem.id,
-      title: contentRegistryItem.title,
+    // Construir el objeto ActivityContent con toda la información relevante
+    const result: ActivityContent = {
+      id: registryItem.id,
+      title: registryItem.title,
       content: advisorySession.description || '',
-      content_type: 'advisory_session' as 'advisory_session',
-      stage_id: relation?.program_module_id || '',
-      order_num: relation?.position || 0,
-      content_metadata: {
-        duration: advisorySession.duration || 60,
-        session_type: advisorySession.session_type || 'individual',
-        advisory_session_id: advisorySession.id
-      }
+      content_type: 'advisory_session',
+      stage_id: '',
+      order: 0,
+      created_at: registryItem.created_at,
+      updated_at: registryItem.updated_at,
+      dependencies: [],
+      system_instructions: '',
+      prompt_section: '',
+      duration: advisorySession.duration || 60,
+      session_type: advisorySession.session_type || 'individual',
     };
-    
-    console.log('Objeto StageContent construido:', result);
-    
+    console.log('Objeto ActivityContent construido:', result);
     return result;
   } catch (error) {
-    console.error('Error al obtener detalles de la sesión de asesoría:', error);
+    console.error('Error obteniendo detalles de la sesión de asesoría:', error);
     return null;
   }
 };

@@ -9,7 +9,6 @@ type DBActivity = {
   description: string;
   status: string;
   stage_id: string;
-  stage_content_id?: string; // Añadida para compatibilidad con el componente Chat
 };
 
 // Definimos un tipo para las etapas que vienen de la base de datos

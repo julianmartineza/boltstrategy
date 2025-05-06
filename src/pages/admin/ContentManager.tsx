@@ -11,24 +11,19 @@ import Notification from '../../components/admin/content-manager/Notification';
 import ConfirmDialog from '../../components/common/ConfirmDialog';
 
 // Importar tipos y servicios
-import { Program, Stage, StageContent, ActivityData } from '../../components/admin/content-manager/types';
+import { Program, Stage, ActivityData } from '../../components/admin/content-manager/types';
+import { ActivityContent } from '../../types/index';
 import * as contentManagerService from '../../components/admin/content-manager/contentManagerService';
 import * as contentTransitionService from '../../services/contentTransitionService';
 import { debugAdvisorySessions } from '../../services/debugAdvisoryService';
 import { debugVideoContents } from '../../services/debugVideoService';
 import { debugTextContents } from '../../services/debugTextService';
 
-// Extender la interfaz StageContent para incluir propiedades opcionales de video
-interface ExtendedStageContent extends StageContent {
-  url?: string;
-  provider?: string;
-}
-
 const ContentManager: React.FC = () => {
   // Estados para datos
   const [stages, setStages] = useState<Stage[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
-  const [contents, setContents] = useState<StageContent[]>([]);
+  const [contents, setContents] = useState<ActivityContent[]>([]);
   
   // Estados para UI
   const [loading, setLoading] = useState(true);
@@ -50,13 +45,17 @@ const ContentManager: React.FC = () => {
   // Estados para gestión de contenido
   const [isCreating, setIsCreating] = useState(false);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
-  const [newContent, setNewContent] = useState<Partial<StageContent>>({
+  const [newContent, setNewContent] = useState<Partial<ActivityContent>>({
     title: '',
     content: '',
     content_type: 'text',
-    order_num: 0
+    order: 0,
+    stage_id: '',
+    id: '',
+    created_at: '',
+    updated_at: ''
   });
-  const [editingContent, setEditingContent] = useState<StageContent | null>(null);
+  const [editingContent, setEditingContent] = useState<ActivityContent | null>(null);
   
   // Estados para el diálogo de confirmación
   const [confirmDialog, setConfirmDialog] = useState({
@@ -123,136 +122,46 @@ const ContentManager: React.FC = () => {
   const loadStageContent = async (stageId: string) => {
     try {
       setContentLoading(true);
+      const data = await contentTransitionService.getModuleContents(stageId);
       
-      // Intentar cargar primero con la nueva estructura modular
-      const modularContents = await contentManagerService.getModuleContents(stageId);
-      
-      if (modularContents && modularContents.length > 0) {
-        console.log('Contenidos cargados desde la estructura modular:', modularContents);
+      if (data && data.length > 0) {
+        console.log('Contenidos obtenidos:', data);
         
-        // Convertir los contenidos al formato esperado por el componente
-        const adaptedContents = modularContents.map(content => {
-          // Verificar y asegurar que el título esté presente
-          if (!content.title) {
-            console.warn(`Contenido sin título detectado:`, content);
-          }
-          
+        // Adaptar los contenidos al formato esperado por ContentList
+        const adaptedContents = data.map(content => {
           return {
-            id: content.id,
-            title: content.title || 'Sin título',
+            id: content.registry_id || content.id,
+            title: content.title,
             content: content.content || '',
             content_type: content.content_type,
             stage_id: stageId,
-            order_num: content.position,
-            // Mapear otros campos según el tipo de contenido
+            order: content.position,
+            created_at: content.created_at || new Date().toISOString(),
+            updated_at: content.updated_at || new Date().toISOString(),
             url: content.url,
+            provider: content.provider,
             activity_data: content.activity_data,
             prompt_section: content.prompt_section,
             system_instructions: content.system_instructions,
             duration: content.duration,
-            // Incluir la información de content_registry necesaria para actualizaciones
-            content_metadata: {
-              content_registry_id: content.registry_id,
-              content_specific_id: content.content_id
-            }
-          } as StageContent;
+            session_type: content.session_type,
+            dependencies: content.dependencies || []
+          } as ActivityContent;
         });
         
         console.log('Contenidos adaptados para ContentList:', adaptedContents);
-        
-        // Cargar títulos adicionales para contenidos de texto
-        const contentsWithFixedTitles = await loadTextContentTitles(adaptedContents);
-        
-        // Actualizar el estado de contenidos
-        setContents(prevContents => {
-          const otherContents = prevContents.filter(c => c.stage_id !== stageId);
-          return [...otherContents, ...contentsWithFixedTitles];
-        });
+        setContents(adaptedContents);
       } else {
-        // Si no hay contenidos en la estructura modular, cargar desde la estructura antigua
-        console.log('No se encontraron contenidos en la estructura modular, cargando desde stage_content');
-        const legacyContents = await contentManagerService.fetchStageContent(stageId);
-        
-        // Asegurarse de que todos los contenidos tengan un título
-        const contentsWithTitles = legacyContents.map(content => {
-          // Verificar y asegurar que el título esté presente
-          if (!content.title) {
-            console.warn(`Contenido legacy sin título detectado:`, content);
-          }
-          
-          return {
-            ...content,
-            title: content.title || 'Sin título'
-          };
-        });
-        
-        console.log('Contenidos legacy adaptados para ContentList:', contentsWithTitles);
-        
-        // Cargar títulos adicionales para contenidos de texto
-        const contentsWithFixedTitles = await loadTextContentTitles(contentsWithTitles);
-        
-        // Actualizar el estado de contenidos
-        setContents(prevContents => {
-          const otherContents = prevContents.filter(c => c.stage_id !== stageId);
-          return [...otherContents, ...contentsWithFixedTitles];
-        });
+        console.log('No se encontraron contenidos para la etapa:', stageId);
+        setContents([]);
       }
       
       setContentLoading(false);
-    } catch (error: any) {
-      console.error('Error al cargar contenido:', error);
-      setError(`Error al cargar contenido: ${error.message}`);
+    } catch (error) {
+      console.error('Error al cargar contenidos:', error);
+      setError(`Error al cargar contenidos: ${error instanceof Error ? error.message : String(error)}`);
       setContentLoading(false);
     }
-  };
-
-  // Función para cargar títulos adicionales para contenidos de texto
-  const loadTextContentTitles = async (contents: StageContent[]): Promise<StageContent[]> => {
-    // Filtrar solo los contenidos de texto
-    const textContents = contents.filter(content => content.content_type === 'text');
-    
-    if (textContents.length === 0) {
-      return contents; // No hay contenidos de texto, devolver los originales
-    }
-    
-    console.log('Cargando títulos adicionales para', textContents.length, 'contenidos de texto');
-    
-    // Crear un mapa para actualizar los contenidos
-    const updatedContents = [...contents];
-    
-    // Procesar cada contenido de texto
-    for (const content of textContents) {
-      try {
-        // Intentar obtener el título directamente de text_contents
-        const { data, error } = await supabase
-          .from('text_contents')
-          .select('title')
-          .eq('id', content.id)
-          .maybeSingle();
-        
-        if (error) {
-          console.error('Error al cargar título para contenido', content.id, error);
-          continue;
-        }
-        
-        if (data && data.title) {
-          console.log(`Título encontrado para contenido ${content.id}: "${data.title}"`);
-          
-          // Actualizar el título en el array de contenidos
-          const index = updatedContents.findIndex(c => c.id === content.id);
-          if (index !== -1) {
-            updatedContents[index] = {
-              ...updatedContents[index],
-              title: data.title
-            };
-          }
-        }
-      } catch (error) {
-        console.error('Error al procesar título para contenido', content.id, error);
-      }
-    }
-    
-    return updatedContents;
   };
 
   // Alternar la expansión de una etapa
@@ -350,7 +259,7 @@ const ContentManager: React.FC = () => {
   };
 
   // Crear nuevo contenido
-  const handleCreateContent = async (content: Partial<ExtendedStageContent>, activityData?: ActivityData) => {
+  const handleCreateContent = async (content: Partial<ActivityContent>, activityData?: ActivityData) => {
     if (!selectedStage) {
       setError('Debes seleccionar una etapa primero');
       return;
@@ -365,26 +274,26 @@ const ContentManager: React.FC = () => {
       };
       
       // Determinar si se debe usar la estructura modular o la antigua
-      let createdContent: StageContent;
+      let createdContent: ActivityContent;
       
       if (content.content_type === 'text' && content.content) {
         // Usar la estructura modular para contenido de texto
         try {
-          const result = await contentTransitionService.createContentWithNewStructure(
+          const result = await contentTransitionService.createContent(
             contentToCreate,
             undefined
           );
           
           if (result) {
-            createdContent = result as StageContent;
+            createdContent = result as ActivityContent;
           } else {
-            // Si falla la creación con la nueva estructura, usar la antigua
-            createdContent = await contentManagerService.createContent(contentToCreate, activityData);
+            throw new Error('No se pudo crear el contenido de texto');
           }
         } catch (error) {
-          console.error('Error al crear contenido con estructura modular:', error);
-          // Fallback a la estructura antigua
-          createdContent = await contentManagerService.createContent(contentToCreate, activityData);
+          console.error('Error al crear contenido de texto:', error);
+          setError(`Error al crear contenido de texto: ${error instanceof Error ? error.message : String(error)}`);
+          setContentLoading(false);
+          return;
         }
       } else if (content.content_type === 'video' && content.url) {
         // Usar la estructura modular para contenido de video
@@ -392,66 +301,85 @@ const ContentManager: React.FC = () => {
           // Para videos, preparar los datos correctamente para la estructura de la tabla
           const videoContent = {
             ...contentToCreate,
-            url: content.url, // URL del video
+            url: content.content, // Usar content.content como URL del video
             provider: content.provider || 'youtube' // Proveedor por defecto (se convertirá a 'source' en el servicio)
           };
           
           console.log('Creando contenido de video con:', videoContent);
           
-          const result = await contentTransitionService.createContentWithNewStructure(
+          const result = await contentTransitionService.createContent(
             videoContent,
             undefined
           );
           
           if (result) {
-            createdContent = result as StageContent;
+            createdContent = result as ActivityContent;
           } else {
-            // Si falla la creación con la nueva estructura, usar la antigua
-            createdContent = await contentManagerService.createContent(contentToCreate, activityData);
+            throw new Error('No se pudo crear el contenido de video');
           }
         } catch (error) {
-          console.error('Error al crear contenido con estructura modular:', error);
-          // Fallback a la estructura antigua
-          createdContent = await contentManagerService.createContent(contentToCreate, activityData);
+          console.error('Error al crear contenido de video:', error);
+          setError(`Error al crear contenido de video: ${error instanceof Error ? error.message : String(error)}`);
+          setContentLoading(false);
+          return;
         }
       } else if (content.content_type === 'advisory_session') {
-        // Usar la estructura modular para sesiones de asesoría
+        // Para sesiones de asesoría, usar siempre la estructura modular
         try {
-          console.log('Creando sesión de asesoría con:', contentToCreate);
-          
-          const result = await contentTransitionService.createContentWithNewStructure(
+          const result = await contentTransitionService.createContent(
             contentToCreate,
             undefined
           );
           
           if (result) {
-            createdContent = result as StageContent;
+            createdContent = result as ActivityContent;
           } else {
-            throw new Error('No se pudo crear la sesión de asesoría con la nueva estructura');
+            throw new Error('No se pudo crear la sesión de asesoría');
           }
         } catch (error) {
           console.error('Error al crear sesión de asesoría:', error);
-          throw error; // No intentar fallback para sesiones de asesoría
+          setError(`Error al crear sesión de asesoría: ${error instanceof Error ? error.message : String(error)}`);
+          setContentLoading(false);
+          return;
         }
-      } else if (content.content_type === 'activity' && activityData) {
-        // Usar la estructura antigua solo para actividades de chat
-        createdContent = await contentManagerService.createContent(contentToCreate, activityData);
-      } else {
-        // Para otros tipos, intentar primero con la estructura modular
+      } else if (content.content_type === 'activity') {
+        // Para actividades, usar siempre la estructura modular
         try {
-          const result = await contentTransitionService.createContentWithNewStructure(
+          const result = await contentTransitionService.createContent(
+            contentToCreate,
+            activityData
+          );
+          
+          if (result) {
+            createdContent = result as ActivityContent;
+            console.log('Actividad creada con estructura modular:', createdContent);
+          } else {
+            throw new Error('No se pudo crear la actividad');
+          }
+        } catch (error) {
+          console.error('Error al crear actividad:', error);
+          setError(`Error al crear actividad: ${error instanceof Error ? error.message : String(error)}`);
+          setContentLoading(false);
+          return;
+        }
+      } else {
+        // Para otros tipos de contenido, usar la estructura modular genérica
+        try {
+          const result = await contentTransitionService.createContent(
             contentToCreate,
             undefined
           );
           
           if (result) {
-            createdContent = result as StageContent;
+            createdContent = result as ActivityContent;
           } else {
-            throw new Error('No se pudo crear el contenido con la nueva estructura');
+            throw new Error('No se pudo crear el contenido');
           }
         } catch (error) {
-          console.error('Error al crear contenido con estructura modular:', error);
-          throw error; // No intentar fallback para tipos no soportados
+          console.error('Error al crear contenido:', error);
+          setError(`Error al crear contenido: ${error instanceof Error ? error.message : String(error)}`);
+          setContentLoading(false);
+          return;
         }
       }
       
@@ -469,185 +397,130 @@ const ContentManager: React.FC = () => {
         title: '',
         content: '',
         content_type: 'text',
-        order_num: 0
+        order: 0,
+        stage_id: '',
+        id: '',
+        created_at: '',
+        updated_at: ''
       });
       showSuccessMessage('Contenido creado exitosamente');
       setContentLoading(false);
     } catch (error: any) {
+      console.error('Error al crear contenido:', error);
       setError(`Error al crear contenido: ${error.message}`);
       setContentLoading(false);
     }
   };
 
   // Actualizar contenido existente
-  const handleUpdateContent = async (content: StageContent, activityData?: ActivityData) => {
+  const handleUpdateContent = async (content: ActivityContent, activityData?: ActivityData) => {
     try {
       setContentLoading(true);
       
       // Determinar si se debe usar la estructura modular o la antigua
-      let updatedContent: StageContent;
+      let updatedContent: ActivityContent;
       
       if (content.content_type === 'advisory_session') {
         // Para sesiones de asesoría, usar siempre la estructura modular
         try {
-          console.log('Actualizando sesión de asesoría con estructura modular:', content);
-          
-          // Intentar obtener el ID del registro en content_registry
-          let registryId = content.content_metadata?.content_registry_id;
-          
-          // Si no tenemos el ID en content_metadata, intentar buscarlo
-          if (!registryId) {
-            console.log('No se encontró content_registry_id en content_metadata, buscando en la base de datos...');
-            
-            // Intentar diferentes estrategias para encontrar el registro
-            
-            // 1. Buscar por content_id y content_type
-            let { data: registryData, error: registryError } = await supabase
-              .from('content_registry')
-              .select('id, content_id, content_type, content_table')
-              .eq('content_id', content.id)
-              .eq('content_type', 'advisory_session')
-              .maybeSingle();
-            
-            if (registryError && registryError.code !== 'PGRST116') {
-              console.error('Error al buscar el registro por content_id:', registryError);
-            }
-            
-            // 2. Si no se encuentra, buscar por título y tipo
-            if (!registryData) {
-              console.log('Buscando por título y tipo...');
-              const { data: titleData, error: titleError } = await supabase
-                .from('content_registry')
-                .select('id, content_id, content_type, content_table')
-                .eq('title', content.title)
-                .eq('content_type', 'advisory_session')
-                .maybeSingle();
-              
-              if (titleError && titleError.code !== 'PGRST116') {
-                console.error('Error al buscar el registro por título:', titleError);
-              }
-              
-              if (titleData) {
-                registryData = titleData;
-                console.log('Se encontró el registro por título:', registryData);
-              }
-            }
-            
-            // 3. Si aún no se encuentra, buscar en advisory_sessions directamente
-            if (!registryData) {
-              console.log('Buscando en advisory_sessions directamente...');
-              const { data: advisoryData, error: advisoryError } = await supabase
-                .from('advisory_sessions')
-                .select('id, title')
-                .eq('id', content.id)
-                .maybeSingle();
-              
-              if (advisoryError && advisoryError.code !== 'PGRST116') {
-                console.error('Error al buscar en advisory_sessions:', advisoryError);
-              }
-              
-              if (advisoryData) {
-                console.log('Se encontró la sesión de asesoría:', advisoryData);
-                
-                // Buscar o crear el registro en content_registry
-                const { data: linkedRegistry, error: linkedError } = await supabase
-                  .from('content_registry')
-                  .select('id')
-                  .eq('content_id', advisoryData.id)
-                  .eq('content_type', 'advisory_session')
-                  .maybeSingle();
-                
-                if (linkedError && linkedError.code !== 'PGRST116') {
-                  console.error('Error al buscar registro vinculado:', linkedError);
-                }
-                
-                if (linkedRegistry) {
-                  registryData = linkedRegistry;
-                  console.log('Se encontró el registro vinculado:', registryData);
-                } else {
-                  // Si no existe, crear un nuevo registro en content_registry
-                  console.log('Creando nuevo registro en content_registry...');
-                  const { data: newRegistry, error: newError } = await supabase
-                    .from('content_registry')
-                    .insert({
-                      title: advisoryData.title,
-                      content_type: 'advisory_session',
-                      content_table: 'advisory_sessions',
-                      content_id: advisoryData.id
-                    })
-                    .select()
-                    .single();
-                  
-                  if (newError) {
-                    console.error('Error al crear nuevo registro:', newError);
-                  } else if (newRegistry) {
-                    registryData = newRegistry;
-                    console.log('Se creó un nuevo registro:', registryData);
-                  }
-                }
-              }
-            }
-            
-            if (registryData) {
-              registryId = registryData.id;
-              console.log('Se encontró el ID del registro:', registryId);
-              
-              // Actualizar el content_id si es necesario
-              content = {
-                ...content,
-                id: registryData.content_id || content.id
-              };
-            } else {
-              console.error('No se pudo encontrar el registro en content_registry');
-            }
-          }
-          
-          if (!registryId) {
-            throw new Error('No se encontró el ID del registro para actualizar la sesión de asesoría');
-          }
-          
-          const result = await contentTransitionService.updateContentWithNewStructure(
-            {
-              ...content,
-              content_metadata: {
-                ...content.content_metadata,
-                content_registry_id: registryId
-              }
-            },
-            undefined
-          );
-          
-          if (result) {
-            updatedContent = result as StageContent;
-          } else {
-            throw new Error('No se pudo actualizar la sesión de asesoría');
-          }
-        } catch (error) {
-          console.error('Error al actualizar sesión de asesoría:', error);
-          throw error;
-        }
-      } else if (content.content_type === 'text' || content.content_type === 'video') {
-        // Para texto y video, intentar primero con la estructura modular
-        try {
-          const result = await contentTransitionService.updateContentWithNewStructure(
+          const result = await contentTransitionService.updateContent(
             content,
             undefined
           );
           
           if (result) {
-            updatedContent = result as StageContent;
+            updatedContent = result as ActivityContent;
           } else {
-            // Si falla, intentar con la estructura antigua
-            updatedContent = await contentManagerService.updateContent(content, activityData);
+            throw new Error('No se pudo actualizar la sesión de asesoría');
           }
         } catch (error) {
-          console.error('Error al actualizar contenido con estructura modular:', error);
-          // Fallback a la estructura antigua
-          updatedContent = await contentManagerService.updateContent(content, activityData);
+          console.error('Error al actualizar sesión de asesoría:', error);
+          setError(`Error al actualizar sesión de asesoría: ${error instanceof Error ? error.message : String(error)}`);
+          setContentLoading(false);
+          return;
+        }
+      } else if (content.content_type === 'text') {
+        // Para contenido de texto, usar la estructura modular
+        try {
+          const result = await contentTransitionService.updateContent(
+            content,
+            undefined
+          );
+          
+          if (result) {
+            updatedContent = result as ActivityContent;
+          } else {
+            throw new Error('No se pudo actualizar el contenido de texto');
+          }
+        } catch (error) {
+          console.error('Error al actualizar contenido de texto:', error);
+          setError(`Error al actualizar contenido de texto: ${error instanceof Error ? error.message : String(error)}`);
+          setContentLoading(false);
+          return;
+        }
+      } else if (content.content_type === 'video') {
+        // Para contenido de video, usar la estructura modular
+        try {
+          // Asegurarse de que la URL esté correctamente asignada
+          const videoContent = {
+            ...content,
+            url: content.content // Usar content.content como URL del video
+          };
+          
+          const result = await contentTransitionService.updateContent(
+            videoContent,
+            undefined
+          );
+          
+          if (result) {
+            updatedContent = result as ActivityContent;
+          } else {
+            throw new Error('No se pudo actualizar el contenido de video');
+          }
+        } catch (error) {
+          console.error('Error al actualizar contenido de video:', error);
+          setError(`Error al actualizar contenido de video: ${error instanceof Error ? error.message : String(error)}`);
+          setContentLoading(false);
+          return;
+        }
+      } else if (content.content_type === 'activity') {
+        // Para actividades, usar la estructura modular
+        try {
+          const result = await contentTransitionService.updateContent(
+            content,
+            activityData
+          );
+          
+          if (result) {
+            updatedContent = result as ActivityContent;
+          } else {
+            throw new Error('No se pudo actualizar la actividad');
+          }
+        } catch (error) {
+          console.error('Error al actualizar actividad:', error);
+          setError(`Error al actualizar actividad: ${error instanceof Error ? error.message : String(error)}`);
+          setContentLoading(false);
+          return;
         }
       } else {
-        // Para otros tipos (principalmente actividades), usar la estructura antigua
-        updatedContent = await contentManagerService.updateContent(content, activityData);
+        // Para otros tipos, usar la estructura modular genérica
+        try {
+          const result = await contentTransitionService.updateContent(
+            content,
+            undefined
+          );
+          
+          if (result) {
+            updatedContent = result as ActivityContent;
+          } else {
+            throw new Error('No se pudo actualizar el contenido');
+          }
+        } catch (error) {
+          console.error('Error al actualizar contenido:', error);
+          setError(`Error al actualizar contenido: ${error instanceof Error ? error.message : String(error)}`);
+          setContentLoading(false);
+          return;
+        }
       }
       
       // Después de actualizar el contenido, recargar la lista completa para asegurar que se muestre correctamente
@@ -663,6 +536,7 @@ const ContentManager: React.FC = () => {
       showSuccessMessage('Contenido actualizado exitosamente');
       setContentLoading(false);
     } catch (error: any) {
+      console.error('Error al actualizar contenido:', error);
       setError(`Error al actualizar contenido: ${error.message}`);
       setContentLoading(false);
     }
@@ -670,23 +544,29 @@ const ContentManager: React.FC = () => {
 
   // Eliminar contenido
   const handleDeleteContent = async (contentId: string, stageId: string) => {
-    console.log('handleDeleteContent llamado con contentId:', contentId, 'stageId:', stageId);
-    
-    // Buscar el contenido para obtener su título
-    const contentToDelete = contents.find(c => c.id === contentId);
-    console.log('Contenido a eliminar:', contentToDelete);
-    
-    if (contentToDelete) {
-      // Mostrar diálogo de confirmación
+    try {
       setConfirmDialog({
-        isOpen: true,
-        title: '¿Eliminar contenido?',
-        message: `¿Estás seguro de que deseas eliminar "${contentToDelete.title || 'Sin título'}"?`,
-        contentId,
-        stageId
+        ...confirmDialog,
+        isOpen: false
       });
-    } else {
-      console.error('No se encontró el contenido con ID:', contentId);
+      
+      setContentLoading(true);
+      
+      // Usar el servicio de transición para eliminar contenido
+      const success = await contentTransitionService.deleteContent(contentId);
+      
+      if (success) {
+        showSuccessMessage('Contenido eliminado exitosamente');
+        await loadStageContent(stageId);
+      } else {
+        setError('No se pudo eliminar el contenido');
+      }
+      
+      setContentLoading(false);
+    } catch (error) {
+      console.error('Error al eliminar contenido:', error);
+      setError(`Error al eliminar contenido: ${error instanceof Error ? error.message : String(error)}`);
+      setContentLoading(false);
     }
   };
 
@@ -708,109 +588,20 @@ const ContentManager: React.FC = () => {
     try {
       setContentLoading(true);
       
-      // Verificar qué tipo de contenido es y qué ID tiene en las tablas específicas
-      try {
-        // Verificar en content_registry
-        const { data: registryData, error: registryError } = await supabase
-          .from('content_registry')
-          .select('*')
-          .or(`id.eq.${contentId},content_id.eq.${contentId}`);
-          
-        console.log('Datos encontrados en content_registry:', registryData, 'Error:', registryError);
-        
-        if (registryData && registryData.length > 0) {
-          // Si encontramos el registro, intentar eliminarlo directamente
-          const registryId = registryData[0].id;
-          const contentSpecificId = registryData[0].content_id;
-          const contentTable = registryData[0].content_table;
-          
-          console.log('Información del registro a eliminar:');
-          console.log('- Registry ID:', registryId);
-          console.log('- Content ID:', contentSpecificId);
-          console.log('- Content Table:', contentTable);
-          
-          // Eliminar primero las relaciones
-          console.log('Eliminando relaciones en program_module_contents...');
-          const { error: relationError } = await supabase
-            .from('program_module_contents')
-            .delete()
-            .eq('content_registry_id', registryId);
-            
-          console.log('Resultado de eliminar relaciones:', relationError ? 'Error: ' + JSON.stringify(relationError) : 'Éxito');
-          
-          // Eliminar el contenido específico
-          if (contentTable && contentSpecificId) {
-            console.log(`Eliminando contenido en ${contentTable}...`);
-            const { error: contentError } = await supabase
-              .from(contentTable)
-              .delete()
-              .eq('id', contentSpecificId);
-              
-            console.log('Resultado de eliminar contenido específico:', contentError ? 'Error: ' + JSON.stringify(contentError) : 'Éxito');
-          }
-          
-          // Finalmente, eliminar el registro
-          console.log('Eliminando registro en content_registry...');
-          const { error: deleteError } = await supabase
-            .from('content_registry')
-            .delete()
-            .eq('id', registryId);
-            
-          console.log('Resultado de eliminar registro:', deleteError ? 'Error: ' + JSON.stringify(deleteError) : 'Éxito');
-          
-          if (!deleteError) {
-            console.log('Contenido eliminado exitosamente');
-            setContents(prev => prev.filter(c => c.id !== contentId));
-            showSuccessMessage('Contenido eliminado exitosamente');
-            setContentLoading(false);
-            return;
-          }
-        }
-      } catch (directError) {
-        console.error('Error al intentar eliminar directamente:', directError);
-      }
+      // Usar el servicio de transición para eliminar contenido
+      const success = await contentTransitionService.deleteContent(contentId);
       
-      // Si llegamos aquí, intentar con el servicio de transición
-      try {
-        console.log('Intentando eliminar con estructura modular...');
-        const success = await contentTransitionService.deleteContentWithNewStructure(contentId);
-        
-        if (success) {
-          console.log('Contenido eliminado exitosamente con estructura modular');
-          // Después de eliminar el contenido, recargar la lista completa para asegurar que se muestre correctamente
-          await loadStageContent(stageId);
-          showSuccessMessage('Contenido eliminado exitosamente');
-          setContentLoading(false);
-          return;
-        } else {
-          console.error('No se pudo eliminar con estructura modular');
-        }
-      } catch (modularError) {
-        console.error('Error al eliminar con estructura modular:', modularError);
-      }
-      
-      // Como último recurso, intentar con la estructura antigua
-      try {
-        console.log('Intentando eliminar con estructura antigua...');
-        const result = await contentManagerService.deleteContent(contentId);
-        
-        if (result === true) {
-          console.log('Contenido eliminado exitosamente con estructura antigua');
-          // Después de eliminar el contenido, recargar la lista completa para asegurar que se muestre correctamente
-          await loadStageContent(stageId);
-          showSuccessMessage('Contenido eliminado exitosamente');
-        } else {
-          setError('No se pudo eliminar el contenido');
-        }
-      } catch (legacyError) {
-        console.error('Error al eliminar con estructura antigua:', legacyError);
-        setError('Error al eliminar contenido');
+      if (success) {
+        showSuccessMessage('Contenido eliminado exitosamente');
+        await loadStageContent(stageId);
+      } else {
+        setError('No se pudo eliminar el contenido');
       }
       
       setContentLoading(false);
-    } catch (error: any) {
-      console.error('Error general al eliminar contenido:', error);
-      setError(`Error al eliminar contenido: ${error.message}`);
+    } catch (error) {
+      console.error('Error al eliminar contenido:', error);
+      setError(`Error al eliminar contenido: ${error instanceof Error ? error.message : String(error)}`);
       setContentLoading(false);
     }
   };
@@ -834,13 +625,16 @@ const ContentManager: React.FC = () => {
       title: '',
       content: '',
       content_type: 'text',
-      order_num: contents.filter(c => c.stage_id === stageId).length,
-      stage_id: stageId
+      order: 0,
+      stage_id: stageId,
+      id: '',
+      created_at: '',
+      updated_at: ''
     });
   };
 
   // Iniciar edición de contenido
-  const startContentEditing = async (content: StageContent) => {
+  const startContentEditing = async (content: ActivityContent) => {
     // Si es una sesión de asesoría, cargar los detalles completos
     if (content.content_type === 'advisory_session') {
       setContentLoading(true);
@@ -893,19 +687,18 @@ const ContentManager: React.FC = () => {
         
         console.log('Datos de la sesión de asesoría:', sessionData);
         
-        // Construir el objeto StageContent con los datos correctos
-        const advisorySessionDetails: StageContent = {
+        // Construir el objeto ActivityContent con los datos correctos
+        const advisorySessionDetails: ActivityContent = {
           id: registryItem.id,
           title: registryItem.title,
           content: sessionData.description || '',
-          content_type: 'advisory_session' as 'advisory_session',
+          content_type: 'advisory_session',
           stage_id: content.stage_id,
-          order_num: content.order_num || 0,
-          content_metadata: {
-            duration: sessionData.duration || 60,
-            session_type: sessionData.session_type || 'individual',
-            advisory_session_id: sessionData.id
-          }
+          order: content.order || 0,
+          created_at: registryItem.created_at || new Date().toISOString(),
+          updated_at: registryItem.updated_at || new Date().toISOString(),
+          duration: sessionData.duration || 60,
+          session_type: sessionData.session_type || 'individual',
         };
         
         console.log('Detalles de la sesión de asesoría construidos:', advisorySessionDetails);
@@ -971,14 +764,16 @@ const ContentManager: React.FC = () => {
         
         console.log('Datos del texto:', textData);
         
-        // Construir el objeto StageContent con los datos correctos
-        const textDetails: StageContent = {
+        // Construir el objeto ActivityContent con los datos correctos
+        const textDetails: ActivityContent = {
           id: registryItem.id,
           title: registryItem.title || textData.title || 'Sin título',
           content: textData.content || '',
-          content_type: 'text' as 'text',
+          content_type: 'text',
           stage_id: content.stage_id,
-          order_num: content.order_num || 0
+          order: content.order || 0,
+          created_at: registryItem.created_at || new Date().toISOString(),
+          updated_at: registryItem.updated_at || new Date().toISOString(),
         };
         
         console.log('Detalles del texto construidos:', textDetails);
@@ -1041,16 +836,18 @@ const ContentManager: React.FC = () => {
         
         console.log('Datos del video:', videoData);
         
-        // Construir el objeto StageContent con los datos correctos
-        const videoDetails: StageContent = {
+        // Construir el objeto ActivityContent con los datos correctos
+        const videoDetails: ActivityContent = {
           id: registryItem.id,
           title: registryItem.title,
           content: videoData.video_url || '',
-          content_type: 'video' as 'video',
+          content_type: 'video',
           stage_id: content.stage_id,
-          order_num: content.order_num || 0,
-          provider: videoData.source || 'youtube',
-          url: videoData.video_url || ''
+          order: content.order || 0,
+          created_at: registryItem.created_at || new Date().toISOString(),
+          updated_at: registryItem.updated_at || new Date().toISOString(),
+          url: videoData.video_url || '',
+          provider: videoData.source || 'youtube'
         };
         
         console.log('Detalles del video construidos:', videoDetails);
@@ -1182,7 +979,7 @@ const ContentManager: React.FC = () => {
           {editingContent && (
             <ContentForm 
               content={editingContent}
-              onSave={(content, activityData) => handleUpdateContent(content as StageContent, activityData)}
+              onSave={(content, activityData) => handleUpdateContent(content as ActivityContent, activityData)}
               onCancel={cancelContentForm}
               loading={contentLoading}
               isEditing

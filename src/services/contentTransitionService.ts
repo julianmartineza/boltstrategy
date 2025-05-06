@@ -1,58 +1,32 @@
 import { supabase } from '../lib/supabase';
-import { StageContent, ActivityData } from '../components/admin/content-manager/types';
-import * as contentManagerService from '../components/admin/content-manager/contentManagerService';
+import { ActivityContent, ActivityData } from '../types/index';
 import * as contentRegistryService from './contentRegistryService';
 
 /**
- * Servicio de transición para trabajar con ambas estructuras de contenido
- * Este servicio permite una migración progresiva de la estructura antigua a la nueva
+ * Servicio de transición para trabajar con la estructura modular moderna
+ * Este servicio permite una migración total a la nueva estructura
  */
 
 /**
- * Obtiene contenidos de un módulo utilizando la nueva estructura modular
- * Si no hay contenidos en la nueva estructura, cae en la estructura antigua
+ * Obtiene contenidos de un módulo utilizando la estructura modular moderna
  * 
  * @param stageId ID de la etapa/módulo
  * @returns Array de contenidos unificados
  */
-export const getModuleContentsWithFallback = async (stageId: string) => {
+export const getModuleContents = async (stageId: string) => {
   try {
-    // Intentar obtener contenidos con la nueva estructura
+    // Obtener contenidos con la estructura modular moderna
     const newStructureContents = await contentRegistryService.getModuleContents(stageId);
     
-    // Si hay contenidos en la nueva estructura, devolverlos
+    // Solo se usa la nueva estructura modular. Eliminado el fallback a la estructura antigua (stage_content).
     if (newStructureContents && newStructureContents.length > 0) {
       console.log('Contenidos obtenidos de la nueva estructura modular');
       return newStructureContents;
     }
-    
-    // Si no hay contenidos en la nueva estructura, obtener de la estructura antigua
-    console.log('No se encontraron contenidos en la nueva estructura, utilizando fallback');
-    const oldStructureContents = await contentManagerService.fetchStageContent(stageId);
-    
-    // Convertir los contenidos de la estructura antigua al formato unificado
-    return oldStructureContents.map(content => ({
-      id: content.id,
-      title: content.title,
-      content_type: content.content_type,
-      position: content.order_num || 0,
-      registry_id: '', // No existe en la estructura antigua
-      content_id: content.id,
-      content_table: 'stage_content',
-      // Campos específicos según el tipo
-      content: content.content_type !== 'video' ? content.content : undefined,
-      url: content.content_type === 'video' ? content.content : undefined,
-      // Campos de actividad
-      activity_data: content.activity_data,
-      prompt_section: content.prompt_section,
-      system_instructions: content.system_instructions,
-      // Metadatos
-      created_at: content.created_at,
-      updated_at: content.updated_at
-    }));
-    
+    // Si no hay contenidos, retornar arreglo vacío
+    return [];
   } catch (error) {
-    console.error('Error al obtener contenidos con fallback:', error);
+    console.error('Error al obtener contenidos:', error);
     throw error;
   }
 };
@@ -64,8 +38,8 @@ export const getModuleContentsWithFallback = async (stageId: string) => {
  * @param activityData Datos específicos para actividades
  * @returns El contenido creado
  */
-export const createContentWithNewStructure = async (
-  content: Partial<StageContent>,
+export const createContent = async (
+  content: Partial<ActivityContent>,
   activityData?: ActivityData
 ) => {
   try {
@@ -74,7 +48,7 @@ export const createContentWithNewStructure = async (
     }
     
     // Obtener la posición para el nuevo contenido
-    const existingContents = await getModuleContentsWithFallback(content.stage_id);
+    const existingContents = await getModuleContents(content.stage_id);
     const position = existingContents.length;
     
     // Crear el contenido según su tipo
@@ -103,14 +77,16 @@ export const createContentWithNewStructure = async (
         return createdTextContent ? { ...createdTextContent, registry_id: textRegistryId } : null;
         
       case 'video':
-        if (!content.title || !content.url) {
+        // Permitir la URL tanto en content.url como en content.content
+        const videoUrl = content.url || content.content;
+        if (!content.title || !videoUrl) {
           throw new Error('Se requiere título y URL para crear contenido de video');
         }
         
         console.log('Creando contenido de video en contentTransitionService:', {
           stage_id: content.stage_id,
           title: content.title,
-          url: content.url,
+          url: videoUrl,
           provider: content.provider || 'youtube'
         });
         
@@ -118,7 +94,7 @@ export const createContentWithNewStructure = async (
         const videoRegistryId = await contentRegistryService.createVideoContent(
           content.stage_id,
           content.title,
-          content.url, // URL del video
+          videoUrl, // Usar la URL de cualquiera de los dos campos
           content.provider || 'youtube', // Proveedor por defecto
           position
         );
@@ -163,40 +139,89 @@ export const createContentWithNewStructure = async (
         return createdAdvisoryContent ? { ...createdAdvisoryContent, registry_id: advisoryRegistryId } : null;
         
       case 'activity':
-        // Para actividades, seguimos usando la estructura antigua
-        // pero la registramos en la nueva estructura
-        const createdActivity = await contentManagerService.createContent(content, activityData);
+        // Para actividades, seguimos usando la estructura modular moderna
+        if (!content.title) {
+          throw new Error('Se requiere título para crear una actividad');
+        }
         
-        // Registrar la actividad en la nueva estructura
-        await contentRegistryService.registerExistingActivity(
-          createdActivity.title,
-          createdActivity.id,
-          createdActivity.stage_id,
-          position
+        // Preparar los datos de la actividad
+        let finalActivityData: ActivityData = activityData || {
+          prompt: '',
+          initial_message: '',
+          system_instructions: '',
+          max_exchanges: 5,
+          step: 1,
+          prompt_section: '',
+          dependencies: []
+        };
+        
+        // Si no se proporcionó activityData pero hay datos en content.content, intentamos usarlo
+        if (Object.keys(finalActivityData).length === 0 && content.content) {
+          try {
+            // Intentar parsear el contenido como JSON si es una cadena
+            if (typeof content.content === 'string' && content.content.trim().startsWith('{')) {
+              finalActivityData = JSON.parse(content.content);
+            } else {
+              finalActivityData.prompt = typeof content.content === 'string' ? content.content : '';
+            }
+          } catch (e) {
+            // Si no es JSON válido, lo usamos como prompt
+            finalActivityData.prompt = typeof content.content === 'string' ? content.content : '';
+          }
+        }
+        
+        // Asegurarnos de que los campos importantes estén presentes en activityData
+        if (content.prompt_section) {
+          finalActivityData.prompt_section = content.prompt_section;
+        }
+        
+        if (content.system_instructions) {
+          finalActivityData.system_instructions = content.system_instructions;
+        }
+        
+        // Si hay step en content, lo agregamos
+        if (content.step) {
+          finalActivityData.step = content.step;
+        }
+        
+        // Asegurarnos de que las dependencias se pasen correctamente
+        if (content.dependencies) {
+          finalActivityData.dependencies = content.dependencies;
+        }
+        
+        console.log('Creando actividad en contentTransitionService:', {
+          stage_id: content.stage_id,
+          title: content.title,
+          prompt_section: content.prompt_section || finalActivityData.prompt_section,
+          system_instructions: content.system_instructions || finalActivityData.system_instructions,
+          step: finalActivityData.step || 1,
+          dependencies: content.dependencies || finalActivityData.dependencies || [],
+          activityData: finalActivityData
+        });
+        
+        // Crear el contenido de actividad en la nueva estructura
+        const activityContentId = await contentRegistryService.createActivityContent(
+          content.stage_id,
+          content.title,
+          finalActivityData,
+          position,
+          content.prompt_section || finalActivityData.prompt_section,
+          content.system_instructions || finalActivityData.system_instructions
         );
         
-        return {
-          id: createdActivity.id,
-          title: createdActivity.title,
-          content_type: 'activity',
-          position: position,
-          registry_id: '', // Se actualiza después
-          content_id: createdActivity.id,
-          content_table: 'stage_content',
-          content: createdActivity.content,
-          activity_data: createdActivity.activity_data,
-          prompt_section: createdActivity.prompt_section,
-          system_instructions: createdActivity.system_instructions,
-          created_at: createdActivity.created_at,
-          updated_at: createdActivity.updated_at
-        };
+        if (activityContentId) {
+          console.log('Actividad creada con estructura modular, ID:', activityContentId);
+          return activityContentId;
+        } else {
+          throw new Error('Error al crear actividad');
+        }
         
       default:
         throw new Error(`Tipo de contenido no soportado: ${content.content_type}`);
     }
     
   } catch (error) {
-    console.error('Error al crear contenido con nueva estructura:', error);
+    console.error('Error al crear contenido:', error);
     throw error;
   }
 };
@@ -208,14 +233,67 @@ export const createContentWithNewStructure = async (
  * @param activityData Datos específicos para actividades
  * @returns El contenido actualizado
  */
-export const updateContentWithNewStructure = async (
-  content: StageContent,
+export const updateContent = async (
+  content: ActivityContent,
   activityData?: ActivityData
 ) => {
   try {
-    // Para actividades, seguimos usando la estructura antigua
+    // Para actividades, seguimos usando la estructura modular moderna
     if (content.content_type === 'activity') {
-      return await contentManagerService.updateContent(content, activityData);
+      // Si activityData no está definido, intentamos extraerlo del content.activity_data
+      let finalActivityData: ActivityData = activityData || {
+        prompt: '',
+        initial_message: '',
+        system_instructions: '',
+        max_exchanges: 5,
+        step: 1,
+        prompt_section: '',
+        dependencies: []
+      };
+      
+      if (Object.keys(finalActivityData).length === 0 && content.activity_data) {
+        finalActivityData = typeof content.activity_data === 'string' 
+          ? JSON.parse(content.activity_data) 
+          : content.activity_data;
+      }
+      
+      // Asegurarnos de que prompt_section y system_instructions estén presentes en activityData
+      if (content.prompt_section) {
+        finalActivityData.prompt_section = content.prompt_section;
+      }
+      
+      if (content.system_instructions) {
+        finalActivityData.system_instructions = content.system_instructions;
+      }
+      
+      // Asegurarnos de que las dependencias se pasen correctamente
+      if (content.dependencies) {
+        finalActivityData.dependencies = content.dependencies;
+      }
+      
+      console.log('Actualizando actividad con datos:', {
+        stage_id: content.stage_id,
+        title: content.title,
+        prompt_section: content.prompt_section,
+        system_instructions: content.system_instructions,
+        dependencies: content.dependencies || finalActivityData.dependencies || []
+      });
+      
+      // Actualizar el contenido de actividad en la nueva estructura
+      const activityContent = await contentRegistryService.updateActivityContent(
+        content.stage_id,
+        content.title,
+        finalActivityData,
+        content.prompt_section,
+        content.system_instructions
+      );
+      
+      if (activityContent) {
+        console.log('Actividad actualizada con estructura modular:', activityContent);
+        return activityContent;
+      } else {
+        throw new Error('Error al actualizar actividad');
+      }
     }
     
     // Para otros tipos, necesitamos identificar si está en la nueva estructura
@@ -261,7 +339,7 @@ export const updateContentWithNewStructure = async (
         const { error: videoError } = await supabase
           .from('video_contents')
           .update({ 
-            video_url: content.url || '',
+            video_url: content.url || content.content,
             source: content.provider || 'youtube'
           })
           .eq('id', content.id);
@@ -343,12 +421,12 @@ export const updateContentWithNewStructure = async (
       // Si llegamos aquí, devolvemos el contenido original como fallback
       return content;
     } else {
-      // El contenido está en la estructura antigua
-      return await contentManagerService.updateContent(content, activityData);
+      // El contenido no está en la nueva estructura, pero como ya se migró todo, esto no debería ocurrir
+      throw new Error('Contenido no encontrado en la nueva estructura');
     }
     
   } catch (error) {
-    console.error('Error al actualizar contenido con nueva estructura:', error);
+    console.error('Error al actualizar contenido:', error);
     throw error;
   }
 };
@@ -359,7 +437,7 @@ export const updateContentWithNewStructure = async (
  * @param contentId ID del contenido a eliminar
  * @returns Verdadero si la eliminación fue exitosa
  */
-export const deleteContentWithNewStructure = async (contentId: string): Promise<boolean> => {
+export const deleteContent = async (contentId: string): Promise<boolean> => {
   try {
     console.log('Intentando eliminar contenido con ID:', contentId);
     
@@ -396,13 +474,12 @@ export const deleteContentWithNewStructure = async (contentId: string): Promise<
       return await contentRegistryService.deleteContent(registryByContentIdData.id);
     }
     
-    // Si no lo encontramos en ninguna de las dos formas, asumimos que está en la estructura antigua
-    console.log('Contenido no encontrado en content_registry, intentando eliminar de stage_content');
-    await contentManagerService.deleteContent(contentId);
+    // Si no lo encontramos en ninguna de las dos formas, asumimos que ya no existe
+    console.log('Contenido no encontrado en content_registry');
     return true;
     
   } catch (error) {
-    console.error('Error al eliminar contenido con nueva estructura:', error);
+    console.error('Error al eliminar contenido:', error);
     return false;
   }
 };

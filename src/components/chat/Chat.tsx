@@ -133,6 +133,9 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
       addUserMessage(userMessage);
       setInput('');
       
+      // Log ANTES de llamar a generateResponse
+      console.log('[handleSubmit] activityContent.id a punto de enviar:', activityContent.id);
+      
       // Generar respuesta del bot
       const botResponse = await chatService.generateResponse(
         userMessage,
@@ -141,11 +144,16 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
         interactionCount
       );
       
-      // Añadir respuesta del bot a la UI
-      addAIMessage(botResponse);
-      
-      // Mostrar botón de guardar insight
-      showInsightButtonAfterResponse();
+      // Verificar si la respuesta contiene un mensaje de error de límite de cuota
+      if (botResponse && botResponse.includes("límite de uso de la API")) {
+        addAIMessage(botResponse, { type: 'error', isQuotaError: true });
+      } else {
+        // Añadir respuesta del bot a la UI
+        addAIMessage(botResponse);
+        
+        // Mostrar botón de guardar insight
+        showInsightButtonAfterResponse();
+      }
     } catch (error) {
       console.error('Error in handleSubmit:', error);
       addAIMessage(
@@ -159,15 +167,29 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
 
   // Manejar el inicio de la conversación con un mensaje predeterminado
   const handleStartConversation = async () => {
+    console.log('[handleStartConversation] Iniciando...');
+    console.log('[handleStartConversation] stageContentId prop:', stageContentId);
+    console.log('[handleStartConversation] activityContent state:', activityContent);
+    
     if (!user || !user.id) {
-      console.error('No hay usuario autenticado para iniciar la conversación');
+      console.error('[handleStartConversation] No hay usuario autenticado');
       addAIMessage('Por favor, inicia sesión para continuar con la actividad.', { type: 'error' });
       return;
     }
     
-    if (!activityContent || !activityContent.id) {
-      console.error('No hay contenido de actividad disponible');
+    if (!activityContent) {
+      console.error('[handleStartConversation] No hay contenido de actividad disponible');
       addAIMessage('No se puede iniciar la conversación porque no hay información de la actividad.', { type: 'error' });
+      return;
+    }
+    
+    // Verificar que el ID de la actividad sea válido
+    const activityId = activityContent.id || stageContentId;
+    console.log('[handleStartConversation] activityId derivado:', activityId);
+    
+    if (!activityId) {
+      console.error('[handleStartConversation] No hay ID de actividad disponible');
+      addAIMessage('No se puede iniciar la conversación porque falta el identificador de la actividad.', { type: 'error' });
       return;
     }
     
@@ -188,7 +210,7 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
       const enrichedActivityContent = {
         ...activityContent,
         user_id: user.id,  // Asegurarnos de que user_id esté presente
-        id: activityContent.id || stageContentId  // Usar stageContentId como fallback
+        id: activityId  // Usar el ID validado
       };
       
       console.log('Enviando datos enriquecidos al servicio de chat:', {
@@ -217,11 +239,16 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
         interactionCount
       );
       
-      // Añadir respuesta del bot a la UI
-      addAIMessage(botResponse);
-      
-      // Mostrar botón de insight después de la respuesta
-      showInsightButtonAfterResponse();
+      // Verificar si la respuesta contiene un mensaje de error de límite de cuota
+      if (botResponse && botResponse.includes("límite de uso de la API")) {
+        addAIMessage(botResponse, { type: 'error', isQuotaError: true });
+      } else {
+        // Añadir respuesta del bot a la UI
+        addAIMessage(botResponse);
+        
+        // Mostrar botón de insight después de la respuesta
+        showInsightButtonAfterResponse();
+      }
     } catch (error) {
       console.error('Error starting conversation:', error);
       addAIMessage('Lo siento, ha ocurrido un error al iniciar la conversación. Por favor, intenta nuevamente.', { type: 'error' });

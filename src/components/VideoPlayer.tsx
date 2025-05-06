@@ -1,5 +1,3 @@
-
-
 interface VideoPlayerProps {
   src: string;
   poster?: string;
@@ -15,6 +13,12 @@ export default function VideoPlayer({ src, poster, className }: VideoPlayerProps
     );
   }
 
+  // Prevenir la descarga del video mediante clic derecho
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    return false;
+  };
+
   return (
     <div className={`aspect-video rounded-lg overflow-hidden bg-gray-900 ${className || ''}`}>
       <video
@@ -23,10 +27,13 @@ export default function VideoPlayer({ src, poster, className }: VideoPlayerProps
         preload="metadata"
         poster={poster}
         playsInline
+        controlsList="nodownload nofullscreen" // Deshabilita el botón de descarga y limita el control de pantalla completa
+        onContextMenu={handleContextMenu} // Deshabilita el menú contextual
+        disablePictureInPicture // Deshabilita la función de picture-in-picture
       >
         <source src={src} type="video/mp4" />
         <source src={src.replace('.mp4', '.webm')} type="video/webm" />
-        Your browser does not support the video tag.
+        Tu navegador no soporta la reproducción de videos.
       </video>
     </div>
   );

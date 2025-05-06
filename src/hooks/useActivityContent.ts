@@ -3,31 +3,28 @@ import { supabase } from '../lib/supabase';
 import { ActivityContent } from '../types';
 import { useAuthStore } from '../store/authStore';
 
-export function useActivityContent(stageContentId?: string, activityContentProp?: ActivityContent) {
+export function useActivityContent(activityContentId?: string, activityContentProp?: ActivityContent) {
   const [activityContent, setActivityContent] = useState<ActivityContent | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<Error | null>(null);
 
-  // Cargar el contenido de la actividad
+  // Cargar el contenido de la actividad solo desde activity_contents
   const fetchActivityContent = useCallback(async () => {
-    if (!stageContentId) return;
-    
+    if (!activityContentId) return;
     setLoading(true);
     setError(null);
-
     try {
+      console.log('Buscando actividad en activity_contents con ID:', activityContentId);
       const { data, error } = await supabase
-        .from('stage_content')
+        .from('activity_contents')
         .select('*')
-        .eq('id', stageContentId)
+        .eq('id', activityContentId)
         .single();
-
-      if (error) {
+      if (error || !data) {
         console.error('Error fetching activity content:', error);
-        setError(new Error(error.message));
+        setError(new Error(error ? error.message : 'No se encontró la actividad'));
         return;
       }
-
       // Añadir user_id al contenido de la actividad si es necesario
       const auth = useAuthStore.getState();
       if (auth && auth.user && auth.user.id && data) {
@@ -45,7 +42,7 @@ export function useActivityContent(stageContentId?: string, activityContentProp?
     } finally {
       setLoading(false);
     }
-  }, [stageContentId]);
+  }, [activityContentId]);
 
   // Inicializar el contenido de la actividad
   useEffect(() => {
@@ -53,7 +50,6 @@ export function useActivityContent(stageContentId?: string, activityContentProp?
       // Asegurarnos de que activityContentProp tenga user_id
       const auth = useAuthStore.getState();
       if (auth && auth.user && auth.user.id && !activityContentProp.user_id) {
-        // Solo actualizar si no tiene user_id
         setActivityContent({
           ...activityContentProp,
           user_id: auth.user.id
@@ -61,13 +57,10 @@ export function useActivityContent(stageContentId?: string, activityContentProp?
       } else {
         setActivityContent(activityContentProp);
       }
-    } else if (stageContentId) {
+    } else if (activityContentId) {
       fetchActivityContent();
     }
-  }, [stageContentId, activityContentProp, fetchActivityContent]);
-
-  // Eliminamos el useEffect problemático que causaba actualizaciones infinitas
-  // y movimos su lógica a los lugares donde se inicializa activityContent
+  }, [activityContentId, activityContentProp, fetchActivityContent]);
 
   return {
     activityContent,

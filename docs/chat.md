@@ -18,10 +18,10 @@ Reestructurar la gestión de prompts en el chat de la aplicación para que cada 
 
 Se aprovechará la estructura existente, especialmente las siguientes tablas:
 
-- `stage_content`: Actualmente almacena contenido de etapas. Se usará para gestionar los prompts por actividad en lugar de por pasos.
+- `stage_content`: Actualmente almacena contenido de las actividades del chat. Se usará para gestionar los prompts por actividad en lugar de por pasos.
 - `activity_responses`: Se utilizará para almacenar las respuestas ingresadas por el usuario en cada actividad, permitiendo su recuperación y edición en caso de que el usuario regrese a una actividad anterior.
 - `chat_summaries`: Se utilizará para almacenar resúmenes de conversaciones largas y optimizar la memoria de largo plazo.
-- **Nueva tabla:** `user_insights`, para almacenar ideas valiosas que el usuario quiera guardar.
+- `user_insights`, para almacenar ideas valiosas que el usuario quiera guardar.
 
 ## 🔄 **Arquitectura Refactorizada del Componente Chat**
 
