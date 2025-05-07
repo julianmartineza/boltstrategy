@@ -3,6 +3,7 @@ import { useAuthStore } from '../../store/authStore';
 import { useProgramStore } from '../../store/programStore';
 import { ActivityContent } from '../../types';
 import { chatService } from '../../services/chatService';
+import { updateShortTermMemoryWithParams, clearShortTermMemory } from '../../lib/chatMemoryService';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { WelcomeMessage } from './WelcomeMessage';
@@ -133,6 +134,9 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
       addUserMessage(userMessage);
       setInput('');
       
+      // Actualizar la memoria a corto plazo con el mensaje del usuario
+      updateShortTermMemoryWithParams(userMessage, 'user');
+      
       // Log ANTES de llamar a generateResponse
       console.log('[handleSubmit] activityContent.id a punto de enviar:', activityContent.id);
       
@@ -143,6 +147,9 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
         company,
         interactionCount
       );
+      
+      // Actualizar la memoria a corto plazo con la respuesta del bot
+      updateShortTermMemoryWithParams(botResponse, 'assistant');
       
       // Verificar si la respuesta contiene un mensaje de error de límite de cuota
       if (botResponse && botResponse.includes("límite de uso de la API")) {
@@ -167,6 +174,8 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
 
   // Iniciar la conversación
   const handleStartConversation = async () => {
+    // Limpiar la memoria a corto plazo al iniciar una nueva conversación
+    clearShortTermMemory();
     if (!user || !user.id) {
       console.error('[handleStartConversation] No hay usuario logueado');
       addAIMessage('Por favor, inicia sesión para comenzar la conversación.', { type: 'error' });
@@ -227,17 +236,21 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
       let initialMessage = null;
       
       // Intentar obtener el mensaje inicial de diferentes fuentes posibles
-      if (typeof enrichedActivityContent.activity_data === 'object' && enrichedActivityContent.activity_data?.initial_message) {
-        initialMessage = enrichedActivityContent.activity_data.initial_message;
+      if (typeof enrichedActivityContent.activity_data === 'object' && 
+          enrichedActivityContent.activity_data && 
+          'initial_message' in enrichedActivityContent.activity_data) {
+        initialMessage = (enrichedActivityContent.activity_data as any).initial_message;
       } else if (typeof enrichedActivityContent.activity_data === 'string') {
         try {
           const parsedData = JSON.parse(enrichedActivityContent.activity_data);
-          initialMessage = parsedData.initial_message;
+          if (parsedData && 'initial_message' in parsedData) {
+            initialMessage = parsedData.initial_message;
+          }
         } catch (e) {
           console.error('Error al parsear activity_data:', e);
         }
-      } else if (enrichedActivityContent.initial_message) {
-        initialMessage = enrichedActivityContent.initial_message;
+      } else if ('initial_message' in enrichedActivityContent) {
+        initialMessage = (enrichedActivityContent as any).initial_message;
       }
       
       console.log('Mensaje inicial encontrado:', initialMessage ? 'Sí' : 'No');
@@ -247,6 +260,9 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
         
         // Mostrar directamente el mensaje inicial configurado sin mensaje previo del usuario
         addAIMessage(initialMessage);
+        
+        // Actualizar la memoria a corto plazo con el mensaje inicial
+        updateShortTermMemoryWithParams(initialMessage, 'assistant');
         
         // Mostrar botón de insight después de la respuesta
         showInsightButtonAfterResponse();
@@ -267,6 +283,9 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
           company,
           systemMessage
         );
+        
+        // Actualizar la memoria a corto plazo con la respuesta del bot
+        updateShortTermMemoryWithParams(botResponse, 'assistant');
         
         // Verificar si la respuesta contiene un mensaje de error de límite de cuota
         if (botResponse && botResponse.includes("límite de uso de la API")) {
@@ -358,7 +377,14 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
             {messages.map((message) => (
               <ChatMessage 
                 key={message.id}
-                message={message}
+                message={{
+                  ...message,
+                  metadata: message.metadata ? {
+                    ...message.metadata,
+                    // Convertir los tipos de metadata para que sean compatibles
+                    type: message.metadata.type as any,
+                  } : undefined
+                }}
                 onSaveInsight={saveInsight}
                 showInsightButton={showInsightButton && message.sender === 'ai' && !message.metadata?.type}
               />

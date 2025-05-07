@@ -86,12 +86,12 @@ export const fetchDependencies = async (activityId: string): Promise<string[]> =
     
     // Añadir dependencias de la columna independiente si existen
     if (data?.dependencies && Array.isArray(data.dependencies)) {
-      data.dependencies.forEach(dep => dependenciesSet.add(dep));
+      data.dependencies.forEach((dep: string) => dependenciesSet.add(dep));
     }
     
     // Añadir dependencias del campo activity_data si existen
     if (data?.activity_data?.dependencies && Array.isArray(data.activity_data.dependencies)) {
-      data.activity_data.dependencies.forEach(dep => dependenciesSet.add(dep));
+      data.activity_data.dependencies.forEach((dep: string) => dependenciesSet.add(dep));
     }
     
     const dependencies = Array.from(dependenciesSet);
@@ -349,15 +349,16 @@ export const cleanUpInteractions = async (userId: string, activityId: string) =>
       
       console.log('Prompt para resumen generado, llamando a OpenAI...');
       
-      const summary = await generateBotResponse(
-        "Genera un resumen detallado de esta conversación, resaltando los puntos clave de la conversación para la empresa, su negocio y su equipo, tanto dados por el usuario como por el asistente", 
+      const summary = await generateBotResponse([
         {
-          systemPrompt: summaryPrompt,
-          stage: "Resumen de conversación",
-          activity: "Generación de resumen",
-          previousMessages: []
+          role: 'system',
+          content: summaryPrompt
+        },
+        {
+          role: 'user',
+          content: "Genera un resumen detallado de esta conversación, resaltando los puntos clave de la conversación para la empresa, su negocio y su equipo, tanto dados por el usuario como por el asistente"
         }
-      );
+      ]);
       
       if (!summary) {
         console.error('OpenAI no generó un resumen válido');
@@ -586,7 +587,7 @@ export async function generateContextForOpenAI(
           interactionsContext += `## ${activity.title}\n`;
           if (activity.section) interactionsContext += `Sección: ${activity.section}\n`;
           
-          activity.interactions.forEach(interaction => {
+          activity.interactions.forEach((interaction: { similarity: number; user_message: string; ai_response: string }) => {
             const similarityPercentage = Math.round(interaction.similarity * 100);
             interactionsContext += `[Similitud: ${similarityPercentage}%]\n`;
             interactionsContext += `- Usuario: ${interaction.user_message}\n`;

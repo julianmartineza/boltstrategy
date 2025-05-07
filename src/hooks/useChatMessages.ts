@@ -207,6 +207,13 @@ export function useChatMessages(userId?: string, activityId?: string) {
       timestamp: new Date()
     };
     
+    // Actualizar la memoria a corto plazo con el mensaje del usuario
+    import('../lib/chatMemoryService').then(({ updateShortTermMemoryWithParams }) => {
+      updateShortTermMemoryWithParams(content, 'user');
+    }).catch(error => {
+      console.error('Error al actualizar la memoria a corto plazo:', error);
+    });
+    
     setMessages(prev => [...prev, newMessage]);
   }, [messages]);
   
@@ -231,6 +238,16 @@ export function useChatMessages(userId?: string, activityId?: string) {
       timestamp: new Date(),
       metadata
     };
+    
+    // Actualizar la memoria a corto plazo con el mensaje de la IA
+    // Solo actualizar si no es un mensaje de error
+    if (!metadata?.type) {
+      import('../lib/chatMemoryService').then(({ updateShortTermMemoryWithParams }) => {
+        updateShortTermMemoryWithParams(content, 'assistant');
+      }).catch(error => {
+        console.error('Error al actualizar la memoria a corto plazo:', error);
+      });
+    }
     
     setMessages(prev => [...prev, newMessage]);
     
