@@ -75,21 +75,31 @@ export const chatService = {
       try {
         // Primero intentamos obtener el programa desde stage_content
         if (activityContent.stage_id) {
-          const { data: stageData } = await supabase
+          const { data: stageData, error: stageError } = await supabase
             .from('strategy_stages')
             .select('program_id')
             .eq('id', activityContent.stage_id)
             .single();
           
-          if (stageData?.program_id) {
-            const { data: programData } = await supabase
-              .from('programs')
-              .select('title, description')
-              .eq('id', stageData.program_id)
-              .single();
-            
-            if (programData) {
-              programContext = `Eres un consultor de negocios especializado en ${programData.title}. ${programData.description || ''}`;
+          if (stageError) {
+            console.error('Error al obtener el stage_id:', stageError);
+          } else if (stageData?.program_id) {
+            // Verificar que el program_id sea un UUID válido antes de hacer la consulta
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (uuidRegex.test(stageData.program_id)) {
+              const { data: programData, error: programError } = await supabase
+                .from('programs')
+                .select('title, description')
+                .eq('id', stageData.program_id)
+                .single();
+              
+              if (programError) {
+                console.error('Error al obtener información del programa:', programError);
+              } else if (programData) {
+                programContext = `Eres un consultor de negocios especializado en ${programData.title}. ${programData.description || ''}`;
+              }
+            } else {
+              console.error('ID de programa inválido:', stageData.program_id);
             }
           }
         }
@@ -246,21 +256,31 @@ export const chatService = {
       try {
         // Primero intentamos obtener el programa desde stage_content
         if (activityContent.stage_id) {
-          const { data: stageData } = await supabase
+          const { data: stageData, error: stageError } = await supabase
             .from('strategy_stages')
             .select('program_id')
             .eq('id', activityContent.stage_id)
             .single();
           
-          if (stageData?.program_id) {
-            const { data: programData } = await supabase
-              .from('programs')
-              .select('title, description')
-              .eq('id', stageData.program_id)
-              .single();
-            
-            if (programData) {
-              programContext = `Eres un consultor de negocios especializado en ${programData.title}. ${programData.description || ''}`;
+          if (stageError) {
+            console.error('Error al obtener el stage_id:', stageError);
+          } else if (stageData?.program_id) {
+            // Verificar que el program_id sea un UUID válido antes de hacer la consulta
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (uuidRegex.test(stageData.program_id)) {
+              const { data: programData, error: programError } = await supabase
+                .from('programs')
+                .select('title, description')
+                .eq('id', stageData.program_id)
+                .single();
+              
+              if (programError) {
+                console.error('Error al obtener información del programa:', programError);
+              } else if (programData) {
+                programContext = `Eres un consultor de negocios especializado en ${programData.title}. ${programData.description || ''}`;
+              }
+            } else {
+              console.error('ID de programa inválido:', stageData.program_id);
             }
           }
         }
@@ -415,18 +435,23 @@ export const chatService = {
 };
 
 // Interfaz para los mensajes del contexto
+// Esta interfaz ya no se utiliza porque la función getChatContext está comentada
+/*
 interface ContextMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
 }
+*/
 
 /**
- * Obtiene el contexto de la conversación para un usuario y actividad específicos
+ * Obtiene el contexto de chat para una actividad
  * @param userId ID del usuario
  * @param activityId ID de la actividad
  * @returns Array de mensajes para el contexto
+ * @deprecated Esta función ya no se utiliza. Se ha reemplazado por generateContextForOpenAI en chatMemoryService.ts
  */
-async function getChatContext(userId: string, activityId: string): Promise<ContextMessage[]> {
+/*
+async function getChatContext(userId: string, activityId: string): Promise<any[]> {
   try {
     // Obtener las últimas 5 interacciones para este usuario y actividad
     const { data, error } = await supabase
@@ -447,7 +472,7 @@ async function getChatContext(userId: string, activityId: string): Promise<Conte
     }
     
     // Convertir las interacciones en formato de contexto para OpenAI
-    const context: ContextMessage[] = [];
+    const context: any[] = [];
     
     data.forEach(interaction => {
       // Añadir mensaje del usuario
@@ -469,3 +494,4 @@ async function getChatContext(userId: string, activityId: string): Promise<Conte
     return [];
   }
 }
+*/

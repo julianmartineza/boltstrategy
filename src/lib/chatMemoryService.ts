@@ -648,11 +648,18 @@ export async function generateContextForOpenAI(
     // Añadir historial de chat a corto plazo
     context = [...context, ...chatHistory];
     
-    // Añadir mensaje actual del usuario
-    context.push({
-      role: 'user',
-      content: userMessage
-    });
+    // Verificar si el último mensaje en chatHistory ya es el mensaje actual del usuario
+    const lastMessage = chatHistory.length > 0 ? chatHistory[chatHistory.length - 1] : null;
+    const isLastMessageFromUser = lastMessage && lastMessage.role === 'user';
+    const isLastMessageSameAsCurrentMessage = isLastMessageFromUser && lastMessage.content === userMessage;
+    
+    // Añadir mensaje actual del usuario solo si no está ya incluido en el historial
+    if (!isLastMessageSameAsCurrentMessage) {
+      context.push({
+        role: 'user',
+        content: userMessage
+      });
+    }
     
     return context;
   } catch (error) {
