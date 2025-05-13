@@ -1,13 +1,13 @@
 import { ActivityContent } from '../types';
 import { generateBotResponse } from '../lib/openai';
 import { supabase } from '../lib/supabase';
-
-// Interfaz para el resultado de evaluación
-interface EvaluationResult {
-  isCompleted: boolean;
-  message: string;
-  details?: any;
-}
+import { 
+  EvaluationResult, 
+  shouldEvaluate, 
+  generateEvaluationInstructions, 
+  logEvaluation,
+  extractEvaluationFromResponse 
+} from './evaluationService';
 
 // Caché para evitar solicitudes duplicadas
 const requestCache = new Map<string, { 
@@ -180,9 +180,6 @@ export const chatService = {
       // Generar instrucciones de evaluación si corresponde
       let evaluationInstructions = '';
       try {
-        // Importar la función para generar instrucciones de evaluación
-        const { shouldEvaluate, generateEvaluationInstructions } = await import('./activityCompletionService');
-        
         // Verificar si esta interacción debe incluir evaluación
         const shouldIncludeEvaluation = await shouldEvaluate(activityId, interactionCount);
         
@@ -233,91 +230,45 @@ export const chatService = {
       const fullResponse = await generateBotResponse(context);
       
       // Procesar la respuesta para extraer la evaluación si existe
-      let response = fullResponse;
-      let evaluationResult = null;
-      
-      // Buscar la sección de evaluación en la respuesta usando diferentes posibles separadores
-      // Esto hace que la extracción sea más robusta frente a variaciones en el formato
-      const possibleSeparators = [
-        '---EVALUACION---',
-        '---EVALUACIÓN---',
-        '--- EVALUACION ---',
-        '--- EVALUACIÓN ---',
-        'EVALUACION:',
-        'EVALUACIÓN:',
-        '\n\nEVALUACION\n',
-        '\n\nEVALUACIÓN\n'
-      ];
+      // Usar la función del servicio de evaluación para extraer la evaluación
+      const extractionResult = extractEvaluationFromResponse(fullResponse);
+      const response = extractionResult.response;
+      const evaluationResult = extractionResult.evaluationResult;
       
       console.log(`🔍 Verificando si la respuesta contiene evaluación (longitud de respuesta: ${fullResponse.length} caracteres)`);
       
-      // Buscar el primer separador que funcione
-      let foundSeparator: string | null = null;
-      let parts: string[] = [];
-      
-      for (const separator of possibleSeparators) {
-        if (fullResponse.includes(separator)) {
-          parts = fullResponse.split(separator);
-          if (parts.length > 1) {
-            foundSeparator = separator;
-            console.log(`✅ Separador de evaluación encontrado: "${separator}"`);
-            break;
-          }
-        }
-      }
-      
-      // Si encontramos un separador válido
-      if (foundSeparator && parts.length > 1) {
-        // Extraer la respuesta normal y la evaluación
-        response = parts[0].trim();
-        let evaluationText = parts[1].trim();
-        
-        console.log(`✅ Evaluación encontrada en la respuesta. Texto de evaluación: ${evaluationText.substring(0, 50)}...`);
-        
-        // Limpiar el texto de evaluación para asegurar que sea JSON válido
-        // Eliminar comillas iniciales y finales adicionales si existen
-        evaluationText = evaluationText.replace(/^["'\s{]+/, '{').replace(/["'\s}]+$/, '}');
-        
-        // Intentar parsear el JSON de evaluación
-        try {
-          evaluationResult = JSON.parse(evaluationText);
-          console.log('🔍 Evaluación extraída de la respuesta:', evaluationResult.isCompleted ? '✅ Completada' : '❌ No completada');
+      // Si se encontró una evaluación válida
+      if (evaluationResult) {
+        console.log('🔍 Evaluación extraída de la respuesta:', evaluationResult.isCompleted ? '✅ Completada' : '❌ No completada');
           
-          // Procesar el resultado de la evaluación
-          if (evaluationResult.isCompleted) {
-            try {
-              // Importar la función para registrar la evaluación
-              const { logEvaluation } = await import('./activityCompletionService');
-              
-              // Crear el registro de evaluación
-              // Generar un hash simple para la conversación
-              const conversationHash = `${userId}_${activityId}_${Date.now()}`;
-              console.log(`Generando hash de conversación para evaluación: ${conversationHash}`);
-              
-              await logEvaluation({
-                activityId: activityId,
-                userId: userId,
-                rubricScores: evaluationResult.details?.rubric || {},
-                overallScore: evaluationResult.details?.overallScore || 1.0,
-                feedbackMessage: evaluationResult.message,
-                isCompleted: true,
-                conversationHash: conversationHash
-              });
-              
-              console.log('✅ Evaluación registrada en la base de datos');
-            } catch (evalError) {
-              console.error('Error al registrar la evaluación:', evalError);
-            }
+        // Procesar el resultado de la evaluación
+        if (evaluationResult.isCompleted) {
+          try {
+            // Crear el registro de evaluación
+            // Generar un hash simple para la conversación
+            const conversationHash = `${userId}_${activityId}_${Date.now()}`;
+            console.log(`Generando hash de conversación para evaluación: ${conversationHash}`);
+            
+            await logEvaluation({
+              activityId: activityId,
+              userId: userId,
+              rubricScores: evaluationResult.details?.rubric || {},
+              overallScore: evaluationResult.details?.overallScore || 1.0,
+              feedbackMessage: evaluationResult.message,
+              isCompleted: true,
+              conversationHash: conversationHash
+            });
+            
+            console.log('✅ Evaluación registrada en la base de datos');
+          } catch (evalError) {
+            console.error('Error al registrar la evaluación:', evalError);
           }
-        } catch (parseError) {
-          console.error('Error al parsear la evaluación:', parseError);
         }
       } else {
         console.log('⚠️ No se encontró la sección de evaluación en la respuesta. Esto puede indicar un problema con las instrucciones o con el modelo.');
         console.log('💡 Contenido parcial de la respuesta:', fullResponse.substring(0, 100) + '...');
         
         // Verificar si deberíamos haber tenido una evaluación según la lógica existente
-        const { shouldEvaluate } = await import('./activityCompletionService');
         const shouldHaveEvaluation = await shouldEvaluate(activityId, interactionCount);
         
         if (shouldHaveEvaluation) {
