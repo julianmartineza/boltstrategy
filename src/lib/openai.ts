@@ -5,8 +5,8 @@ import { supabase } from './supabase';
 const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
 console.log('OpenAI API Key disponible:', apiKey ? 'Sí (primeros 4 caracteres: ' + apiKey.substring(0, 4) + '...)' : 'No');
 
-// Usar modelo más ligero para reducir consumo de tokens
-const CHAT_MODEL = 'gpt-4o-mini'; // Modelo con mayor límite de tokens (2.5M diarios)
+// Usar modelo más potente para mejorar la capacidad de seguir instrucciones complejas
+const CHAT_MODEL = 'gpt-4o'; // Modelo con mejor capacidad para seguir instrucciones
 const EMBEDDING_MODEL = 'text-embedding-3-small'; // Modelo más ligero para embeddings
 
 // Caché de embeddings para evitar solicitudes duplicadas

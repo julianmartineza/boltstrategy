@@ -210,14 +210,14 @@ export const chatService = {
         finalPrompt
       );
       
-      // Añadir el contexto del programa como primer mensaje del sistema
-      context.unshift({ role: 'system', content: programContext });
-      
-      // Añadir las instrucciones de evaluación como un mensaje del sistema separado al final
+      // Añadir las instrucciones de evaluación como segundo mensaje del sistema (después del contexto del programa)
       // Esto hace que las instrucciones sean más prominentes para el modelo
       if (evaluationInstructions) {
-        context.push({ role: 'system', content: evaluationInstructions });
+        context.unshift({ role: 'system', content: evaluationInstructions });
       }
+      
+      // Añadir el contexto del programa como primer mensaje del sistema
+      context.unshift({ role: 'system', content: programContext });
       
       // Log detallado del prompt solo en desarrollo
       if (import.meta.env.DEV) {

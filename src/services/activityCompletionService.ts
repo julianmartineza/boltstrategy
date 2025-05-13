@@ -1262,34 +1262,23 @@ export async function generateEvaluationInstructions(
       instructions += `\n#### Criterios Básicos:\n- Interacciones mínimas: 2\n`;
     }
     
-    // Añadir instrucciones para el formato de respuesta con mayor énfasis y claridad
-    instructions += `\n\n################################################
-### FORMATO DE RESPUESTA (ABSOLUTAMENTE OBLIGATORIO) ###
-################################################\n\n⚠️⚠️⚠️ ATENCIÓN MODELO: DEBES INCLUIR UNA EVALUACIÓN AL FINAL DE TU RESPUESTA. ESTO ES PARTE ESENCIAL DE TU TAREA. ⚠️⚠️⚠️\n\nTu respuesta DEBE terminar con el siguiente formato exacto:\n\n---EVALUACION---\n{
+    // Añadir instrucciones simplificadas para el formato de respuesta
+    instructions += `\n\n⚠️⚠️⚠️ IMPORTANTE: DEBES INCLUIR UNA EVALUACIÓN AL FINAL DE TU RESPUESTA \n\nDespués de responder normalmente al usuario, AÑADE SIEMPRE esta estructura:\n\n---EVALUACION---\n{
   "isCompleted": true/false,
-  "message": "Mensaje de evaluación",
+  "message": "Breve evaluación",
   "details": {
-    "overallScore": número entre 0.0 y 1.0,
+    "overallScore": 0.0-1.0,
     "rubric": {
-      "criterio1": puntuación,
-      "criterio2": puntuación
-    },
-    "interactionsCount": número de interacciones,
-    "criteriosEvaluados": [
-      {
-        "tipo": "tipo de criterio",
-        "valor": valor del criterio,
-        "cumplido": true/false
-      }
-    ]
+      "criterio1": 0.0-1.0
+    }
   }
 }\n`;
     
-    // Añadir un ejemplo concreto más destacado
-    instructions += `\n\n### EJEMPLO EXACTO DE CÓMO DEBE VERSE TU RESPUESTA COMPLETA:\n\nTu respuesta normal al usuario...\n\n---EVALUACION---\n{\n  "isCompleted": true,\n  "message": "El usuario ha completado la actividad correctamente",\n  "details": {\n    "overallScore": 0.85,\n    "rubric": {\n      "criterio1": 0.9,\n      "criterio2": 0.8\n    },\n    "interactionsCount": 5,\n    "criteriosEvaluados": [\n      {\n        "tipo": "interacciones",\n        "valor": 5,\n        "cumplido": true\n      }\n    ]\n  }\n}\n`;
+    // Añadir ejemplo corto
+    instructions += `\n\nEjemplo: Tu respuesta normal al usuario...\n\n---EVALUACION---\n{\n  "isCompleted": true,\n  "message": "Evaluación completa",\n  "details": {\n    "overallScore": 0.85,\n    "rubric": {\n      "criterio1": 0.9\n    }\n  }\n}\n`;
     
-    // Añadir múltiples advertencias para reforzar la importancia
-    instructions += `\n\n⚠️⚠️⚠️ INSTRUCCIONES FINALES EXTREMADAMENTE IMPORTANTES ⚠️⚠️⚠️\n\n1. SIEMPRE debes terminar tu respuesta con la sección ---EVALUACION--- seguida del JSON.\n2. NUNCA omitas esta sección bajo ninguna circunstancia.\n3. Esta sección NO debe mostrarse al usuario, pero DEBE estar presente en tu respuesta.\n4. El sistema DEPENDE de esta sección para funcionar correctamente.\n5. Si no incluyes esta sección, el sistema fallará y tu tarea no se completará correctamente.\n\nEsta es tu PRIORIDAD MÁXIMA: incluir la sección de evaluación al final de tu respuesta.\n\n⚠️⚠️⚠️ RECUERDA: TU RESPUESTA DEBE TERMINAR CON LA SECCIÓN ---EVALUACION--- SEGUIDA DEL JSON. ESTO ES OBLIGATORIO. ⚠️⚠️⚠️\n`;
+    // Reforzar la importancia con instrucciones concisas
+    instructions += `\n\n⚠️ OBLIGATORIO: Termina SIEMPRE con ---EVALUACION--- seguido del JSON. Esta sección es esencial para el sistema pero NO debe mostrarse al usuario.\n`;
     
     // Mostrar un resumen de las instrucciones generadas para depuración
     console.log(`📝 Instrucciones de evaluación generadas: ${instructions.length} caracteres`);
