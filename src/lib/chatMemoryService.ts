@@ -413,24 +413,19 @@ export const cleanUpInteractions = async (userId: string, activityId: string) =>
       
       console.log('Resumen generado correctamente:', summary.substring(0, 50) + '...');
       
-      // Guardar el resumen en `chat_summaries`
-      console.log('Guardando resumen en la base de datos...');
+      // Guardar el resumen con embedding en `chat_summaries`
+      console.log('Guardando resumen con embedding en la base de datos...');
       
-      const { data, error: insertError } = await supabase.from('chat_summaries').insert([{ 
-        user_id: userId, 
-        activity_id: realActivityId, 
-        summary: summary, 
-        created_at: new Date().toISOString()
-      }]).select();
+      const success = await saveSummaryWithEmbedding(summary, userId, realActivityId);
       
       console.log(`Guardando resumen para actividad real: ${realActivityId}`);
       
-      if (insertError) {
-        console.error('Error al guardar el resumen en chat_summaries:', insertError);
+      if (!success) {
+        console.error('Error al guardar el resumen con embedding en chat_summaries');
         return;
       }
       
-      console.log('Resumen guardado correctamente con ID:', data?.[0]?.id);
+      console.log('Resumen con embedding guardado correctamente');
       
       // Nota: Temporalmente desactivamos la eliminación de interacciones antiguas
       // para mantener el historial completo en la base de datos
@@ -516,15 +511,126 @@ async function fetchDiagnosticSummary(userId: string) {
 }
 
 /**
- * Obtiene los resúmenes de memoria a largo plazo
+ * Obtiene resúmenes relevantes basados en una consulta usando embeddings
+ * @param query Consulta para buscar resúmenes relevantes
  * @param userId ID del usuario
  * @param activityId ID de la actividad
- * @returns Array de resúmenes o array vacío si no existen
+ * @param limit Número máximo de resúmenes a devolver
+ * @returns Array de resúmenes relevantes con su puntuación de similitud
  */
-async function fetchLongTermMemorySummaries(userId: string, activityId: string) {
+async function getRelevantSummaries(
+  query: string,
+  userId: string,
+  activityId: string,
+  limit: number = 3
+): Promise<{summary: string, similarity: number}[]> {
   try {
     // Obtener el ID real de la actividad
     const realActivityId = await getRealActivityId(activityId) || activityId;
+    
+    // Generar embedding para la consulta
+    const queryEmbedding = await generateEmbedding(query);
+    
+    // Buscar resúmenes relevantes usando la función RPC
+    const { data, error } = await supabase.rpc('match_summaries', {
+      query_embedding: queryEmbedding,
+      match_threshold: 0.7,
+      match_count: limit,
+      activity_id_param: realActivityId,
+      user_id_param: userId
+    });
+    
+    if (error) {
+      console.error('Error al buscar resúmenes relevantes:', error);
+      return [];
+    }
+    
+    if (!data || data.length === 0) {
+      console.log('No se encontraron resúmenes relevantes para la consulta');
+      return [];
+    }
+    
+    console.log(`Se encontraron ${data.length} resúmenes relevantes para la consulta`);
+    return data.map((item: {summary: string, similarity: number}) => ({
+      summary: item.summary,
+      similarity: item.similarity
+    }));
+  } catch (error) {
+    console.error('Error al obtener resúmenes relevantes:', error);
+    return [];
+  }
+}
+
+/**
+ * Guarda un resumen con su embedding
+ * @param summary Texto del resumen
+ * @param userId ID del usuario
+ * @param activityId ID de la actividad
+ * @returns true si se guardó correctamente, false en caso contrario
+ */
+export async function saveSummaryWithEmbedding(
+  summary: string,
+  userId: string,
+  activityId: string
+): Promise<boolean> {
+  try {
+    // Generar embedding para el resumen
+    const embedding = await generateEmbedding(summary);
+    
+    // Guardar en la base de datos con el embedding
+    const { error } = await supabase.from('chat_summaries').insert({
+      user_id: userId,
+      activity_id: activityId,
+      summary: summary,
+      embedding: embedding
+    });
+    
+    if (error) {
+      console.error('Error al guardar resumen con embedding:', error);
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error al vectorizar y guardar resumen:', error);
+    return false;
+  }
+}
+
+/**
+ * Obtiene los resúmenes de memoria a largo plazo
+ * @param userId ID del usuario
+ * @param activityId ID de la actividad
+ * @param userMessage Mensaje del usuario para buscar resúmenes relevantes
+ * @returns Array de resúmenes o array vacío si no existen
+ */
+async function fetchLongTermMemorySummaries(
+  userId: string,
+  activityId: string,
+  userMessage: string = ''
+) {
+  try {
+    // Obtener el ID real de la actividad
+    const realActivityId = await getRealActivityId(activityId) || activityId;
+    
+    // Si tenemos un mensaje del usuario, usarlo para buscar resúmenes relevantes
+    if (userMessage && userMessage.trim().length > 0) {
+      const relevantSummaries = await getRelevantSummaries(
+        userMessage,
+        userId,
+        realActivityId
+      );
+      
+      if (relevantSummaries.length > 0) {
+        console.log(`Se encontraron ${relevantSummaries.length} resúmenes relevantes para el mensaje del usuario`);
+        return relevantSummaries.map(item => {
+          const similarityPercentage = Math.round(item.similarity * 100);
+          return `[Relevancia: ${similarityPercentage}%] ${item.summary}`;
+        });
+      }
+    }
+    
+    // Si no hay mensaje o no se encontraron resúmenes relevantes, usar el enfoque tradicional
     console.log(`Buscando resúmenes para actividad real: ${realActivityId}`);
     
     const { data, error } = await supabase
@@ -586,8 +692,8 @@ export async function generateContextForOpenAI(
     const companyProfile = await fetchCompanyProfile(userId);
     const diagnosticSummary = await fetchDiagnosticSummary(userId);
     
-    // Obtener resúmenes de memoria a largo plazo
-    const longTermMemorySummaries = await fetchLongTermMemorySummaries(userId, activityId);
+    // Obtener resúmenes de memoria a largo plazo relevantes al mensaje del usuario
+    const longTermMemorySummaries = await fetchLongTermMemorySummaries(userId, activityId, userMessage);
     
     // Construir el contexto para OpenAI
     let context = [];
