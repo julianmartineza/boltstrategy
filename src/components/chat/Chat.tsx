@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { useProgramStore } from '../../store/programStore';
-import { ActivityContent } from '../../types';
-import { chatService } from '../../services/chatService';
 import { updateShortTermMemoryWithParams, clearShortTermMemory } from '../../lib/chatMemoryService';
-import { ChatMessage } from './ChatMessage';
-import { ChatInput } from './ChatInput';
-import { WelcomeMessage } from './WelcomeMessage';
-import { InsightsList } from './InsightsList';
 import { useActivityContent } from '../../hooks/useActivityContent';
 import { useChatMessages } from '../../hooks/useChatMessages';
 import { useChatInsights } from '../../hooks/useChatInsights';
+import { ChatMessage } from './ChatMessage';
+import { ChatInput } from './ChatInput';
+import { InsightsList } from './InsightsList';
 import { TypingIndicator } from './TypingIndicator';
+import { ActivityContent } from '../../types';
+import { chatService } from '../../services/chatService';
+import { generateCompletionMessage } from '../../services/activityCompletionService';
 import { MessageSquare, Lightbulb, BookOpen } from 'lucide-react';
+
+import { WelcomeMessage } from './WelcomeMessage';
 
 interface ChatProps {
   stageContentId?: string;
@@ -38,6 +40,8 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
   const [showInsights, setShowInsights] = useState(false);
   const [loadingActivity, setLoadingActivity] = useState(false); // Estado local para tracking
   const [activityErrorMessage, setActivityErrorMessage] = useState<string | null>(null);
+  const [isActivityCompleted, setIsActivityCompleted] = useState(false);
+  const [completionMessage, setCompletionMessage] = useState<string | null>(null);
 
   // Sincronizar estado de carga de actividad
   useEffect(() => {
@@ -64,6 +68,9 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
     clearMessages,
     messagesLoaded
   } = useChatMessages(user?.id, activityContent?.id);
+  
+  // Ya no necesitamos la función addSystemMessage porque la evaluación
+  // ahora se integra directamente en la respuesta del chat
   
   // Mostrar mensaje de error si existe
   useEffect(() => {
@@ -106,6 +113,9 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
     }
   }, [messages]);
 
+  // Ya no necesitamos una función de evaluación separada porque la evaluación
+  // ahora se realiza directamente en el servicio de chat
+
   // Manejar el envío de mensajes
   const handleSubmit = async () => {
     if (isLoading || !input.trim() || !user || !activityContent) return;
@@ -140,13 +150,17 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
       // Log ANTES de llamar a generateResponse
       console.log('[handleSubmit] activityContent.id a punto de enviar:', activityContent.id);
       
-      // Generar respuesta del bot
-      const botResponse = await chatService.generateResponse(
+      // Generar respuesta del bot (ahora incluye evaluación integrada)
+      const response = await chatService.generateResponse(
         userMessage,
         activityContent,
         company,
         interactionCount
       );
+      
+          // La respuesta ahora es un objeto con mensaje y resultado de evaluación
+      const botResponse = response.message;
+      const evaluationResult = response.evaluationResult;
       
       // Actualizar la memoria a corto plazo con la respuesta del bot
       updateShortTermMemoryWithParams(botResponse, 'assistant');
@@ -161,6 +175,22 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
         // Mostrar botón de guardar insight
         showInsightButtonAfterResponse();
       }
+      
+      // Procesar el resultado de la evaluación si existe
+      if (evaluationResult) {
+        console.log('Resultado de evaluación recibido:', evaluationResult);
+        
+        if (evaluationResult.isCompleted && !isActivityCompleted) {
+          setIsActivityCompleted(true);
+          const completionMsg = evaluationResult.message || generateCompletionMessage(activityContent);
+          setCompletionMessage(completionMsg);
+          console.log('✅ Actividad completada:', completionMsg);
+        }
+      }
+      
+      // Actualizar contador de interacciones
+      const newInteractionCount = interactionCount + 1;
+      console.log(`Interacción ${newInteractionCount} completada`);
     } catch (error) {
       console.error('Error in handleSubmit:', error);
       addAIMessage(
@@ -390,6 +420,39 @@ export function Chat({ stageContentId, activityContentProp }: ChatProps = {}) {
               />
             ))}
             {isLoading && <TypingIndicator />}
+            
+            {/* Eliminamos la visualización de detalles de evaluación en la parte inferior del chat */}
+            
+            {isActivityCompleted && completionMessage && (
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200 mt-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-green-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-green-800">¡Actividad completada!</h3>
+                    <div className="mt-2 text-sm text-green-700">
+                      <p>{completionMessage}</p>
+                    </div>
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                        onClick={() => {
+                          // Aquí podríamos implementar la navegación a la siguiente actividad
+                          // Por ahora, solo cerraremos el mensaje
+                          setIsActivityCompleted(false);
+                        }}
+                      >
+                        Continuar a la siguiente actividad
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
         )}

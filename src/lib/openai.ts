@@ -137,18 +137,19 @@ export async function findSimilarMessages(
  * @param activityId ID de la actividad
  * @param userMessage Mensaje del usuario
  * @param aiResponse Respuesta de la IA
+ * @returns El ID real utilizado para guardar la interacción (puede ser diferente del proporcionado)
  */
 export async function saveInteractionWithEmbeddings(
   userId: string,
   activityId: string,
   userMessage: string,
   aiResponse: string
-): Promise<void> {
+): Promise<string> {
   try {
     // Verificamos si el activity_id es válido
     if (!activityId || activityId === 'undefined' || activityId === 'null') {
       console.error('❌ No se puede guardar la interacción: activity_id no válido', { activityId });
-      return;
+      return activityId; // Devolver el ID original aunque no sea válido
     }
 
     console.log('🔍 Intentando guardar interacción para activity_id:', activityId);
@@ -211,7 +212,7 @@ export async function saveInteractionWithEmbeddings(
         activityId,
         tablas_verificadas: ['activity_contents', 'content_registry']
       });
-      return;
+      return activityId; // Devolver el ID original aunque no sea válido
     }
     
     // Intentar generar embeddings, pero continuar incluso si fallan
@@ -254,8 +255,14 @@ export async function saveInteractionWithEmbeddings(
     } else {
       console.log('✅ Interacción guardada correctamente para activity_id:', validActivityId);
     }
+    
+    // Devolver el ID real utilizado para guardar la interacción
+    // Esto permite que otras partes del código usen este ID para evaluaciones
+    return validActivityId;
   } catch (error) {
     console.error('Error en saveInteractionWithEmbeddings:', error);
+    // En caso de error, devolver el ID original
+    return activityId;
   }
 }
 
@@ -298,7 +305,7 @@ export async function generateBotResponse(
         })),
         model: CHAT_MODEL,
         temperature: 0.7,
-        max_tokens: 1000,
+        max_tokens: 3000,
         presence_penalty: 0.6,
         frequency_penalty: 0.3
       });

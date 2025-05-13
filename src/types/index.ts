@@ -87,12 +87,18 @@ export interface ActivityData {
   prompt_template?: string;
   required_steps?: string[];
   completion_criteria?: {
-    min_responses?: number;
+    min_interactions?: number;
+    max_interactions?: number;
     required_topics?: string[];
+    required_keywords?: string[];
+    custom_evaluation?: string;
   };
+  completion_message?: string;
+  generate_custom_completion_message?: boolean;
   step?: number;
   prompt_section?: string;
   dependencies?: string[];
+  title?: string;
 }
 
 export interface ActivityContent {

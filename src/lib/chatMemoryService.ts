@@ -2,6 +2,36 @@ import { supabase } from './supabase';
 import { UserInsight } from '../types';
 import { generateBotResponse, generateEmbedding, findSimilarMessages } from './openai';
 
+/**
+ * Busca el ID real de una actividad en content_registry
+ * @param activityId ID de la actividad (posiblemente un ID de registro)
+ * @returns ID real de la actividad o el mismo ID si no se encuentra
+ */
+export const getRealActivityId = async (activityId: string) => {
+  if (!activityId) return null;
+  
+  try {
+    console.log(`Verificando ID real para actividad: ${activityId}`);
+    
+    const { data } = await supabase
+      .from('content_registry')
+      .select('content_id')
+      .eq('id', activityId)
+      .eq('content_type', 'activity')
+      .single();
+      
+    if (data?.content_id) {
+      console.log(`✅ ID encontrado en content_registry, usando content_id: ${data.content_id}`);
+      return data.content_id;
+    }
+    
+    return activityId;
+  } catch (error) {
+    console.error('Error al buscar ID real de actividad:', error);
+    return activityId;
+  }
+};
+
 // Definir la interfaz ChatMessage localmente para evitar problemas de importación
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -51,23 +81,8 @@ export const fetchDependencies = async (activityId: string): Promise<string[]> =
   try {
     console.log(`Buscando dependencias para actividad: ${activityId}`);
     
-    // Verificar si el ID es un ID de registro en content_registry
-    let validActivityId = activityId;
-    
-    try {
-      const { data: registryData, error: registryError } = await supabase
-        .from('content_registry')
-        .select('content_id, content_type')
-        .eq('id', activityId)
-        .single();
-      
-      if (!registryError && registryData && registryData.content_type === 'activity') {
-        console.log(`✅ ID encontrado en content_registry, usando content_id: ${registryData.content_id}`);
-        validActivityId = registryData.content_id;
-      }
-    } catch (registryCheckError) {
-      console.log('No se encontró el ID en content_registry, usando el ID original');
-    }
+    // Obtener el ID real de la actividad usando la nueva función
+    const validActivityId = await getRealActivityId(activityId) || activityId;
     
     // Ahora buscar con el ID correcto
     const { data, error } = await supabase
@@ -314,12 +329,16 @@ export const cleanUpInteractions = async (userId: string, activityId: string) =>
   console.log(`Iniciando cleanUpInteractions para usuario ${userId} y actividad ${activityId}`);
   
   try {
+    // Obtener el ID real de la actividad
+    const realActivityId = await getRealActivityId(activityId) || activityId;
+    console.log(`Usando ID real para cleanUpInteractions: ${realActivityId}`);
+    
     const { data: interactions, error } = await supabase
       .from('activity_interactions')
       .select('*')
       .eq('user_id', userId)
-      .eq('activity_id', activityId)
-      .order('timestamp', { ascending: true });
+      .eq('activity_id', realActivityId)
+      .order('created_at', { ascending: true });
     
     if (error) {
       console.error('Error al obtener interacciones:', error);
@@ -328,9 +347,36 @@ export const cleanUpInteractions = async (userId: string, activityId: string) =>
     
     console.log(`Se encontraron ${interactions?.length || 0} interacciones para el usuario ${userId}`);
     
-    if (!interactions || interactions.length < 10) {
-      console.log('No hay suficientes interacciones para generar un resumen (mínimo 10)');
+    if (!interactions || interactions.length < 5) {
+      console.log('No hay suficientes interacciones para generar un resumen (mínimo 5)');
       return;
+    }
+    
+    // Verificar cuándo se generó el último resumen y cuántas interacciones nuevas hay desde entonces
+    const { data: existingSummaries, error: summaryError } = await supabase
+      .from('chat_summaries')
+      .select('created_at')
+      .eq('user_id', userId)
+      .eq('activity_id', realActivityId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    
+    if (!summaryError && existingSummaries && existingSummaries.length > 0) {
+      const lastSummaryDate = new Date(existingSummaries[0].created_at);
+      
+      // Contar cuántas interacciones nuevas hay desde el último resumen
+      const newInteractionsCount = interactions.filter(interaction => {
+        const interactionDate = new Date(interaction.created_at || '');
+        return interactionDate > lastSummaryDate;
+      }).length;
+      
+      console.log(`Hay ${newInteractionsCount} interacciones nuevas desde el último resumen`);
+      
+      // Solo generar un nuevo resumen si hay al menos 5 interacciones nuevas desde el último resumen
+      if (newInteractionsCount < 5) {
+        console.log('No hay suficientes interacciones nuevas para generar un resumen (mínimo 5 desde el último resumen)');
+        return;
+      }
     }
     
     // Generar resumen con OpenAI
@@ -372,10 +418,12 @@ export const cleanUpInteractions = async (userId: string, activityId: string) =>
       
       const { data, error: insertError } = await supabase.from('chat_summaries').insert([{ 
         user_id: userId, 
-        activity_id: activityId, 
+        activity_id: realActivityId, 
         summary: summary, 
         created_at: new Date().toISOString()
       }]).select();
+      
+      console.log(`Guardando resumen para actividad real: ${realActivityId}`);
       
       if (insertError) {
         console.error('Error al guardar el resumen en chat_summaries:', insertError);
@@ -475,11 +523,15 @@ async function fetchDiagnosticSummary(userId: string) {
  */
 async function fetchLongTermMemorySummaries(userId: string, activityId: string) {
   try {
+    // Obtener el ID real de la actividad
+    const realActivityId = await getRealActivityId(activityId) || activityId;
+    console.log(`Buscando resúmenes para actividad real: ${realActivityId}`);
+    
     const { data, error } = await supabase
       .from('chat_summaries')
       .select('summary, created_at')
       .eq('user_id', userId)
-      .eq('activity_id', activityId)
+      .eq('activity_id', realActivityId)
       .order('created_at', { ascending: false })
       .limit(3);
 
@@ -488,6 +540,7 @@ async function fetchLongTermMemorySummaries(userId: string, activityId: string) 
       return [];
     }
 
+    console.log(`Se encontraron ${data.length} resúmenes para el usuario ${userId} y actividad ${realActivityId}`);
     return data.map(item => item.summary);
   } catch (error) {
     console.error('Error al obtener resúmenes de memoria a largo plazo:', error);
@@ -645,11 +698,32 @@ export async function generateContextForOpenAI(
       });
     }
     
-    // Añadir historial de chat a corto plazo
-    context = [...context, ...chatHistory];
+    // Eliminar posibles duplicados en el historial de chat
+    const uniqueMessages = new Map();
     
-    // Verificar si el último mensaje en chatHistory ya es el mensaje actual del usuario
-    const lastMessage = chatHistory.length > 0 ? chatHistory[chatHistory.length - 1] : null;
+    // Procesar cada mensaje del historial para eliminar duplicados
+    chatHistory.forEach((msg, index) => {
+      // Crear una clave única para cada mensaje basada en su rol y contenido
+      const key = `${msg.role}_${msg.content.substring(0, 50)}`;
+      
+      // Si es un mensaje duplicado, solo mantener la última ocurrencia
+      if (!uniqueMessages.has(key) || index > uniqueMessages.get(key)) {
+        uniqueMessages.set(key, index);
+      }
+    });
+    
+    // Reconstruir el historial sin duplicados
+    const deduplicatedHistory = Array.from(uniqueMessages.entries())
+      .sort((a, b) => a[1] - b[1]) // Ordenar por el índice original
+      .map(([_, index]) => chatHistory[index]);
+    
+    console.log(`Historial original: ${chatHistory.length} mensajes, Historial sin duplicados: ${deduplicatedHistory.length} mensajes`);
+    
+    // Añadir historial de chat a corto plazo sin duplicados
+    context = [...context, ...deduplicatedHistory];
+    
+    // Verificar si el último mensaje en el historial sin duplicados ya es el mensaje actual del usuario
+    const lastMessage = deduplicatedHistory.length > 0 ? deduplicatedHistory[deduplicatedHistory.length - 1] : null;
     const isLastMessageFromUser = lastMessage && lastMessage.role === 'user';
     const isLastMessageSameAsCurrentMessage = isLastMessageFromUser && lastMessage.content === userMessage;
     
@@ -691,11 +765,15 @@ export const saveUserInsight = async (
   content: string
 ): Promise<UserInsight | null> => {
   try {
+    // Obtener el ID real de la actividad
+    const realActivityId = await getRealActivityId(activityId) || activityId;
+    console.log(`Guardando insight para actividad real: ${realActivityId}`);
+    
     const { data, error } = await supabase
       .from('user_insights')
       .insert([{
         user_id: userId,
-        activity_id: activityId,
+        activity_id: realActivityId,
         content: content,
         created_at: new Date().toISOString()
       }])
@@ -725,11 +803,15 @@ export const fetchUserInsights = async (
   activityId: string
 ): Promise<UserInsight[]> => {
   try {
+    // Obtener el ID real de la actividad
+    const realActivityId = await getRealActivityId(activityId) || activityId;
+    console.log(`Buscando insights para actividad real: ${realActivityId}`);
+    
     const { data, error } = await supabase
       .from('user_insights')
       .select('*')
       .eq('user_id', userId)
-      .eq('activity_id', activityId)
+      .eq('activity_id', realActivityId)
       .order('created_at', { ascending: false });
 
     if (error) {

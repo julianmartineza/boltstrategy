@@ -375,6 +375,10 @@ export default function Dashboard() {
                     path="/admin/settings" 
                     element={<AdminDashboard />} 
                   />
+                  <Route 
+                    path="/admin/evaluation" 
+                    element={<AdminDashboard />} 
+                  />
                   {/* Ruta para la gestión de asesores */}
                   <Route 
                     path="/admin/advisors/:id" 

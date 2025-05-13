@@ -3,7 +3,8 @@ import { useAuthStore } from '../../store/authStore';
 import { Navigate, useNavigate, useLocation } from 'react-router-dom';
 import ProgramsManager from './ProgramsManager';
 import ContentManager from './ContentManager';
-import { Layers, FileText, Settings } from 'lucide-react';
+import ActivityEvaluation from './ActivityEvaluation';
+import { Layers, FileText, Settings, ClipboardCheck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import UserManager from '../../components/admin/UserManager';
 
@@ -13,14 +14,15 @@ const AdminDashboard: React.FC = () => {
   const location = useLocation();
   
   // Extraer la pestaña activa de la URL
-  const getTabFromUrl = (): 'programs' | 'content' | 'settings' => {
+  const getTabFromUrl = (): 'programs' | 'content' | 'evaluation' | 'settings' => {
     const path = location.pathname;
     if (path.includes('/dashboard/admin/content')) return 'content';
+    if (path.includes('/dashboard/admin/evaluation')) return 'evaluation';
     if (path.includes('/dashboard/admin/settings')) return 'settings';
     return 'programs'; // Por defecto
   };
   
-  const [currentTab, setCurrentTab] = useState<'programs' | 'content' | 'settings'>(getTabFromUrl());
+  const [currentTab, setCurrentTab] = useState<'programs' | 'content' | 'evaluation' | 'settings'>(getTabFromUrl());
   const [settingsTab, setSettingsTab] = useState<'users' | 'system'>('users');
 
   // Redirigir si el usuario no es administrador
@@ -37,7 +39,7 @@ const AdminDashboard: React.FC = () => {
   }, [location.pathname, currentTab]);
 
   // Cambiar de pestaña y actualizar la URL
-  const handleTabChange = (tab: 'programs' | 'content' | 'settings') => {
+  const handleTabChange = (tab: 'programs' | 'content' | 'evaluation' | 'settings') => {
     setCurrentTab(tab);
     navigate(`/dashboard/admin/${tab}`);
   };
@@ -54,6 +56,8 @@ const AdminDashboard: React.FC = () => {
         return <ProgramsManager />;
       case 'content':
         return <ContentManager />;
+      case 'evaluation':
+        return <ActivityEvaluation />;
       case 'settings':
         return (
           <div className="p-6 bg-white rounded-lg shadow-md">
@@ -126,7 +130,7 @@ const AdminDashboard: React.FC = () => {
         <h1 className="text-2xl font-bold text-blue-700 mb-6">Panel de Administración</h1>
         
         {/* Botones tipo thumbnails */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
           <button
             onClick={() => handleTabChange('programs')}
             className={cn(
@@ -156,6 +160,20 @@ const AdminDashboard: React.FC = () => {
           </button>
           
           <button
+            onClick={() => handleTabChange('evaluation')}
+            className={cn(
+              "flex flex-col items-center justify-center p-6 rounded-lg shadow-sm transition-all duration-200 border-2",
+              currentTab === 'evaluation' 
+                ? "bg-blue-50 border-blue-500 text-blue-700" 
+                : "bg-white border-transparent hover:border-blue-200 hover:bg-blue-50/50 text-gray-600"
+            )}
+          >
+            <ClipboardCheck size={32} className="mb-2" />
+            <span className="font-medium">Evaluación</span>
+            <p className="text-xs mt-1 text-gray-500">Configurar evaluación de actividades</p>
+          </button>
+          
+          <button
             onClick={() => handleTabChange('settings')}
             className={cn(
               "flex flex-col items-center justify-center p-6 rounded-lg shadow-sm transition-all duration-200 border-2",
@@ -177,6 +195,7 @@ const AdminDashboard: React.FC = () => {
           <h2 className="text-lg font-semibold">
             {currentTab === 'programs' && 'Gestión de Programas'}
             {currentTab === 'content' && 'Gestión de Contenido'}
+            {currentTab === 'evaluation' && 'Evaluación de Actividades'}
             {currentTab === 'settings' && 'Configuración'}
           </h2>
         </div>

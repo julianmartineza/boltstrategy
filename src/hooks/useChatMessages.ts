@@ -191,13 +191,22 @@ export function useChatMessages(userId?: string, activityId?: string) {
     // Verificar si el mensaje ya existe para evitar duplicados
     const isDuplicate = messages.some(
       msg => msg.sender === 'user' && msg.content === content && 
-      // Verificar si el mensaje se añadió en los últimos 2 segundos
-      (new Date().getTime() - msg.timestamp.getTime() < 2000)
+      // Verificar si el mensaje se añadió en los últimos 5 segundos
+      (new Date().getTime() - msg.timestamp.getTime() < 5000)
     );
     
     if (isDuplicate) {
       console.log('Evitando mensaje duplicado del usuario:', content.substring(0, 30));
       return;
+    }
+    
+    // Verificar si es el mismo contenido que el último mensaje
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.sender === 'user' && lastMessage.content === content) {
+        console.log('Evitando mensaje repetido del usuario:', content.substring(0, 30));
+        return;
+      }
     }
     
     const newMessage: ChatMessage = {
@@ -222,13 +231,22 @@ export function useChatMessages(userId?: string, activityId?: string) {
     // Verificar si el mensaje ya existe para evitar duplicados
     const isDuplicate = messages.some(
       msg => msg.sender === 'ai' && msg.content === content && 
-      // Verificar si el mensaje se añadió en los últimos 2 segundos
-      (new Date().getTime() - msg.timestamp.getTime() < 2000)
+      // Verificar si el mensaje se añadió en los últimos 5 segundos
+      (new Date().getTime() - msg.timestamp.getTime() < 5000)
     );
     
     if (isDuplicate) {
       console.log('Evitando mensaje duplicado de la IA:', content.substring(0, 30));
       return;
+    }
+    
+    // Verificar si es el mismo contenido que el último mensaje
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.sender === 'ai' && lastMessage.content === content) {
+        console.log('Evitando mensaje repetido de la IA:', content.substring(0, 30));
+        return;
+      }
     }
     
     const newMessage: ChatMessage = {
