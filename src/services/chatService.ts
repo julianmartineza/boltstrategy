@@ -178,13 +178,16 @@ export const chatService = {
       }
       
       // Generar instrucciones de evaluación si corresponde
+      // Verificar si esta interacción debe incluir evaluación
+      let isForEvaluation = false;
       let evaluationInstructions = '';
+      
       try {
-        // Verificar si esta interacción debe incluir evaluación
-        const shouldIncludeEvaluation = await shouldEvaluate(activityId, interactionCount);
+        // Determinar si esta interacción requiere evaluación
+        isForEvaluation = await shouldEvaluate(activityId, interactionCount);
         
         // Generar instrucciones de evaluación si corresponde
-        if (shouldIncludeEvaluation && activityContent.activity_data) {
+        if (isForEvaluation && activityContent.activity_data) {
           evaluationInstructions = await generateEvaluationInstructions(
             activityId,
             activityContent.activity_data as any,
@@ -194,27 +197,35 @@ export const chatService = {
         }
       } catch (error) {
         console.error('Error al generar instrucciones de evaluación:', error);
+        isForEvaluation = false; // En caso de error, no realizar evaluación
       }
       
       // Importar la función para generar el contexto
       const { generateContextForOpenAI } = await import('../lib/chatMemoryService');
       
       // Generar el contexto completo que incluye historial, resúmenes y dependencias
+      // Pasar opciones para configurar el contexto según sea necesario
       const context = await generateContextForOpenAI(
         userId,
         activityId,
         userMessage,
-        finalPrompt
+        finalPrompt,
+        {
+          isForEvaluation
+        }
       );
       
-      // Añadir las instrucciones de evaluación como segundo mensaje del sistema (después del contexto del programa)
-      // Esto hace que las instrucciones sean más prominentes para el modelo
-      if (evaluationInstructions) {
-        context.unshift({ role: 'system', content: evaluationInstructions });
+      // Si NO es para evaluación, añadir el contexto del programa como primer mensaje del sistema
+      if (!isForEvaluation) {
+        context.unshift({ role: 'system', content: programContext });
       }
       
-      // Añadir el contexto del programa como primer mensaje del sistema
-      context.unshift({ role: 'system', content: programContext });
+      // Modificar la posición de las instrucciones de evaluación para que sean lo último que ve el modelo
+      if (evaluationInstructions) {
+        // En lugar de unshift (añadir al inicio), usamos push para añadir al final
+        // para que sea lo último que ve el modelo antes de generar la respuesta
+        context.push({ role: 'system', content: evaluationInstructions });
+      }
       
       // Log detallado del prompt solo en desarrollo
       if (import.meta.env.DEV) {
@@ -245,18 +256,27 @@ export const chatService = {
         if (evaluationResult.isCompleted) {
           try {
             // Crear el registro de evaluación
-            // Generar un hash simple para la conversación
-            const conversationHash = `${userId}_${activityId}_${Date.now()}`;
-            console.log(`Generando hash de conversación para evaluación: ${conversationHash}`);
+            // Primero, resolver el ID real de la actividad usando la función de evaluationService
+            const { resolveActivityId } = await import('../services/evaluationService');
+            const realActivityId = await resolveActivityId(activityId);
+            console.log(`✅ Resolviendo ID para evaluación: ${activityId} -> ${realActivityId}`);
+            
+            // Generar un hash simple para la conversación y limitarlo a 64 caracteres
+            // Usar solo los primeros 8 caracteres de cada ID y el timestamp completo
+            const userIdShort = userId.substring(0, 8);
+            const activityIdShort = realActivityId.substring(0, 8); // Usar el ID real para el hash
+            const timestamp = Date.now().toString();
+            const conversationHash = `${userIdShort}_${activityIdShort}_${timestamp}`;
+            console.log(`Generando hash de conversación para evaluación: ${conversationHash} (longitud: ${conversationHash.length})`);
             
             await logEvaluation({
-              activityId: activityId,
-              userId: userId,
-              rubricScores: evaluationResult.details?.rubric || {},
-              overallScore: evaluationResult.details?.overallScore || 1.0,
-              feedbackMessage: evaluationResult.message,
-              isCompleted: true,
-              conversationHash: conversationHash
+              activity_id: realActivityId, // Usar el ID real de la actividad
+              user_id: userId,
+              rubric_scores: evaluationResult.details?.rubric || {},
+              overall_score: evaluationResult.details?.overallScore || 1.0,
+              feedback: evaluationResult.message,
+              is_completed: true,
+              conversation_hash: conversationHash
             });
             
             console.log('✅ Evaluación registrada en la base de datos');
@@ -596,14 +616,14 @@ export const chatService = {
         console.log(`✅ Usando ID real para obtener historial: ${realActivityId}`);
       }
       
-      // Obtener las últimas 20 interacciones
+      // Obtener todas las interacciones de la actividad sin límite
+      // para asegurar que tengamos el contexto completo
       const { data: interactions, error } = await supabase
         .from('chat_interactions')
         .select('*')
         .eq('user_id', userId)
         .eq('activity_id', realActivityId)
-        .order('created_at', { ascending: true })
-        .limit(20);
+        .order('created_at', { ascending: true });
       
       if (error) {
         console.error('Error al obtener interacciones:', error);
@@ -618,12 +638,51 @@ export const chatService = {
       console.log(`✅ Se encontraron ${interactions.length} interacciones para la evaluación`);
       
       // Convertir las interacciones al formato requerido
+      // Mantenemos el par pregunta-respuesta para cada interacción
+      // Excluimos explícitamente mensajes del sistema para la evaluación
       const chatHistory = interactions.flatMap(interaction => [
         { role: 'user', content: interaction.user_message },
         { role: 'assistant', content: interaction.bot_message }
       ]);
       
-      return chatHistory;
+      // Filtrar cualquier mensaje del sistema que pudiera haberse colado
+      const filteredChatHistory = chatHistory.filter(msg => msg.role !== 'system');
+      console.log(`🔍 Filtrados ${chatHistory.length - filteredChatHistory.length} mensajes del sistema para evaluación`);
+      
+      // Si hay demasiados mensajes, podríamos necesitar resumir o truncar
+      // pero manteniendo siempre los pares pregunta-respuesta intactos
+      let finalHistory = filteredChatHistory;
+      
+      if (filteredChatHistory.length > 40) { // Si hay más de 20 intercambios
+        // Estrategia: mantener el inicio, algunos del medio y el final
+        // Esto preserva el contexto inicial, algunos hitos intermedios y la conclusión
+        const firstPairs = filteredChatHistory.slice(0, 10); // 5 intercambios iniciales
+        const lastPairs = filteredChatHistory.slice(-20); // 10 intercambios finales
+        
+        // Seleccionar algunos pares del medio (cada 4 intercambios)
+        const middlePairs = [];
+        for (let i = 10; i < filteredChatHistory.length - 20; i += 4) {
+          if (i + 1 < filteredChatHistory.length - 20) {
+            middlePairs.push(filteredChatHistory[i], filteredChatHistory[i+1]);
+          }
+        }
+        
+        finalHistory = [
+          ...firstPairs,
+          { 
+            role: 'system', 
+            content: `[Se omitieron algunos mensajes intermedios por limitaciones de contexto]` 
+          },
+          ...middlePairs,
+          ...lastPairs
+        ];
+        
+        console.log(`⚠️ Historia truncada de ${filteredChatHistory.length} a ${finalHistory.length} mensajes para evaluación`);
+      }
+      
+      console.log(`✅ Historia final para evaluación: ${finalHistory.length} mensajes`);
+      
+      return finalHistory;
     } catch (error) {
       console.error('Error al obtener historial de chat para evaluación:', error);
       return [];

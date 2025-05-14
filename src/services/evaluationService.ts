@@ -36,13 +36,14 @@ export interface EvaluationResult {
 }
 
 export interface EvaluationLog {
-  activityId: string;
-  userId: string;
-  rubricScores: Record<string, number>;
-  overallScore: number;
-  feedbackMessage: string;
-  isCompleted: boolean;
-  conversationHash: string;
+  // Nombres de campos en formato snake_case para coincidir con la base de datos
+  activity_id: string;
+  user_id: string;
+  rubric_scores: Record<string, number>;
+  overall_score: number;
+  feedback: string; // Cambiado de feedbackMessage a feedback para coincidir con la columna en la DB
+  is_completed: boolean;
+  conversation_hash: string;
 }
 
 export interface Deliverable {
@@ -226,29 +227,29 @@ export async function logEvaluation(evaluationLog: EvaluationLog): Promise<void>
     const { data: existingEval, error: checkError } = await supabase
       .from('evaluation_logs')
       .select('id')
-      .eq('conversation_hash', evaluationLog.conversationHash)
+      .eq('conversation_hash', evaluationLog.conversation_hash)
       .maybeSingle();
     
-    if (checkError) {
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 es "no se encontraron registros"
       console.error('Error al verificar evaluación existente:', checkError);
     }
     
     if (existingEval) {
-      console.log(`⚠️ Ya existe una evaluación con el hash ${evaluationLog.conversationHash}. No se registrará duplicado.`);
+      console.log(`⚠️ Ya existe una evaluación con el hash ${evaluationLog.conversation_hash}. No se registrará duplicado.`);
       return;
     }
     
     // Insertar la evaluación en la base de datos
     const { error } = await supabase
-      .from('activity_evaluations')
+      .from('evaluation_logs')
       .insert({
-        activity_id: evaluationLog.activityId,
-        user_id: evaluationLog.userId,
-        rubric_scores: evaluationLog.rubricScores,
-        overall_score: evaluationLog.overallScore,
-        feedback_message: evaluationLog.feedbackMessage,
-        is_completed: evaluationLog.isCompleted,
-        conversation_hash: evaluationLog.conversationHash,
+        activity_id: evaluationLog.activity_id,
+        user_id: evaluationLog.user_id,
+        rubric_scores: evaluationLog.rubric_scores,
+        overall_score: evaluationLog.overall_score,
+        feedback: evaluationLog.feedback,
+        is_completed: evaluationLog.is_completed,
+        conversation_hash: evaluationLog.conversation_hash,
         created_at: new Date().toISOString()
       });
 
@@ -257,24 +258,24 @@ export async function logEvaluation(evaluationLog: EvaluationLog): Promise<void>
       throw error;
     }
 
-    console.log(`✅ Evaluación registrada para actividad ${evaluationLog.activityId}`);
+    console.log(`✅ Evaluación registrada para actividad ${evaluationLog.activity_id}`);
 
     // Si la actividad está completada, actualizar el estado
-    if (evaluationLog.isCompleted) {
+    if (evaluationLog.is_completed) {
       const { error: updateError } = await supabase
         .from('activity_completions')
         .upsert({
-          activity_id: evaluationLog.activityId,
-          user_id: evaluationLog.userId,
+          activity_id: evaluationLog.activity_id,
+          user_id: evaluationLog.user_id,
           is_completed: true,
           completed_at: new Date().toISOString(),
-          evaluation_score: evaluationLog.overallScore
+          evaluation_score: evaluationLog.overall_score
         });
 
       if (updateError) {
         console.error('Error al actualizar estado de completitud:', updateError);
       } else {
-        console.log(`✅ Estado de completitud actualizado para actividad ${evaluationLog.activityId}`);
+        console.log(`✅ Estado de completitud actualizado para actividad ${evaluationLog.activity_id}`);
       }
     }
   } catch (error) {
@@ -296,8 +297,14 @@ export async function generateEvaluationInstructions(
   interactionCount: number
 ): Promise<string> {
   try {
-    // Solo evaluar cada 3 interacciones o en la primera
-    if (interactionCount % 3 !== 0 && interactionCount !== 1) {
+    // Solo evaluar cada 3 interacciones (3, 6, 9, etc.)
+    if (interactionCount % 3 !== 0) {
+      return '';
+    }
+    
+    // Asegurarse de que haya al menos 3 interacciones antes de evaluar
+    if (interactionCount < 3) {
+      console.log(`⚠️ No se realizará evaluación en la interacción ${interactionCount}. Se requieren al menos 3 interacciones.`);
       return '';
     }
     
@@ -357,23 +364,56 @@ export async function generateEvaluationInstructions(
       instructions += `\n#### Criterios Básicos:\n- Interacciones mínimas: 2\n`;
     }
     
-    // Añadir instrucciones simplificadas para el formato de respuesta
-    instructions += `\n\n⚠️⚠️⚠️ IMPORTANTE: DEBES INCLUIR UNA EVALUACIÓN AL FINAL DE TU RESPUESTA \n\nDespués de responder normalmente al usuario, AÑADE SIEMPRE esta estructura:\n\n---EVALUACION---\n{
+    // Añadir instrucciones detalladas para la evaluación y el feedback
+    instructions += `\n\n⚠️⚠️⚠️ INSTRUCCIÓN CRÍTICA - ABSOLUTAMENTE OBLIGATORIA ⚠️⚠️⚠️
+
+DESPUÉS DE RESPONDER NORMALMENTE AL USUARIO, DEBES EVALUAR LA ACTIVIDAD Y PROPORCIONAR FEEDBACK DETALLADO SIGUIENDO ESTAS PAUTAS:
+
+1. EVALUACIÓN: Determina si el usuario ha completado la actividad según los criterios y entregables especificados.
+
+2. FEEDBACK DETALLADO: Proporciona un feedback constructivo y específico que:
+   - Si la evaluación es POSITIVA: Destaca los aspectos bien logrados y sugiere áreas de mejora o próximos pasos.
+   - Si la evaluación es NEGATIVA: Explica claramente qué falta por completar, ofrece sugerencias concretas para mejorar y anima al usuario a continuar.
+
+3. FORMATO OBLIGATORIO: Añade tu evaluación en el siguiente formato exacto:
+
+---EVALUACION---
+{
   "isCompleted": true/false,
-  "message": "Breve evaluación",
+  "message": "Feedback detallado que explique por qué se considera completada o no la actividad, destacando fortalezas y áreas de mejora",
   "details": {
     "overallScore": 0.0-1.0,
     "rubric": {
       "criterio1": 0.0-1.0
     }
   }
-}\n`;
+}
 
-    // Añadir ejemplo corto
-    instructions += `\n\nEjemplo: Tu respuesta normal al usuario...\n\n---EVALUACION---\n{\n  "isCompleted": true,\n  "message": "Evaluación completa",\n  "details": {\n    "overallScore": 0.85,\n    "rubric": {\n      "criterio1": 0.9\n    }\n  }\n}\n`;
+ESTA SECCIÓN ES ABSOLUTAMENTE OBLIGATORIA. SI NO LA INCLUYES, EL SISTEMA FALLARÁ COMPLETAMENTE.
+NO OMITAS ESTA SECCIÓN BAJO NINGUNA CIRCUNSTANCIA.`;
+
+    // Añadir ejemplo claro con feedback detallado
+    instructions += `\n\nEjemplo de respuesta correcta:
+Tu respuesta normal al usuario...
+
+---EVALUACION---
+{
+  "isCompleted": true,
+  "message": "El usuario ha completado la actividad satisfactoriamente. Ha logrado identificar claramente el problema que su idea de negocio busca resolver, definiendo el dolor específico de los usuarios y el contexto en que ocurre. Los puntos fuertes de su planteamiento son la claridad y la relevancia del problema identificado. Como área de mejora, podría profundizar más en la validación empírica del problema con usuarios reales en la siguiente fase.",
+  "details": {
+    "overallScore": 0.85,
+    "rubric": {
+      "criterio1": 0.9,
+      "criterio2": 0.8,
+      "criterio3": 0.85
+    }
+  }
+}`;
 
     // Reforzar la importancia con instrucciones concisas
-    instructions += `\n\n⚠️ OBLIGATORIO: Termina SIEMPRE con ---EVALUACION--- seguido del JSON. Esta sección es esencial para el sistema pero NO debe mostrarse al usuario.\n`;
+    instructions += `\n\n⚠️ RECUERDA: SIEMPRE TERMINA TU RESPUESTA CON LA SECCIÓN ---EVALUACION--- SEGUIDA DEL JSON.
+ESTA SECCIÓN ES PARA USO INTERNO Y NO DEBE SER VISIBLE PARA EL USUARIO.
+EL USUARIO NO DEBE VER ESTA SECCIÓN, PERO EL SISTEMA LA NECESITA OBLIGATORIAMENTE.`;
 
     return instructions;
   } catch (error) {
@@ -432,15 +472,42 @@ export function extractEvaluationFromResponse(
     console.log(`✅ Evaluación encontrada en la respuesta. Texto de evaluación: ${evaluationText.substring(0, 50)}...`);
     
     // Limpiar el texto de evaluación para asegurar que sea JSON válido
-    // Eliminar comillas iniciales y finales adicionales si existen
-    evaluationText = evaluationText.replace(/^["'\s{]+/, '{').replace(/["'\s}]+$/, '}');
-    
-    // Intentar parsear el JSON de evaluación
     try {
+      // Paso 1: Eliminar cualquier texto que pueda estar antes del primer '{'
+      const jsonStartIndex = evaluationText.indexOf('{');
+      if (jsonStartIndex >= 0) {
+        evaluationText = evaluationText.substring(jsonStartIndex);
+      }
+      
+      // Paso 2: Encontrar el último '}' y eliminar todo lo que venga después
+      const jsonEndIndex = evaluationText.lastIndexOf('}');
+      if (jsonEndIndex >= 0) {
+        evaluationText = evaluationText.substring(0, jsonEndIndex + 1);
+      }
+      
+      // Paso 3: Verificar que el JSON sea válido
+      console.log(`🔍 JSON limpio para parsear: ${evaluationText.substring(0, 50)}...`);
+      
+      // Paso 4: Parsear el JSON
       evaluationResult = JSON.parse(evaluationText);
       console.log('🔍 Evaluación extraída de la respuesta:', evaluationResult.isCompleted ? '✅ Completada' : '❌ No completada');
     } catch (parseError) {
       console.error('Error al parsear la evaluación:', parseError);
+      console.log('Texto de evaluación que causó el error:', evaluationText);
+      
+      // Intento de recuperación: crear un objeto de evaluación básico basado en el texto
+      if (evaluationText.includes('"isCompleted": true') || evaluationText.includes('"isCompleted":true')) {
+        console.log('⚠️ Intentando recuperación de evaluación fallida...');
+        evaluationResult = {
+          isCompleted: true,
+          message: "Evaluación recuperada automáticamente",
+          details: {
+            overallScore: 0.8,
+            rubric: {}
+          }
+        };
+        console.log('✅ Evaluación recuperada con éxito');
+      }
     }
   }
   

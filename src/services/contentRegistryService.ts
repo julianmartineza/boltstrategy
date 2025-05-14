@@ -436,7 +436,7 @@ export const createActivityContent = async (
       .from('activity_contents')
       .insert({
         title,
-        activity_data: typeof activityData === 'string' ? activityData : JSON.stringify(activityData),
+        activity_data: typeof activityData === 'string' ? JSON.parse(activityData) : activityData, // Guardar como objeto JSON válido, sin usar JSON.stringify()
         prompt_section: extractedPromptSection,
         system_instructions: extractedSystemInstructions,
         stage_id: moduleId,
@@ -625,7 +625,7 @@ export const updateActivityContent = async (
       .from('activity_contents')
       .update({
         title: title, // Asegurarnos de actualizar el título
-        activity_data: JSON.stringify(completeActivityData),
+        activity_data: completeActivityData, // Guardar como objeto JSON válido, sin usar JSON.stringify()
         prompt_section: extractedPromptSection,
         system_instructions: extractedSystemInstructions,
         step: extractedStep,

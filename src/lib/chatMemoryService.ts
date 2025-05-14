@@ -13,12 +13,26 @@ export const getRealActivityId = async (activityId: string) => {
   try {
     console.log(`Verificando ID real para actividad: ${activityId}`);
     
+    // Primero verificar si el ID ya existe en activity_contents
+    // Si existe, ya es un ID real y no necesitamos buscarlo en content_registry
+    const { data: activityData, error: activityError } = await supabase
+      .from('activity_contents')
+      .select('id')
+      .eq('id', activityId)
+      .maybeSingle();
+    
+    if (activityData && !activityError) {
+      console.log(`✅ ID encontrado directamente en activity_contents: ${activityId}`);
+      return activityId; // Ya es un ID real
+    }
+    
+    // Si no se encuentra en activity_contents, buscar en content_registry
     const { data } = await supabase
       .from('content_registry')
       .select('content_id')
       .eq('id', activityId)
       .eq('content_type', 'activity')
-      .single();
+      .maybeSingle();
       
     if (data?.content_id) {
       console.log(`✅ ID encontrado en content_registry, usando content_id: ${data.content_id}`);
@@ -660,14 +674,34 @@ async function fetchLongTermMemorySummaries(
  * @param activityId ID de la actividad
  * @param userMessage Mensaje del usuario
  * @param systemInstructions Instrucciones del sistema para OpenAI
+ * @param isForEvaluation Indica si el contexto es para evaluación
  * @returns Contexto completo para OpenAI
  */
+import { getContextConfiguration, ContextConfig } from '../services/contextConfigService';
+
 export async function generateContextForOpenAI(
   userId: string,
   activityId: string,
   userMessage: string,
-  systemInstructions?: string
+  systemInstructions?: string,
+  options?: {
+    isForEvaluation?: boolean;
+    overrideConfig?: ContextConfig;
+  }
 ) {
+  // Determinar si es para evaluación
+  const isForEvaluation = options?.isForEvaluation || false;
+  
+  // Obtener la configuración de contexto de la base de datos
+  const contextConfig = await getContextConfiguration(activityId);
+  
+  // Determinar qué configuración usar
+  const config = options?.overrideConfig || 
+                (isForEvaluation ? 
+                  contextConfig.evaluation_context : 
+                  contextConfig.activity_context);
+                  
+  console.log(`🔧 Usando configuración de contexto para ${isForEvaluation ? 'evaluación' : 'actividad'}:`, config);
   try {
     // Verificar que tenemos los datos necesarios
     if (!userId || !activityId) {
@@ -687,6 +721,13 @@ export async function generateContextForOpenAI(
     // Obtener memoria a corto plazo
     let chatHistory = [...getShortTermMemory()];
     
+    // Filtrar mensajes del sistema si es para evaluación
+    // Solo mantenemos los mensajes del usuario y del asistente
+    if (isForEvaluation) {
+      chatHistory = chatHistory.filter(msg => msg.role !== 'system');
+      console.log(`🔍 Filtrados mensajes del sistema para evaluación. Quedan ${chatHistory.length} mensajes.`);
+    }
+    
     // Obtener dependencias y otra información relevante
     const dependencies = await fetchDependencies(activityId);
     const companyProfile = await fetchCompanyProfile(userId);
@@ -698,37 +739,40 @@ export async function generateContextForOpenAI(
     // Construir el contexto para OpenAI
     let context = [];
     
-    // Añadir instrucciones del sistema si están disponibles
-    if (systemInstructions) {
-      context.push({
-        role: 'system',
-        content: systemInstructions
-      });
-    } else {
-      context.push({
-        role: 'system',
-        content: 'Eres un asistente de estrategia empresarial. Ayuda al usuario con su consulta basándote en el contexto proporcionado.'
-      });
+    // Si NO es para evaluación, añadir instrucciones del sistema
+    if (!isForEvaluation) {
+      // Añadir instrucciones del sistema si están disponibles
+      if (systemInstructions) {
+        context.push({
+          role: 'system',
+          content: systemInstructions
+        });
+      } else {
+        context.push({
+          role: 'system',
+          content: 'Eres un asistente de estrategia empresarial. Ayuda al usuario con su consulta basándote en el contexto proporcionado.'
+        });
+      }
     }
     
-    // Añadir información de la empresa si está disponible
-    if (companyProfile) {
+    // Añadir información de la empresa si está configurado
+    if (companyProfile && config?.includeCompanyInfo) {
       context.push({
         role: 'system',
         content: `Información de la empresa: ${JSON.stringify(companyProfile)}`
       });
     }
     
-    // Añadir resumen del diagnóstico si está disponible
-    if (diagnosticSummary) {
+    // Añadir resumen del diagnóstico si está configurado
+    if (diagnosticSummary && config?.includeDiagnostic) {
       context.push({
         role: 'system',
         content: `Resumen del diagnóstico: ${JSON.stringify(diagnosticSummary)}`
       });
     }
     
-    // Añadir dependencias y su contenido si están disponibles
-    if (dependencies && dependencies.length > 0) {
+    // Añadir dependencias y su contenido si están configuradas
+    if (dependencies && dependencies.length > 0 && config?.includeDependencies) {
       console.log(`Procesando ${dependencies.length} dependencias para actividad ${activityId}`);
       
       // 1. Obtener interacciones relevantes usando búsqueda vectorial
@@ -796,8 +840,8 @@ export async function generateContextForOpenAI(
       }
     }
     
-    // Añadir resúmenes de memoria a largo plazo si están disponibles
-    if (longTermMemorySummaries && longTermMemorySummaries.length > 0) {
+    // Añadir resúmenes de memoria a largo plazo si están configurados
+    if (longTermMemorySummaries && longTermMemorySummaries.length > 0 && config?.includeMemorySummaries) {
       context.push({
         role: 'system',
         content: `Resúmenes de conversaciones anteriores: ${JSON.stringify(longTermMemorySummaries)}`

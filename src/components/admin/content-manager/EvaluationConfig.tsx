@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, Save, Plus, Trash2, ArrowLeft, AlertCircle } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import EvaluationContextConfig from '../EvaluationContextConfig';
 
 interface EvaluationConfigProps {
   activityId: string;
@@ -38,7 +39,7 @@ const EvaluationConfig: React.FC<EvaluationConfigProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'deliverables' | 'rubric'>('deliverables');
+  const [activeTab, setActiveTab] = useState<'deliverables' | 'rubric' | 'context'>('deliverables');
 
   useEffect(() => {
     const fetchEvaluationConfig = async () => {
@@ -384,30 +385,56 @@ const EvaluationConfig: React.FC<EvaluationConfigProps> = ({
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex">
           <button
-            className={`w-1/2 py-4 px-1 text-center border-b-2 font-medium text-sm ${
-              activeTab === 'deliverables'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
+            className={`px-4 py-2 text-sm font-medium ${activeTab === 'deliverables' ? 'text-blue-700 bg-blue-100 border-b-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
             onClick={() => setActiveTab('deliverables')}
           >
             Entregables
           </button>
           <button
-            className={`w-1/2 py-4 px-1 text-center border-b-2 font-medium text-sm ${
-              activeTab === 'rubric'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
+            className={`px-4 py-2 text-sm font-medium ${activeTab === 'rubric' ? 'text-blue-700 bg-blue-100 border-b-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
             onClick={() => setActiveTab('rubric')}
           >
             Rúbrica de Evaluación
+          </button>
+          <button
+            className={`px-4 py-2 text-sm font-medium ${activeTab === 'context' ? 'text-blue-700 bg-blue-100 border-b-2 border-blue-500' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setActiveTab('context')}
+          >
+            Contexto de Evaluación
           </button>
         </nav>
       </div>
       
       <div className="p-4">
-        {activeTab === 'deliverables' ? (
+        {activeTab === 'context' ? (
+          <div>
+            <div className="mb-4">
+              <h4 className="text-md font-medium text-gray-900 mb-2">Configuración de Contexto para Evaluación</h4>
+              <p className="text-sm text-gray-600 mb-4">
+                Selecciona qué elementos del contexto deben incluirse durante la evaluación de esta actividad.
+                Esto permite personalizar qué información estará disponible para el modelo de IA al evaluar las respuestas del usuario.
+              </p>
+              
+              <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
+                <h5 className="text-sm font-medium text-blue-800 mb-2">¿Por qué es importante configurar el contexto?</h5>
+                <p className="text-sm text-blue-700 mb-2">
+                  La configuración del contexto determina qué información tendrá disponible el modelo de IA al evaluar las respuestas del usuario.
+                  Dependiendo del tipo de actividad, ciertos elementos del contexto pueden ser relevantes o no para la evaluación.
+                </p>
+                <ul className="list-disc list-inside text-sm text-blue-700 space-y-1 ml-2">
+                  <li><strong>Información de empresa:</strong> Datos sobre la empresa del usuario</li>
+                  <li><strong>Diagnóstico:</strong> Resultados del diagnóstico previo</li>
+                  <li><strong>Dependencias:</strong> Información de actividades relacionadas</li>
+                  <li><strong>Contexto del programa:</strong> Información general del programa</li>
+                  <li><strong>Instrucciones del sistema:</strong> Instrucciones específicas para el modelo</li>
+                  <li><strong>Resúmenes de memoria:</strong> Resúmenes de conversaciones anteriores</li>
+                </ul>
+              </div>
+            </div>
+            
+            <EvaluationContextConfig activityId={activityId} />
+          </div>
+        ) : activeTab === 'deliverables' ? (
           <div>
             <div className="mb-4 flex justify-between items-center">
               <h4 className="text-md font-medium text-gray-900">Entregables Esperados</h4>
