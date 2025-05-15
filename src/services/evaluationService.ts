@@ -89,12 +89,25 @@ export async function shouldEvaluate(
  */
 export async function resolveActivityId(activityId: string): Promise<string> {
   try {
-    // Verificar si es un ID de registro en content_registry
+    // Primero verificamos si el ID ya existe directamente en activity_contents
+    const { data: activityExists, error: activityError } = await supabase
+      .from('activity_contents')
+      .select('id')
+      .eq('id', activityId)
+      .maybeSingle();
+    
+    // Si el ID existe directamente en activity_contents, lo usamos tal cual
+    if (activityExists && !activityError) {
+      console.log(`✅ ID encontrado directamente en activity_contents: ${activityId}`);
+      return activityId;
+    }
+    
+    // Si no existe directamente, verificamos si es un ID de registro en content_registry
     const { data: registryData, error: registryError } = await supabase
       .from('content_registry')
       .select('content_id')
       .eq('id', activityId)
-      .single();
+      .maybeSingle();
     
     if (registryData && !registryError) {
       console.log(`✅ ID encontrado en content_registry, usando content_id: ${registryData.content_id}`);
@@ -102,6 +115,7 @@ export async function resolveActivityId(activityId: string): Promise<string> {
     }
     
     // Si no es un ID de registro, usar el ID original
+    console.log(`⚠️ No se pudo resolver el ID: ${activityId}, usando el original`);
     return activityId;
   } catch (error) {
     console.error('Error al resolver ID de actividad:', error);

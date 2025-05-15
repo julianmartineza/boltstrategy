@@ -48,6 +48,9 @@ const DEFAULT_EVALUATION_CONTEXT: ContextConfig = {
   includeMemorySummaries: false
 };
 
+// Importamos la función resolveActivityId de evaluationService
+import { resolveActivityId } from './evaluationService';
+
 /**
  * Obtiene la configuración de contexto para una actividad directamente desde activity_contents
  * @param activityId ID de la actividad
@@ -55,20 +58,9 @@ const DEFAULT_EVALUATION_CONTEXT: ContextConfig = {
  */
 export async function getContextConfiguration(activityId: string): Promise<ContextConfigurations> {
   try {
-    // Primero, resolvemos el ID real de la actividad
-    let realActivityId = activityId;
-    
-    // Verificar si es un ID de registro en content_registry
-    const { data: registryData, error: registryError } = await supabase
-      .from('content_registry')
-      .select('content_id')
-      .eq('id', activityId)
-      .single();
-    
-    if (registryData && !registryError) {
-      console.log(`✅ ID encontrado en content_registry, usando content_id: ${registryData.content_id}`);
-      realActivityId = registryData.content_id;
-    }
+    // Resolvemos el ID real de la actividad usando la función centralizada
+    const realActivityId = await resolveActivityId(activityId);
+    console.log(`✅ ID resuelto para configuración de contexto: ${activityId} -> ${realActivityId}`);
     
     // Obtenemos la actividad de la tabla activity_contents
     const { data: activityData, error: activityError } = await supabase
@@ -162,7 +154,7 @@ export async function getContextConfiguration(activityId: string): Promise<Conte
   } catch (error) {
     console.error('Error al obtener configuración de contexto:', error);
     return {
-      activity_id: realActivityId || activityId, // Usamos el ID real si está disponible
+      activity_id: activityId, // Usamos el ID original en caso de error
       activity_context: DEFAULT_ACTIVITY_CONTEXT,
       evaluation_context: DEFAULT_EVALUATION_CONTEXT
     };
