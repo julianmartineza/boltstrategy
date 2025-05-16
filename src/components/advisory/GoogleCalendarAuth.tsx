@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2, Calendar, Check, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
-import { supabase } from '../../lib/supabase';
 import { googleCalendarService } from './googleCalendarService';
 import { advisoryService } from './advisoryService';
 
@@ -98,16 +97,50 @@ const GoogleCalendarAuth: React.FC<GoogleCalendarAuthProps> = ({
     }
     
     setLoading(true);
+    setError(null);
     
     try {
+      // Mostrar información sobre la configuración actual
+      console.log('=== INICIANDO PROCESO DE AUTORIZACIÓN CON GOOGLE CALENDAR ===');
+      console.log('Información de la aplicación:');
+      console.log('- URL actual:', window.location.href);
+      console.log('- URL de redirección configurada:', import.meta.env.VITE_GOOGLE_REDIRECT_URI);
+      console.log('- URL de callback esperada:', window.location.origin + '/auth/google/callback');
+      console.log('- Origen:', window.location.origin);
+      
+      // Verificar que la URL de redirección está configurada correctamente
+      if (!import.meta.env.VITE_GOOGLE_REDIRECT_URI) {
+        throw new Error('La URL de redirección (VITE_GOOGLE_REDIRECT_URI) no está configurada en el archivo .env');
+      }
+      
+      // Verificar que la URL de redirección coincide con la esperada
+      const expectedCallbackUrl = window.location.origin + '/auth/google/callback';
+      if (import.meta.env.VITE_GOOGLE_REDIRECT_URI !== expectedCallbackUrl) {
+        console.warn('Advertencia: La URL de redirección configurada no coincide con la URL esperada.');
+        console.warn('- Configurada:', import.meta.env.VITE_GOOGLE_REDIRECT_URI);
+        console.warn('- Esperada:', expectedCallbackUrl);
+        console.warn('Esto puede causar problemas si no está configurada correctamente en Google Cloud Console.');
+      }
+      
       // Obtener la URL de autorización
       const authUrl = googleCalendarService.getAuthorizationUrl();
+      console.log('URL de autorización generada:', authUrl);
       
       // Redireccionar al usuario
+      console.log('Redireccionando al usuario a la página de autorización de Google...');
       window.location.href = authUrl;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error al iniciar autorización:', err);
-      setError('Error al iniciar el proceso de autorización.');
+      
+      // Mostrar mensaje de error más específico
+      if (err.message && err.message.includes('Credenciales de Google no configuradas')) {
+        setError('Las credenciales de Google Calendar no están configuradas correctamente. Por favor, contacta al administrador.');
+      } else if (err.message && err.message.includes('URL de redirección no configurada')) {
+        setError('La URL de redirección no está configurada correctamente. Por favor, contacta al administrador.');
+      } else {
+        setError(`Error al iniciar el proceso de autorización: ${err.message || 'Error desconocido'}`);
+      }
+      
       setLoading(false);
     }
   };

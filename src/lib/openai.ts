@@ -1,9 +1,4 @@
-import OpenAI from 'openai';
 import { supabase } from './supabase';
-
-// Configuración de OpenAI con logging detallado
-const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-console.log('OpenAI API Key disponible:', apiKey ? 'Sí (primeros 4 caracteres: ' + apiKey.substring(0, 4) + '...)' : 'No');
 
 // Usar modelo más potente para mejorar la capacidad de seguir instrucciones complejas
 const CHAT_MODEL = 'gpt-4o'; // Modelo con mejor capacidad para seguir instrucciones
@@ -12,10 +7,8 @@ const EMBEDDING_MODEL = 'text-embedding-3-small'; // Modelo más ligero para emb
 // Caché de embeddings para evitar solicitudes duplicadas
 const embeddingCache = new Map<string, number[]>();
 
-const openai = new OpenAI({
-  apiKey,
-  dangerouslyAllowBrowser: true // Note: In production, API calls should go through your backend
-});
+// URL base para las APIs serverless
+const API_BASE_URL = '/api';
 
 export interface SimilarMessage {
   id: string;
@@ -42,19 +35,32 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   console.log('🔍 Generando embedding para texto:', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
   
   try {
-    console.log(`📤 Enviando solicitud a OpenAI para generar embedding usando modelo: ${EMBEDDING_MODEL}`);
+    console.log(`📤 Enviando solicitud a la API para generar embedding usando modelo: ${EMBEDDING_MODEL}`);
     console.time('⏱️ Tiempo de respuesta embedding');
     
-    const response = await openai.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: text,
+    const response = await fetch(`${API_BASE_URL}/openai`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: 'embedding',
+        model: EMBEDDING_MODEL,
+        input: text
+      })
     });
     
+    if (!response.ok) {
+      throw new Error(`Error en la API: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
     console.timeEnd('⏱️ Tiempo de respuesta embedding');
-    console.log('📥 Respuesta de embedding recibida, longitud:', response.data[0].embedding.length);
+    console.log('📥 Respuesta de embedding recibida, longitud:', data.embedding.length);
     
     // Guardar en caché para futuras solicitudes
-    const embedding = response.data[0].embedding;
+    const embedding = data.embedding;
     embeddingCache.set(cacheKey, embedding);
     
     // Limitar el tamaño de la caché (máximo 50 embeddings)
@@ -279,7 +285,7 @@ export async function generateBotResponse(
 ): Promise<string> {
   try {
     // Solo mostrar logs resumidos en producción
-    console.log(`📤 Enviando solicitud a OpenAI para generar respuesta usando modelo: ${CHAT_MODEL}`);
+    console.log(`📤 Enviando solicitud a la API para generar respuesta usando modelo: ${CHAT_MODEL}`);
     console.log('📝 Estructura de mensajes:', JSON.stringify(messages.map(m => ({
       role: m.role,
       content_preview: m.content.substring(0, 50) + (m.content.length > 50 ? '...' : '')
@@ -287,7 +293,7 @@ export async function generateBotResponse(
     
     // Logs detallados solo en desarrollo
     if (import.meta.env.DEV) {
-      console.log('🔍 [DEV ONLY] PROMPT COMPLETO ENVIADO A OPENAI:');
+      console.log('🔍 [DEV ONLY] PROMPT COMPLETO ENVIADO A LA API:');
       messages.forEach((msg, index) => {
         console.log(`\n--- MENSAJE ${index + 1} (${msg.role.toUpperCase()}) ---`);
         console.log(msg.content);
@@ -296,35 +302,51 @@ export async function generateBotResponse(
     }
     
     try {
-      console.time('⏱️ Tiempo de respuesta OpenAI');
+      console.time('⏱️ Tiempo de respuesta API');
       
-      const completion = await openai.chat.completions.create({
-        messages: messages.map(m => ({ 
-          role: m.role as 'system' | 'user' | 'assistant', 
-          content: m.content 
-        })),
-        model: CHAT_MODEL,
-        temperature: 0.7,
-        max_tokens: 3000,
-        presence_penalty: 0.6,
-        frequency_penalty: 0.3
+      const response = await fetch(`${API_BASE_URL}/openai`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action: 'chat',
+          messages: messages.map(m => ({ 
+            role: m.role as 'system' | 'user' | 'assistant', 
+            content: m.content 
+          })),
+          model: CHAT_MODEL,
+          temperature: 0.7,
+          max_tokens: 3000,
+          presence_penalty: 0.6,
+          frequency_penalty: 0.3
+        })
       });
 
-      console.timeEnd('⏱️ Tiempo de respuesta OpenAI');
+      if (!response.ok) {
+        // Verificar si es un error de límite de uso
+        if (response.status === 429) {
+          return "Lo siento, se ha alcanzado el límite de uso de la API. Por favor, intenta de nuevo más tarde.";
+        }
+        throw new Error(`Error en la API: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.timeEnd('⏱️ Tiempo de respuesta API');
       
-      const response = completion.choices[0]?.message?.content || 'Lo siento, no pude generar una respuesta.';
+      const botResponse = data.response || 'Lo siento, no pude generar una respuesta.';
       
       // Guardar respuesta de bienvenida en caché
-      if (messages[0].role === 'user' && messages[0].content === "Hola, ¿puedes ayudarme con esta actividad?" && response) {
-        welcomeResponseCache.set('default-welcome', response);
+      if (messages[0].role === 'user' && messages[0].content === "Hola, ¿puedes ayudarme con esta actividad?" && botResponse) {
+        welcomeResponseCache.set('default-welcome', botResponse);
       }
       
-      return response;
+      return botResponse;
     } catch (error: any) {
-      console.error('❌ Error en la API de OpenAI:', error);
+      console.error('❌ Error en la API:', error);
       
       // Verificar si es un error de límite de uso
-      if (error.status === 429) {
+      if (error.message?.includes('429')) {
         return "Lo siento, se ha alcanzado el límite de uso de la API. Por favor, intenta de nuevo más tarde.";
       }
       

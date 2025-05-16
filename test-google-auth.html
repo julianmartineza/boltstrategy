@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prueba de Autenticación Google Calendar</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .container {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    button {
+      background-color: #4285f4;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background-color: #3367d6;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .error {
+      color: red;
+      font-weight: bold;
+    }
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+    .log-container {
+      height: 300px;
+      overflow-y: auto;
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Prueba de Autenticación Google Calendar</h1>
+  
+  <div class="container">
+    <h2>Configuración</h2>
+    <p>Introduce las credenciales de Google Cloud:</p>
+    <div>
+      <label for="client-id">Client ID:</label>
+      <input type="text" id="client-id" style="width: 100%; margin-bottom: 10px;">
+    </div>
+    <div>
+      <label for="redirect-uri">Redirect URI:</label>
+      <input type="text" id="redirect-uri" style="width: 100%; margin-bottom: 10px;" value="">
+    </div>
+    <button id="save-config">Guardar Configuración</button>
+  </div>
+  
+  <div class="container">
+    <h2>Iniciar Autorización</h2>
+    <p>Haz clic en el botón para iniciar el proceso de autorización con Google Calendar:</p>
+    <button id="start-auth">Iniciar Autorización</button>
+  </div>
+  
+  <div class="container">
+    <h2>Procesar Código de Autorización</h2>
+    <p>Si has sido redirigido aquí con un código de autorización, haz clic en el botón para procesarlo:</p>
+    <div>
+      <label for="auth-code">Código de Autorización:</label>
+      <input type="text" id="auth-code" style="width: 100%; margin-bottom: 10px;">
+    </div>
+    <button id="process-code">Procesar Código</button>
+  </div>
+  
+  <div class="container">
+    <h2>Resultados</h2>
+    <div id="results"></div>
+    <div class="log-container" id="logs"></div>
+  </div>
+  
+  <script>
+    // Funciones de utilidad
+    function log(message, type = 'info') {
+      const logContainer = document.getElementById('logs');
+      const logEntry = document.createElement('div');
+      logEntry.className = type;
+      const timestamp = new Date().toLocaleTimeString();
+      logEntry.textContent = `[${timestamp}] ${message}`;
+      logContainer.appendChild(logEntry);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+    
+    function showResult(message, isError = false) {
+      const resultsContainer = document.getElementById('results');
+      resultsContainer.innerHTML = `<div class="${isError ? 'error' : 'success'}">${message}</div>`;
+    }
+    
+    // Cargar configuración guardada
+    document.addEventListener('DOMContentLoaded', () => {
+      const clientId = localStorage.getItem('googleClientId');
+      const redirectUri = localStorage.getItem('googleRedirectUri') || window.location.origin + '/test-google-auth.html';
+      
+      if (clientId) {
+        document.getElementById('client-id').value = clientId;
+      }
+      
+      document.getElementById('redirect-uri').value = redirectUri;
+      
+      // Verificar si hay un código en la URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const error = urlParams.get('error');
+      
+      if (code) {
+        document.getElementById('auth-code').value = code;
+        log(`Código de autorización detectado en la URL: ${code.substring(0, 10)}...`);
+      }
+      
+      if (error) {
+        showResult(`Error devuelto por Google: ${error}`, true);
+        log(`Error devuelto por Google: ${error}`, 'error');
+      }
+    });
+    
+    // Guardar configuración
+    document.getElementById('save-config').addEventListener('click', () => {
+      const clientId = document.getElementById('client-id').value.trim();
+      const redirectUri = document.getElementById('redirect-uri').value.trim();
+      
+      if (!clientId) {
+        showResult('Por favor, introduce un Client ID válido', true);
+        return;
+      }
+      
+      if (!redirectUri) {
+        showResult('Por favor, introduce una Redirect URI válida', true);
+        return;
+      }
+      
+      localStorage.setItem('googleClientId', clientId);
+      localStorage.setItem('googleRedirectUri', redirectUri);
+      
+      showResult('Configuración guardada correctamente');
+      log('Configuración guardada: Client ID y Redirect URI');
+    });
+    
+    // Iniciar autorización
+    document.getElementById('start-auth').addEventListener('click', () => {
+      const clientId = localStorage.getItem('googleClientId');
+      const redirectUri = localStorage.getItem('googleRedirectUri');
+      
+      if (!clientId || !redirectUri) {
+        showResult('Por favor, guarda la configuración primero', true);
+        return;
+      }
+      
+      try {
+        log('Iniciando proceso de autorización con Google Calendar');
+        log(`Client ID: ${clientId.substring(0, 10)}...`);
+        log(`Redirect URI: ${redirectUri}`);
+        
+        const scopes = [
+          'https://www.googleapis.com/auth/calendar',
+          'https://www.googleapis.com/auth/calendar.events'
+        ];
+        
+        const params = new URLSearchParams({
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          response_type: 'code',
+          scope: scopes.join(' '),
+          access_type: 'offline',
+          prompt: 'consent'
+        });
+        
+        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+        log(`URL de autorización generada: ${authUrl}`);
+        
+        // Redireccionar al usuario
+        log('Redireccionando a la página de autorización de Google...');
+        window.location.href = authUrl;
+      } catch (error) {
+        showResult(`Error al iniciar autorización: ${error.message}`, true);
+        log(`Error al iniciar autorización: ${error.message}`, 'error');
+      }
+    });
+    
+    // Procesar código de autorización
+    document.getElementById('process-code').addEventListener('click', () => {
+      const code = document.getElementById('auth-code').value.trim();
+      const clientId = localStorage.getItem('googleClientId');
+      const redirectUri = localStorage.getItem('googleRedirectUri');
+      
+      if (!code) {
+        showResult('Por favor, introduce un código de autorización', true);
+        return;
+      }
+      
+      if (!clientId || !redirectUri) {
+        showResult('Por favor, guarda la configuración primero', true);
+        return;
+      }
+      
+      log('Procesando código de autorización...');
+      log(`Código: ${code.substring(0, 10)}...`);
+      
+      // Mostrar información
+      showResult('El código de autorización ha sido recibido correctamente. Para completar el proceso, necesitarías intercambiar este código por tokens de acceso y refresco usando el Client Secret, lo cual debe hacerse en el servidor por seguridad.');
+      log('NOTA: Este es solo un test de la primera parte del flujo de OAuth2. El intercambio de código por tokens debe hacerse en el servidor para mantener seguro el Client Secret.');
+    });
+  </script>
+</body>
+</html>

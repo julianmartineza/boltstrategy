@@ -2,12 +2,11 @@ import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { supabase } from './lib/supabase';
-import { Building2, BrainCircuit } from 'lucide-react';
 
 // Components
 const Login = React.lazy(() => import('./pages/Login'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
-const GoogleAuthCallback = React.lazy(() => import('./pages/auth/GoogleAuthCallback'));
+const GoogleAuthCallback = React.lazy(() => import('./components/advisory/GoogleAuthCallback'));
 
 function App() {
   const { user, setUser } = useAuthStore();

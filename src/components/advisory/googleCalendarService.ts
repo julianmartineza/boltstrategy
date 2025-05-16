@@ -3,11 +3,12 @@ import { supabase } from '../../lib/supabase';
 // Constantes para la API de Google Calendar
 const GOOGLE_API_BASE_URL = 'https://www.googleapis.com/calendar/v3';
 const GOOGLE_OAUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
-// Usar variables de entorno para las credenciales
+// URL base para las APIs serverless
+const API_BASE_URL = '/api';
+
+// Usar variables de entorno para las credenciales públicas
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-const GOOGLE_CLIENT_SECRET = import.meta.env.VITE_GOOGLE_CLIENT_SECRET || '';
 const REDIRECT_URI = import.meta.env.VITE_GOOGLE_REDIRECT_URI || 'http://localhost:5173/auth/google/callback';
 
 // Tipos para los tokens y respuestas de Google
@@ -17,6 +18,7 @@ interface GoogleTokens {
   expires_in: number;
   token_type: string;
   scope: string;
+  email?: string;
 }
 
 interface GoogleEvent {
@@ -54,8 +56,20 @@ export const googleCalendarService = {
   /**
    * Genera la URL para iniciar el flujo de autorización OAuth2
    * @returns URL para redireccionar al usuario
+   * @throws Error si las credenciales no están configuradas correctamente
    */
   getAuthorizationUrl(): string {
+    // Verificar que las credenciales estén configuradas
+    if (!GOOGLE_CLIENT_ID) {
+      console.error('Error: VITE_GOOGLE_CLIENT_ID no está configurado en el archivo .env');
+      throw new Error('Credenciales de Google no configuradas. Contacta al administrador.');
+    }
+
+    if (!REDIRECT_URI) {
+      console.error('Error: VITE_GOOGLE_REDIRECT_URI no está configurado en el archivo .env');
+      throw new Error('URL de redirección no configurada. Contacta al administrador.');
+    }
+
     const scopes = [
       'https://www.googleapis.com/auth/calendar',
       'https://www.googleapis.com/auth/calendar.events'
@@ -70,40 +84,75 @@ export const googleCalendarService = {
       prompt: 'consent'
     });
 
+    // Mostrar información de depuración
+    console.log('Iniciando autorización OAuth2 con los siguientes parámetros:');
+    console.log('- Client ID:', GOOGLE_CLIENT_ID.substring(0, 10) + '...');
+    console.log('- Redirect URI:', REDIRECT_URI);
+    console.log('- Scopes:', scopes.join(' '));
+
     return `${GOOGLE_OAUTH_URL}?${params.toString()}`;
   },
 
   /**
    * Intercambia el código de autorización por tokens de acceso y refresco
+   * Utiliza una API serverless para proteger el client_secret
    * @param code Código de autorización recibido de Google
    * @returns Tokens de acceso y refresco
    */
   async exchangeCodeForTokens(code: string): Promise<GoogleTokens> {
     try {
-      const params = new URLSearchParams({
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        code,
-        grant_type: 'authorization_code',
-        redirect_uri: REDIRECT_URI
-      });
-
-      const response = await fetch(GOOGLE_TOKEN_URL, {
+      console.log('=== INICIANDO INTERCAMBIO DE CÓDIGO POR TOKENS ===');
+      console.log('Código recibido:', code.substring(0, 10) + '...');
+      console.log('Verificando credenciales:');
+      console.log('- Client ID configurado:', GOOGLE_CLIENT_ID ? 'Sí' : 'No');
+      console.log('- Redirect URI:', REDIRECT_URI);
+      
+      if (!GOOGLE_CLIENT_ID) {
+        throw new Error('Client ID de Google no configurado correctamente en el archivo .env');
+      }
+      
+      // Usar la API serverless para intercambiar el código por tokens
+      // Esto protege el client_secret que no debe estar en el frontend
+      console.log('Enviando solicitud a la API serverless...');
+      
+      const response = await fetch(`${API_BASE_URL}/google-auth`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+          'Content-Type': 'application/json'
         },
-        body: params.toString()
+        body: JSON.stringify({ 
+          code,
+          grantType: 'authorization_code'
+        })
       });
 
+      console.log('Respuesta recibida de la API - Status:', response.status, response.statusText);
+      
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`Error al obtener tokens: ${errorData.error_description || errorData.error}`);
+        const responseText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(responseText);
+          console.error('Error detallado de la API:', errorData);
+        } catch (e) {
+          console.error('Respuesta no es JSON válido:', responseText);
+          throw new Error(`Error al obtener tokens. Status: ${response.status}. Respuesta: ${responseText}`);
+        }
+        throw new Error(`Error al obtener tokens: ${errorData.error || errorData.details || 'Error desconocido'}`);
       }
 
-      return await response.json();
-    } catch (error) {
+      const tokenData = await response.json();
+      console.log('Tokens recibidos correctamente:');
+      console.log('- access_token:', tokenData.access_token ? 'Presente (primeros caracteres: ' + tokenData.access_token.substring(0, 5) + '...)' : 'Ausente');
+      console.log('- refresh_token:', tokenData.refresh_token ? 'Presente' : 'Ausente');
+      console.log('- expires_in:', tokenData.expires_in);
+      console.log('- token_type:', tokenData.token_type);
+      
+      return tokenData;
+    } catch (error: any) {
       console.error('Error al intercambiar código por tokens:', error);
+      console.error('Mensaje de error:', error.message);
+      console.error('Stack trace:', error.stack);
       throw error;
     }
   },
@@ -115,32 +164,37 @@ export const googleCalendarService = {
    */
   async refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_in: number }> {
     try {
-      const params = new URLSearchParams({
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        refresh_token: refreshToken,
-        grant_type: 'refresh_token'
-      });
-
-      const response = await fetch(GOOGLE_TOKEN_URL, {
+      console.log('Refrescando token de acceso...');
+      
+      if (!refreshToken) {
+        throw new Error('Token de refresco no proporcionado');
+      }
+      
+      const response = await fetch(`${API_BASE_URL}/google-auth`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
+          'Content-Type': 'application/json',
         },
-        body: params.toString()
+        body: JSON.stringify({
+          refreshToken,
+          grantType: 'refresh_token'
+        }),
       });
-
+      
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(`Error al refrescar token: ${errorData.error_description || errorData.error}`);
+        console.error('Error al refrescar token:', errorData);
+        throw new Error(`Error al refrescar token: ${errorData.error_description || errorData.error || 'Error desconocido'}`);
       }
-
-      const data = await response.json();
+      
+      const tokenData = await response.json();
+      console.log('Token refrescado correctamente. Expira en:', tokenData.expires_in, 'segundos');
+      
       return {
-        access_token: data.access_token,
-        expires_in: data.expires_in
+        access_token: tokenData.access_token,
+        expires_in: tokenData.expires_in,
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error al refrescar token de acceso:', error);
       throw error;
     }
@@ -154,6 +208,36 @@ export const googleCalendarService = {
    */
   async saveTokensForAdvisor(advisorId: string, tokens: GoogleTokens): Promise<boolean> {
     try {
+      console.log('=== GUARDANDO TOKENS PARA EL ASESOR ===');
+      console.log('ID del asesor:', advisorId);
+      console.log('Tokens recibidos:', {
+        access_token: tokens.access_token ? 'Presente' : 'Ausente',
+        refresh_token: tokens.refresh_token ? 'Presente' : 'Ausente',
+        expires_in: tokens.expires_in,
+        token_type: tokens.token_type,
+        scope: tokens.scope
+      });
+      
+      if (!tokens.access_token) {
+        console.error('Error: No se recibió un access_token válido');
+        return false;
+      }
+      
+      // Verificar que el asesor existe
+      const { data: advisor, error: advisorError } = await supabase
+        .from('advisors')
+        .select('id, name')
+        .eq('id', advisorId)
+        .single();
+      
+      if (advisorError || !advisor) {
+        console.error('Error: No se encontró el asesor con ID:', advisorId);
+        console.error('Error de Supabase:', advisorError);
+        return false;
+      }
+      
+      console.log('Asesor encontrado:', advisor.name);
+      
       // Crear un objeto con los datos a guardar
       const tokenData = {
         calendar_sync_token: JSON.stringify({
@@ -164,8 +248,16 @@ export const googleCalendarService = {
           scope: tokens.scope
         }),
         calendar_refresh_token: tokens.refresh_token,
+        google_account_email: tokens.scope?.includes('email') ? tokens.email : null,
         updated_at: new Date().toISOString()
       };
+
+      console.log('Datos a guardar:', {
+        calendar_sync_token: 'JSON con tokens (longitud: ' + tokenData.calendar_sync_token.length + ' caracteres)',
+        calendar_refresh_token: tokens.refresh_token ? 'Presente' : 'Ausente',
+        google_account_email: tokenData.google_account_email,
+        updated_at: tokenData.updated_at
+      });
 
       // Actualizar el registro del asesor
       const { error } = await supabase
@@ -173,10 +265,17 @@ export const googleCalendarService = {
         .update(tokenData)
         .eq('id', advisorId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error al actualizar el registro del asesor:', error);
+        throw error;
+      }
+      
+      console.log('✅ Tokens guardados correctamente en la base de datos');
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error al guardar tokens para el asesor:', error);
+      console.error('Mensaje de error:', error.message);
+      console.error('Stack trace:', error.stack);
       return false;
     }
   },
