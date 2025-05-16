@@ -100,31 +100,64 @@ const GoogleCalendarAuth: React.FC<GoogleCalendarAuthProps> = ({
     setError(null);
     
     try {
-      // Mostrar información sobre la configuración actual
+      // Mostrar información detallada sobre la configuración actual
       console.log('=== INICIANDO PROCESO DE AUTORIZACIÓN CON GOOGLE CALENDAR ===');
       console.log('Información de la aplicación:');
-      console.log('- URL actual:', window.location.href);
-      console.log('- URL de redirección configurada:', import.meta.env.VITE_GOOGLE_REDIRECT_URI);
-      console.log('- URL de callback esperada:', window.location.origin + '/auth/google/callback');
-      console.log('- Origen:', window.location.origin);
+      console.log('- URL actual completa:', window.location.href);
+      console.log('- Protocolo:', window.location.protocol);
+      console.log('- Host:', window.location.host);
+      console.log('- Hostname:', window.location.hostname);
+      console.log('- Pathname:', window.location.pathname);
+      console.log('- Origen calculado:', window.location.origin);
+      console.log('- URL de redirección configurada en .env:', import.meta.env.VITE_GOOGLE_REDIRECT_URI);
       
       // Verificar que la URL de redirección está configurada correctamente
       if (!import.meta.env.VITE_GOOGLE_REDIRECT_URI) {
         throw new Error('La URL de redirección (VITE_GOOGLE_REDIRECT_URI) no está configurada en el archivo .env');
       }
       
-      // Verificar que la URL de redirección coincide con la esperada
-      const expectedCallbackUrl = window.location.origin + '/auth/google/callback';
+      // Verificar que la URL de redirección coincide con la esperada para este entorno
+      let expectedCallbackUrl = '';
+      
+      // Determinar si estamos en desarrollo o producción
+      if (window.location.hostname === 'localhost') {
+        // Entorno de desarrollo
+        expectedCallbackUrl = window.location.origin + '/auth/google/callback';
+      } else {
+        // Entorno de producción (Vercel u otro)
+        expectedCallbackUrl = 'https://' + window.location.hostname + '/auth/google/callback';
+      }
+      
+      console.log('- URL de callback esperada para este entorno:', expectedCallbackUrl);
+      
       if (import.meta.env.VITE_GOOGLE_REDIRECT_URI !== expectedCallbackUrl) {
-        console.warn('Advertencia: La URL de redirección configurada no coincide con la URL esperada.');
-        console.warn('- Configurada:', import.meta.env.VITE_GOOGLE_REDIRECT_URI);
-        console.warn('- Esperada:', expectedCallbackUrl);
-        console.warn('Esto puede causar problemas si no está configurada correctamente en Google Cloud Console.');
+        console.warn('\u26A0\uFE0F ADVERTENCIA: La URL de redirección configurada NO coincide con la URL esperada para este entorno.');
+        console.warn('- Configurada en .env:', import.meta.env.VITE_GOOGLE_REDIRECT_URI);
+        console.warn('- Esperada para este entorno:', expectedCallbackUrl);
+        console.warn('Esto puede causar el error "redirect_uri_mismatch" en Google OAuth.');
+        console.warn('Asegúrate de que:');
+        console.warn('1. La variable VITE_GOOGLE_REDIRECT_URI en Vercel coincide con la URL de tu aplicación desplegada');
+        console.warn('2. La misma URL está configurada en Google Cloud Console como URI de redirección autorizada');
       }
       
       // Obtener la URL de autorización
       const authUrl = googleCalendarService.getAuthorizationUrl();
       console.log('URL de autorización generada:', authUrl);
+      
+      // Analizar la URL de autorización para verificar los parámetros
+      try {
+        const authUrlObj = new URL(authUrl);
+        const params = new URLSearchParams(authUrlObj.search);
+        console.log('Parámetros de la URL de autorización:');
+        console.log('- client_id:', params.get('client_id') ? params.get('client_id')!.substring(0, 10) + '...' : 'No presente');
+        console.log('- redirect_uri:', params.get('redirect_uri'));
+        console.log('- response_type:', params.get('response_type'));
+        console.log('- scope:', params.get('scope'));
+        console.log('- access_type:', params.get('access_type'));
+        console.log('- prompt:', params.get('prompt'));
+      } catch (e) {
+        console.error('Error al analizar la URL de autorización:', e);
+      }
       
       // Redireccionar al usuario
       console.log('Redireccionando al usuario a la página de autorización de Google...');

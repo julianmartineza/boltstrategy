@@ -671,6 +671,65 @@ export const googleCalendarService = {
     timeMax: string;
   }): Promise<GoogleEvent[] | null> {
     return this.getEvents(params.advisorId, params.timeMin, params.timeMax);
+  },
+
+  /**
+   * Verifica si un asesor tiene un calendario conectado
+   * @param advisorId ID del asesor
+   * @returns Objeto con el estado de la conexión y detalles adicionales
+   */
+  async isCalendarConnected(advisorId: string): Promise<{ 
+    connected: boolean; 
+    email?: string; 
+    lastSynced?: string;
+    error?: string;
+  }> {
+    try {
+      console.log('Verificando si el asesor tiene un calendario conectado:', advisorId);
+      
+      // Obtener el asesor de la base de datos
+      const { data: advisor, error } = await supabase
+        .from('advisors')
+        .select('google_account_email, calendar_refresh_token, calendar_sync_token, updated_at')
+        .eq('id', advisorId)
+        .single();
+      
+      if (error) {
+        console.error('Error al obtener datos del asesor:', error);
+        return { 
+          connected: false, 
+          error: 'Error al verificar la conexión con Google Calendar.' 
+        };
+      }
+      
+      if (!advisor) {
+        console.error('No se encontró el asesor con ID:', advisorId);
+        return { 
+          connected: false, 
+          error: 'No se encontró el perfil del asesor.' 
+        };
+      }
+      
+      // Verificar si tiene un token de refresco (lo que indica que se ha conectado)
+      const hasRefreshToken = !!advisor.calendar_refresh_token;
+      
+      console.log('Resultado de la verificación:');
+      console.log('- Email de Google:', advisor.google_account_email || 'No conectado');
+      console.log('- Token de refresco:', hasRefreshToken ? 'Presente' : 'Ausente');
+      console.log('- Última sincronización:', advisor.updated_at || 'Nunca');
+      
+      return {
+        connected: hasRefreshToken,
+        email: advisor.google_account_email || undefined,
+        lastSynced: advisor.updated_at || undefined
+      };
+    } catch (error: any) {
+      console.error('Error al verificar la conexión con Google Calendar:', error);
+      return { 
+        connected: false, 
+        error: error.message || 'Error desconocido al verificar la conexión.' 
+      };
+    }
   }
 };
 

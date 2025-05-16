@@ -3,8 +3,10 @@ import { Loader2, Save, User, Mail, Phone, Image, Calendar, Check, Link, X } fro
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { advisoryService } from './advisoryService';
+import { googleCalendarService } from './googleCalendarService';
 import { Advisor } from './types';
 import GoogleCalendarAuth from './GoogleCalendarAuth';
+import GoogleCalendarStatus from './GoogleCalendarStatus';
 
 const AdvisorProfileForm: React.FC = () => {
   const { user } = useAuthStore();
@@ -251,42 +253,22 @@ const AdvisorProfileForm: React.FC = () => {
           </div>
         </div>
         
-        <div>
-          <label className="block text-gray-700 mb-2 font-medium">
-            Google Calendar
-          </label>
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+          <h3 className="text-lg font-medium flex items-center gap-2 mb-4">
+            <Calendar className="h-5 w-5 text-primary" />
+            Conexión con Google Calendar
+          </h3>
           
-          {calendarConnected ? (
-            <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded">
-              <div className="flex-shrink-0 mr-3">
-                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                  <Check size={20} className="text-green-600" />
-                </div>
-              </div>
-              <div className="flex-grow">
-                <p className="font-medium text-green-800">
-                  Conectado con Google Calendar
-                </p>
-                <p className="text-sm text-green-600">
-                  {googleAccountEmail || 'Cuenta conectada'}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="ml-2 px-3 py-1 bg-white border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center"
-                onClick={() => setShowGoogleAuthModal(true)}
-              >
-                <X size={16} className="mr-1" />
-                Desconectar
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center p-3 bg-gray-50 border border-gray-200 rounded">
-              <div className="flex-shrink-0 mr-3">
-                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                  <Calendar size={20} className="text-gray-600" />
-                </div>
-              </div>
+          <p className="text-gray-600 mb-4">
+            Conecta tu cuenta de Google Calendar para sincronizar automáticamente tus sesiones de asesoría.
+          </p>
+          
+          {/* Componente de estado de Google Calendar */}
+          {advisor?.id && (
+            <div className="mb-6">
+              <GoogleCalendarStatus 
+                onConnect={() => setShowGoogleAuthModal(true)} 
+              />
               <div className="flex-grow">
                 <p className="font-medium text-gray-800">
                   No conectado con Google Calendar
