@@ -184,22 +184,41 @@ export const advisoryService = {
   },
 
   // Obtener empresas asignadas a un asesor
-  async getAdvisorCompanies(
-    advisorId: string,
-    programId?: string
-  ): Promise<any[]> {
+  async getAdvisorCompanies(advisorId: string): Promise<any[]> {
     try {
       const { data, error } = await supabase
-        .rpc('get_advisor_companies', {
-          p_advisor_id: advisorId,
-          p_program_id: programId || null
-        });
+        .from('advisor_company_assignments')
+        .select(`
+          company_id,
+          company:company_id (id, name, logo_url)
+        `)
+        .eq('advisor_id', advisorId);
       
       if (error) throw error;
-      return data || [];
+      
+      // Extraer las empresas de los resultados
+      const companies = data.map(item => item.company);
+      return companies || [];
     } catch (error) {
       console.error('Error al obtener empresas del asesor:', error);
       return [];
+    }
+  },
+
+  // Obtener una empresa por ID
+  async getCompanyById(companyId: string): Promise<any | null> {
+    try {
+      const { data, error } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', companyId)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error(`Error al obtener empresa con ID ${companyId}:`, error);
+      return null;
     }
   },
 
@@ -380,6 +399,55 @@ export const advisoryService = {
     createdBy: string;
   }): Promise<string | null> {
     try {
+      // 1. Obtener datos de la sesión y el asesor para crear el evento en Google Calendar
+      const [sessionData, advisorData, companyData] = await Promise.all([
+        this.getAdvisorySessionById(booking.sessionId),
+        this.getAdvisorById(booking.advisorId),
+        this.getCompanyById(booking.companyId)
+      ]);
+
+      if (!sessionData || !advisorData) {
+        throw new Error('No se encontraron los datos de la sesión o el asesor');
+      }
+
+      let googleEventId = booking.googleEventId;
+
+      // 2. Verificar si el asesor tiene Google Calendar conectado
+      if (advisorData.calendar_sync_token || advisorData.calendar_refresh_token) {
+        try {
+          // Importar el servicio de Google Calendar dinámicamente
+          const googleCalendarService = (await import('./googleCalendarService')).default;
+          
+          // Crear evento en Google Calendar
+          const eventResult = await googleCalendarService.createEvent({
+            advisorId: booking.advisorId,
+            summary: `Asesoría: ${sessionData.title}`,
+            description: `${sessionData.description || ''}
+\nEmpresa: ${companyData?.name || 'No especificada'}
+\nTipo de sesión: ${sessionData.session_type || 'No especificado'}
+\nInstrucciones de preparación: ${sessionData.preparation_instructions || 'No especificadas'}`,
+            startDateTime: booking.startTime.toISOString(),
+            endDateTime: booking.endTime.toISOString(),
+            attendees: [
+              { email: advisorData.email, displayName: advisorData.name },
+              // Si la empresa tiene un correo, agregarlo como asistente
+              ...(companyData?.email ? [{ email: companyData.email, displayName: companyData.name }] : [])
+            ],
+            colorId: '1', // Azul para eventos de asesoría
+            sendNotifications: true
+          });
+          
+          if (eventResult && eventResult.id) {
+            googleEventId = eventResult.id;
+            console.log('Evento creado en Google Calendar:', eventResult.id);
+          }
+        } catch (calendarError) {
+          console.error('Error al crear evento en Google Calendar:', calendarError);
+          // Continuar con la creación de la reserva sin el evento de Google Calendar
+        }
+      }
+      
+      // 3. Crear la reserva en la base de datos
       const { data, error } = await supabase
         .rpc('create_advisory_booking', {
           p_company_id: booking.companyId,
@@ -387,7 +455,7 @@ export const advisoryService = {
           p_session_id: booking.sessionId,
           p_start_time: booking.startTime.toISOString(),
           p_end_time: booking.endTime.toISOString(),
-          p_google_event_id: booking.googleEventId || null,
+          p_google_event_id: googleEventId || null,
           p_created_by: booking.createdBy
         });
       
@@ -468,6 +536,43 @@ export const advisoryService = {
   // Cancelar una reserva
   async cancelBooking(bookingId: string): Promise<boolean> {
     try {
+      // 1. Obtener datos de la reserva para eliminar el evento en Google Calendar
+      const { data: booking, error: bookingError } = await supabase
+        .from('advisory_bookings')
+        .select('id, advisor_id, google_event_id')
+        .eq('id', bookingId)
+        .single();
+      
+      if (bookingError) throw bookingError;
+      
+      if (booking && booking.google_event_id) {
+        // 2. Verificar si el asesor tiene Google Calendar conectado
+        const { data: advisor, error: advisorError } = await supabase
+          .from('advisors')
+          .select('id, calendar_sync_token, calendar_refresh_token')
+          .eq('id', booking.advisor_id)
+          .single();
+        
+        if (!advisorError && advisor && (advisor.calendar_sync_token || advisor.calendar_refresh_token)) {
+          try {
+            // Importar el servicio de Google Calendar dinámicamente
+            const googleCalendarService = (await import('./googleCalendarService')).default;
+            
+            // Eliminar evento en Google Calendar
+            await googleCalendarService.deleteEvent({
+              advisorId: booking.advisor_id,
+              eventId: booking.google_event_id
+            });
+            
+            console.log('Evento eliminado de Google Calendar:', booking.google_event_id);
+          } catch (calendarError) {
+            console.error('Error al eliminar evento de Google Calendar:', calendarError);
+            // Continuar con la cancelación de la reserva aunque falle la eliminación del evento
+          }
+        }
+      }
+      
+      // 3. Actualizar el estado de la reserva a 'cancelled'
       const { error } = await supabase
         .from('advisory_bookings')
         .update({
@@ -601,30 +706,32 @@ export const advisoryService = {
   },
 
   // Obtener disponibilidad de un asesor para una fecha específica
-  // Esta es una implementación básica, en una implementación real
-  // se consultaría la API de Google Calendar
+  // Utiliza Google Calendar para determinar la disponibilidad real
   async getAdvisorAvailability(
     advisorId: string,
     date: Date
   ): Promise<TimeSlot[]> {
     try {
-      // En una implementación real, aquí se consultaría la API de Google Calendar
-      // Para este ejemplo, generamos slots de tiempo ficticios
+      // Configuración de horario laboral estándar
       const startHour = 9; // 9 AM
       const endHour = 17; // 5 PM
       const slotDuration = 60; // 60 minutos por slot
       
+      // Inicializar array de slots
       const slots: TimeSlot[] = [];
+      
+      // Configurar fecha de inicio y fin para el día seleccionado
       const startOfDay = new Date(date);
       startOfDay.setHours(startHour, 0, 0, 0);
       
-      // Obtener reservas existentes para este asesor en esta fecha
-      const startOfDayStr = startOfDay.toISOString();
       const endOfDay = new Date(date);
       endOfDay.setHours(endHour, 0, 0, 0);
+      
+      const startOfDayStr = startOfDay.toISOString();
       const endOfDayStr = endOfDay.toISOString();
       
-      const { data: bookings, error } = await supabase
+      // 1. Obtener reservas existentes en la plataforma
+      const { data: bookings, error: bookingsError } = await supabase
         .from('advisory_bookings')
         .select('start_time, end_time')
         .eq('advisor_id', advisorId)
@@ -632,9 +739,58 @@ export const advisoryService = {
         .lte('end_time', endOfDayStr)
         .neq('status', 'cancelled');
       
-      if (error) throw error;
+      if (bookingsError) throw bookingsError;
       
-      // Crear slots de tiempo
+      // 2. Obtener datos del asesor para verificar si tiene Google Calendar conectado
+      const { data: advisorData, error: advisorError } = await supabase
+        .from('advisors')
+        .select('id, calendar_sync_token, calendar_refresh_token')
+        .eq('id', advisorId)
+        .single();
+      
+      if (advisorError) throw advisorError;
+      
+      // Array para almacenar eventos ocupados (tanto de la plataforma como de Google Calendar)
+      let busyEvents: {start: Date, end: Date}[] = [];
+      
+      // Convertir reservas de la plataforma a eventos ocupados
+      if (bookings && bookings.length > 0) {
+        busyEvents = bookings.map((booking: any) => ({
+          start: new Date(booking.start_time),
+          end: new Date(booking.end_time)
+        }));
+      }
+      
+      // 3. Si el asesor tiene Google Calendar conectado, obtener sus eventos
+      if (advisorData && (advisorData.calendar_sync_token || advisorData.calendar_refresh_token)) {
+        try {
+          // Importar el servicio de Google Calendar dinámicamente
+          const googleCalendarService = (await import('./googleCalendarService')).default;
+          
+          // Obtener eventos del calendario para el día seleccionado
+          const calendarEvents = await googleCalendarService.listEvents({
+            advisorId,
+            timeMin: startOfDayStr,
+            timeMax: endOfDayStr
+          });
+          
+          // Convertir eventos de Google Calendar a eventos ocupados
+          if (calendarEvents && calendarEvents.length > 0) {
+            const calendarBusyEvents = calendarEvents.map((event: any) => ({
+              start: new Date(event.start.dateTime || `${event.start.date}T${startHour}:00:00`),
+              end: new Date(event.end.dateTime || `${event.end.date}T${endHour}:00:00`)
+            }));
+            
+            // Combinar con los eventos de la plataforma
+            busyEvents = [...busyEvents, ...calendarBusyEvents];
+          }
+        } catch (calendarError) {
+          console.error('Error al obtener eventos de Google Calendar:', calendarError);
+          // Continuar con la disponibilidad basada solo en las reservas de la plataforma
+        }
+      }
+      
+      // 4. Crear slots de tiempo y verificar disponibilidad
       for (let hour = startHour; hour < endHour; hour++) {
         const slotStart = new Date(date);
         slotStart.setHours(hour, 0, 0, 0);
@@ -642,15 +798,12 @@ export const advisoryService = {
         const slotEnd = new Date(date);
         slotEnd.setHours(hour, slotDuration, 0, 0);
         
-        // Verificar si el slot está disponible
-        const isAvailable = !(bookings || []).some(booking => {
-          const bookingStart = new Date(booking.start_time);
-          const bookingEnd = new Date(booking.end_time);
-          
+        // Verificar si el slot está disponible (no hay eventos que se solapen)
+        const isAvailable = !busyEvents.some(event => {
           return (
-            (slotStart >= bookingStart && slotStart < bookingEnd) ||
-            (slotEnd > bookingStart && slotEnd <= bookingEnd) ||
-            (slotStart <= bookingStart && slotEnd >= bookingEnd)
+            (slotStart >= event.start && slotStart < event.end) ||
+            (slotEnd > event.start && slotEnd <= event.end) ||
+            (slotStart <= event.start && slotEnd >= event.end)
           );
         });
         

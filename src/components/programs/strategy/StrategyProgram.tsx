@@ -51,28 +51,43 @@ const StrategyProgram: React.FC = () => {
         setLoading(true);
         let targetProgramId = programId;
         
-        // Si no hay un ID de programa en la URL, obtener el programa activo por defecto
-        if (!targetProgramId) {
-          const { data: programs, error } = await supabase
-            .from('programs')
-            .select('*')
-            .eq('status', 'active')
-            .limit(1);
-
-          if (error) {
-            console.error('Error loading default program:', error);
-            setError('Error al cargar el programa: ' + error.message);
+        if (!user?.id) {
+          setError('Debe iniciar sesión para acceder a los programas.');
+          setLoading(false);
+          return;
+        }
+        
+        // Obtener los programas en los que el usuario está inscrito
+        const { data: userPrograms, error: enrollmentError } = await supabase
+          .rpc('get_user_programs', { p_user_id: user.id });
+          
+        if (enrollmentError) {
+          console.error('Error loading user programs:', enrollmentError);
+          setError('Error al cargar los programas del usuario: ' + enrollmentError.message);
+          setLoading(false);
+          return;
+        }
+        
+        // Verificar si no hay programas asignados al usuario
+        if (!userPrograms || userPrograms.length === 0) {
+          setError('No tienes programas asignados. Por favor, contacta con un administrador.');
+          setLoading(false);
+          return;
+        }
+        
+        // Si hay un ID de programa en la URL, verificar que el usuario esté inscrito en ese programa
+        if (targetProgramId) {
+          const isEnrolled = userPrograms.some((p: { program_id: string }) => p.program_id === targetProgramId);
+          
+          if (!isEnrolled) {
+            console.error(`Usuario no inscrito en el programa: ${targetProgramId}`);
+            setError('No tienes acceso a este programa. Por favor, contacta con un administrador.');
             setLoading(false);
             return;
           }
-
-          if (programs && programs.length > 0) {
-            targetProgramId = programs[0].id;
-          } else {
-            setError('No hay programas activos disponibles.');
-            setLoading(false);
-            return;
-          }
+        } else {
+          // Si no hay un ID de programa en la URL, usar el primer programa del usuario
+          targetProgramId = userPrograms[0].program_id;
         }
         
         // Cargar el programa específico

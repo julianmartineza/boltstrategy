@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, Save, User, Mail, Phone, Image, Calendar } from 'lucide-react';
+import { Loader2, Save, User, Mail, Phone, Image, Calendar, Check, Link, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuthStore } from '../../store/authStore';
 import { advisoryService } from './advisoryService';
 import { Advisor } from './types';
+import GoogleCalendarAuth from './GoogleCalendarAuth';
 
 const AdvisorProfileForm: React.FC = () => {
   const { user } = useAuthStore();
@@ -22,6 +23,10 @@ const AdvisorProfileForm: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
   const [googleAccountEmail, setGoogleAccountEmail] = useState('');
+  
+  // Estado para el modal de conexión con Google Calendar
+  const [showGoogleAuthModal, setShowGoogleAuthModal] = useState(false);
+  const [calendarConnected, setCalendarConnected] = useState(false);
   
   // Cargar datos del asesor
   useEffect(() => {
@@ -59,6 +64,9 @@ const AdvisorProfileForm: React.FC = () => {
         setPhone(advisorData.phone || '');
         setPhotoUrl(advisorData.photo_url || '');
         setGoogleAccountEmail(advisorData.google_account_email || '');
+        
+        // Verificar si ya tiene conexión con Google Calendar
+        setCalendarConnected(!!advisorData.calendar_sync_token);
       } catch (err) {
         console.error('Error al cargar datos del asesor:', err);
         setError('Error al cargar los datos. Por favor, inténtalo de nuevo.');
@@ -245,23 +253,58 @@ const AdvisorProfileForm: React.FC = () => {
         
         <div>
           <label className="block text-gray-700 mb-2 font-medium">
-            Correo de Google Calendar
+            Google Calendar
           </label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Calendar size={18} className="text-gray-400" />
+          
+          {calendarConnected ? (
+            <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded">
+              <div className="flex-shrink-0 mr-3">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <Check size={20} className="text-green-600" />
+                </div>
+              </div>
+              <div className="flex-grow">
+                <p className="font-medium text-green-800">
+                  Conectado con Google Calendar
+                </p>
+                <p className="text-sm text-green-600">
+                  {googleAccountEmail || 'Cuenta conectada'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="ml-2 px-3 py-1 bg-white border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center"
+                onClick={() => setShowGoogleAuthModal(true)}
+              >
+                <X size={16} className="mr-1" />
+                Desconectar
+              </button>
             </div>
-            <input
-              type="email"
-              value={googleAccountEmail}
-              onChange={(e) => setGoogleAccountEmail(e.target.value)}
-              className="w-full pl-10 p-2 border rounded"
-              placeholder="tu@gmail.com"
-            />
-          </div>
-          <p className="text-sm text-gray-500 mt-1">
-            Este correo se utilizará para sincronizar las sesiones con tu Google Calendar.
-          </p>
+          ) : (
+            <div className="flex items-center p-3 bg-gray-50 border border-gray-200 rounded">
+              <div className="flex-shrink-0 mr-3">
+                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+                  <Calendar size={20} className="text-gray-600" />
+                </div>
+              </div>
+              <div className="flex-grow">
+                <p className="font-medium text-gray-800">
+                  No conectado con Google Calendar
+                </p>
+                <p className="text-sm text-gray-600">
+                  Conecta tu cuenta para sincronizar las sesiones de asesoría
+                </p>
+              </div>
+              <button
+                type="button"
+                className="ml-2 px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
+                onClick={() => setShowGoogleAuthModal(true)}
+              >
+                <Link size={16} className="mr-1" />
+                Conectar
+              </button>
+            </div>
+          )}
         </div>
         
         <div className="flex justify-end mt-6">
@@ -284,6 +327,32 @@ const AdvisorProfileForm: React.FC = () => {
           </button>
         </div>
       </form>
+      
+      {/* Modal para la conexión con Google Calendar */}
+      {showGoogleAuthModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="max-w-md w-full">
+            <GoogleCalendarAuth 
+              onSuccess={() => {
+                setShowGoogleAuthModal(false);
+                setCalendarConnected(true);
+                setSuccess('Cuenta de Google Calendar conectada exitosamente.');
+                
+                // Recargar datos del asesor para obtener el token actualizado
+                if (advisor && user) {
+                  advisoryService.getAdvisorByUserId(user.id).then(updatedAdvisor => {
+                    if (updatedAdvisor) {
+                      setAdvisor(updatedAdvisor);
+                      setGoogleAccountEmail(updatedAdvisor.google_account_email || '');
+                    }
+                  });
+                }
+              }}
+              onCancel={() => setShowGoogleAuthModal(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

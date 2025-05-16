@@ -11,6 +11,7 @@ export interface Advisor {
   photo_url?: string;
   google_account_email?: string;
   calendar_sync_token?: string;
+  calendar_refresh_token?: string;
   available: boolean;
   created_at: string;
   updated_at: string;

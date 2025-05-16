@@ -7,6 +7,7 @@ import { Building2, BrainCircuit } from 'lucide-react';
 // Components
 const Login = React.lazy(() => import('./pages/Login'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const GoogleAuthCallback = React.lazy(() => import('./pages/auth/GoogleAuthCallback'));
 
 function App() {
   const { user, setUser } = useAuthStore();
@@ -45,6 +46,10 @@ function App() {
             <Route
               path="/dashboard/*"
               element={user ? <Dashboard /> : <Navigate to="/login" />}
+            />
+            <Route
+              path="/auth/google/callback"
+              element={user ? <GoogleAuthCallback /> : <Navigate to="/login" />}
             />
             <Route path="/" element={<Navigate to="/dashboard" />} />
           </Routes>

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useAuthStore } from '../../store/authStore';
-import { Loader2, CheckCircle, XCircle, UserPlus, Save, X, UserCog } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, UserPlus, Save, X, UserCog, Users, UserX, Briefcase, Building } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import CompanyProfileModal from './CompanyProfileModal';
 
 interface UserProfile {
   id: string;
@@ -10,6 +10,9 @@ interface UserProfile {
   is_admin: boolean;
   is_advisor?: boolean;
   created_at: string;
+  company_name?: string;
+  industry?: string;
+  size?: string;
   programs?: {
     id: string;
     name: string;
@@ -22,7 +25,6 @@ interface Program {
 }
 
 const UserManager: React.FC = () => {
-  const { user: currentUser } = useAuthStore();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +38,8 @@ const UserManager: React.FC = () => {
   const [newUserIsAdmin, setNewUserIsAdmin] = useState(false);
   const [newUserIsAdvisor, setNewUserIsAdvisor] = useState(false);
   const [processingAction, setProcessingAction] = useState(false);
+  const [activeTab, setActiveTab] = useState<'all' | 'unassigned'>('all');
+  const [editingCompanyProfile, setEditingCompanyProfile] = useState<string | null>(null);
 
   // Cargar usuarios y programas
   useEffect(() => {
@@ -58,7 +62,7 @@ const UserManager: React.FC = () => {
         if (programsError) throw programsError;
 
         // Formatear datos de usuarios
-        const formattedUsers = (usersData || []).map((user: any) => ({
+        const formattedUsers = (usersData || []).map((user: { id: string; email: string; is_admin: boolean; created_at: string }) => ({
           id: user.id,
           email: user.email || 'Sin correo',
           is_admin: user.is_admin,
@@ -73,7 +77,7 @@ const UserManager: React.FC = () => {
               .rpc('get_user_programs', { p_user_id: user.id });
             
             if (!enrollmentsError && enrollments) {
-              user.programs = enrollments.map((enrollment: any) => ({
+              user.programs = enrollments.map((enrollment: { program_id: string; program_name: string }) => ({
                 id: enrollment.program_id,
                 name: enrollment.program_name
               }));
@@ -100,6 +104,25 @@ const UserManager: React.FC = () => {
             console.error(`Error al verificar si el usuario ${user.id} es asesor:`, err);
           }
         }
+        
+        // Cargar información adicional de los usuarios desde la tabla companies
+        for (const user of formattedUsers) {
+          try {
+            const { data: company, error: companyError } = await supabase
+              .from('companies')
+              .select('name, industry, size')
+              .eq('user_id', user.id)
+              .maybeSingle();
+            
+            if (!companyError && company) {
+              user.company_name = company.name;
+              user.industry = company.industry;
+              user.size = company.size;
+            }
+          } catch (err) {
+            console.error(`Error al cargar información de empresa para usuario ${user.id}:`, err);
+          }
+        }
 
         setUsers(formattedUsers);
         setPrograms(programsData || []);
@@ -113,9 +136,9 @@ const UserManager: React.FC = () => {
 
     fetchData();
   }, []);
-
+  
   // Cambiar rol de administrador
-  const toggleAdminStatus = async (userId: string, isAdmin: boolean) => {
+  const handleUpdateUserRole = async (userId: string, isAdmin: boolean) => {
     try {
       setProcessingAction(true);
       
@@ -124,7 +147,6 @@ const UserManager: React.FC = () => {
         const adminUsers = users.filter(u => u.is_admin && u.id !== userId);
         if (adminUsers.length === 0) {
           setError('No se puede quitar el rol de administrador al último administrador del sistema.');
-          setProcessingAction(false);
           return;
         }
       }
@@ -153,27 +175,27 @@ const UserManager: React.FC = () => {
   };
 
   // Cambiar rol de asesor
-  const toggleAdvisorStatus = async (userId: string, isAdvisor: boolean) => {
+  const handleUpdateAdvisorRole = async (userId: string, isAdvisor: boolean) => {
     try {
       setProcessingAction(true);
       
       if (isAdvisor) {
-        // Crear perfil de asesor
+        // Crear perfil de asesor si no existe
         const user = users.find(u => u.id === userId);
-        if (!user) throw new Error('Usuario no encontrado');
-        
-        const { data, error } = await supabase.rpc('create_advisor', {
-          p_user_id: userId,
-          p_name: user.email.split('@')[0], // Nombre temporal basado en el email
-          p_bio: null,
-          p_specialty: null,
-          p_email: user.email,
-          p_phone: null,
-          p_photo_url: null,
-          p_google_account_email: null
-        });
-        
-        if (error) throw error;
+        if (user) {
+          const { error } = await supabase.rpc('create_advisor', {
+            p_user_id: userId,
+            p_name: user.email.split('@')[0], // Nombre temporal basado en el email
+            p_bio: null,
+            p_specialty: null,
+            p_email: user.email,
+            p_phone: null,
+            p_photo_url: null,
+            p_google_account_email: null
+          });
+          
+          if (error) throw error;
+        }
       } else {
         // Eliminar perfil de asesor
         const { error } = await supabase
@@ -243,7 +265,7 @@ const UserManager: React.FC = () => {
       setProcessingAction(true);
       
       // Crear nuevo usuario
-      const { data, error } = await supabase.auth.admin.createUser({
+      const { data: userData, error } = await supabase.auth.admin.createUser({
         email: newUserEmail,
         password: newUserPassword,
         email_confirm: true
@@ -251,11 +273,11 @@ const UserManager: React.FC = () => {
 
       if (error) throw error;
       
-      if (data.user) {
+      if (userData.user) {
         // Asignar rol de administrador si es necesario
         if (newUserIsAdmin) {
           await supabase.rpc('set_user_admin', {
-            user_id: data.user.id,
+            user_id: userData.user.id,
             admin_status: true
           });
         }
@@ -263,7 +285,7 @@ const UserManager: React.FC = () => {
         // Crear perfil de asesor si es necesario
         if (newUserIsAdvisor) {
           await supabase.rpc('create_advisor', {
-            p_user_id: data.user.id,
+            p_user_id: userData.user.id,
             p_name: newUserEmail.split('@')[0], // Nombre temporal basado en el email
             p_bio: null,
             p_specialty: null,
@@ -276,8 +298,8 @@ const UserManager: React.FC = () => {
         
         // Añadir a la lista de usuarios
         const newUser: UserProfile = {
-          id: data.user.id,
-          email: data.user.email || newUserEmail,
+          id: userData.user.id,
+          email: userData.user.email || newUserEmail,
           is_admin: newUserIsAdmin,
           is_advisor: newUserIsAdvisor,
           created_at: new Date().toISOString(),
@@ -384,9 +406,35 @@ const UserManager: React.FC = () => {
     }
   };
 
+  // Filtrar usuarios sin asignar (sin programas)
+  const unassignedUsers = users.filter(user => !user.programs || user.programs.length === 0);
+  
+  // Usuarios a mostrar según la pestaña activa
+  const displayedUsers = activeTab === 'all' ? users : unassignedUsers;
+  
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">Gestión de Usuarios</h1>
+      
+      {/* Pestañas de navegación */}
+      <div className="flex border-b mb-4">
+        <button
+          className={`py-2 px-4 font-medium flex items-center ${activeTab === 'all' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          onClick={() => setActiveTab('all')}
+        >
+          <Users size={18} className="mr-2" />
+          Todos los usuarios
+        </button>
+        <button
+          className={`py-2 px-4 font-medium flex items-center ${activeTab === 'unassigned' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          onClick={() => setActiveTab('unassigned')}
+        >
+          <UserX size={18} className="mr-2" />
+          Usuarios sin asignar {unassignedUsers.length > 0 && (
+            <span className="ml-2 bg-red-500 text-white text-xs rounded-full px-2 py-1">{unassignedUsers.length}</span>
+          )}
+        </button>
+      </div>
       
       {/* Mensajes de error y éxito */}
       {error && (
@@ -512,7 +560,10 @@ const UserManager: React.FC = () => {
             <thead>
               <tr>
                 <th className="py-2 px-4 border-b text-left">Correo</th>
-                <th className="py-2 px-4 border-b text-left">Fecha de Creación</th>
+                <th className="py-2 px-4 border-b text-left">Empresa</th>
+                <th className="py-2 px-4 border-b text-left">Industria</th>
+                <th className="py-2 px-4 border-b text-left">Tamaño</th>
+                <th className="py-2 px-4 border-b text-left">Fecha de Registro</th>
                 <th className="py-2 px-4 border-b text-left">Programas</th>
                 <th className="py-2 px-4 border-b text-left">Administrador</th>
                 <th className="py-2 px-4 border-b text-left">Asesor</th>
@@ -520,9 +571,24 @@ const UserManager: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {users.map((user) => (
-                <tr key={user.id} className="hover:bg-gray-50">
+              {displayedUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-4 text-center text-gray-500">
+                    {activeTab === 'unassigned' ? 'No hay usuarios sin asignar' : 'No hay usuarios registrados'}
+                  </td>
+                </tr>
+              ) : displayedUsers.map((user) => (
+                <tr key={user.id} className={`hover:bg-gray-50 ${activeTab === 'unassigned' ? 'bg-yellow-50' : ''}`}>
                   <td className="py-2 px-4 border-b">{user.email}</td>
+                  <td className="py-2 px-4 border-b">
+                    {user.company_name || <span className="text-gray-400 italic">No disponible</span>}
+                  </td>
+                  <td className="py-2 px-4 border-b">
+                    {user.industry || <span className="text-gray-400 italic">No disponible</span>}
+                  </td>
+                  <td className="py-2 px-4 border-b">
+                    {user.size || <span className="text-gray-400 italic">No disponible</span>}
+                  </td>
                   <td className="py-2 px-4 border-b">
                     {new Date(user.created_at).toLocaleDateString()}
                   </td>
@@ -548,7 +614,7 @@ const UserManager: React.FC = () => {
                         "flex items-center",
                         user.is_admin ? "text-green-500" : "text-red-500"
                       )}
-                      onClick={() => toggleAdminStatus(user.id, !user.is_admin)}
+                      onClick={() => handleUpdateUserRole(user.id, !user.is_admin)}
                       disabled={processingAction}
                     >
                       {user.is_admin ? (
@@ -565,7 +631,7 @@ const UserManager: React.FC = () => {
                         "flex items-center",
                         user.is_advisor ? "text-green-500" : "text-red-500"
                       )}
-                      onClick={() => toggleAdvisorStatus(user.id, !user.is_advisor)}
+                      onClick={() => handleUpdateAdvisorRole(user.id, !user.is_advisor)}
                       disabled={processingAction}
                     >
                       {user.is_advisor ? (
@@ -579,10 +645,19 @@ const UserManager: React.FC = () => {
                   <td className="py-2 px-4 border-b">
                     <div className="flex space-x-2">
                       <button
-                        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded text-sm"
+                        className={`${!user.programs || user.programs.length === 0 ? 'bg-green-500 hover:bg-green-700' : 'bg-blue-500 hover:bg-blue-700'} text-white font-bold py-1 px-2 rounded text-sm flex items-center`}
                         onClick={() => startEditingUser(user)}
                       >
-                        Programas
+                        <Briefcase size={16} className="mr-1" />
+                        {!user.programs || user.programs.length === 0 ? 'Asignar' : 'Programas'}
+                      </button>
+                      
+                      <button
+                        className="bg-indigo-500 hover:bg-indigo-700 text-white font-bold py-1 px-2 rounded text-sm flex items-center"
+                        onClick={() => setEditingCompanyProfile(user.id)}
+                      >
+                        <Building size={16} className="mr-1" />
+                        Empresa
                       </button>
                       
                       {user.is_advisor && (
@@ -661,6 +736,14 @@ const UserManager: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Modal para editar perfil de empresa */}
+      {editingCompanyProfile && (
+        <CompanyProfileModal
+          userId={editingCompanyProfile}
+          onClose={() => setEditingCompanyProfile(null)}
+        />
       )}
     </div>
   );

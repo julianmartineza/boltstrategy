@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../../store/authStore';
-import { Loader2, Calendar, FileText, Building, Clock, Check, X, AlertTriangle, UserCircle } from 'lucide-react';
+import { Loader2, Calendar, FileText, Building, Clock, Check, X, AlertTriangle, UserCircle, CalendarRange } from 'lucide-react';
 import { advisoryService } from './advisoryService';
 import { Advisor, AdvisoryBooking } from './types';
 import AdvisoryReportForm from './AdvisoryReportForm';
 import AdvisorProfileForm from './AdvisorProfileForm';
+import AdvisorAvailabilityManager from './AdvisorAvailabilityManager';
 
 const AdvisorPanel: React.FC = () => {
   const { user } = useAuthStore();
@@ -18,7 +19,7 @@ const AdvisorPanel: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'calendar' | 'reports' | 'companies' | 'profile'>('calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'reports' | 'companies' | 'profile' | 'availability'>('calendar');
   const [showReportForm, setShowReportForm] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<string | null>(null);
   
@@ -249,6 +250,20 @@ const AdvisorPanel: React.FC = () => {
 
             <button
               className={`py-2 px-4 border-b-2 font-medium text-sm ${
+                activeTab === 'availability'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+              onClick={() => setActiveTab('availability')}
+            >
+              <div className="flex items-center">
+                <CalendarRange size={18} className="mr-2" />
+                Disponibilidad
+              </div>
+            </button>
+            
+            <button
+              className={`py-2 px-4 border-b-2 font-medium text-sm ${
                 activeTab === 'profile'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -414,7 +429,12 @@ const AdvisorPanel: React.FC = () => {
             </div>
           )}
 
-          {/* Perfil de Asesor */}
+          {/* Disponibilidad */}
+          {activeTab === 'availability' && (
+            <AdvisorAvailabilityManager />
+          )}
+          
+          {/* Perfil */}
           {activeTab === 'profile' && (
             <AdvisorProfileForm />
           )}
