@@ -105,23 +105,40 @@ const UserManager: React.FC = () => {
           }
         }
         
-        // Cargar información adicional de los usuarios desde la tabla companies
-        for (const user of formattedUsers) {
-          try {
-            const { data: company, error: companyError } = await supabase
-              .from('companies')
-              .select('name, industry, size')
-              .eq('user_id', user.id)
-              .maybeSingle();
+        // Cargar información de empresas para todos los usuarios de una sola vez
+        try {
+          console.log('Cargando información de empresas para todos los usuarios...');
+          
+          // Primer intento: obtener todas las empresas
+          const { data: allCompanies, error: companiesError } = await supabase
+            .from('companies')
+            .select('user_id, name, industry, size');
+          
+          if (companiesError) {
+            console.error('Error al cargar empresas:', companiesError);
+          } else if (allCompanies && allCompanies.length > 0) {
+            console.log(`Se encontraron ${allCompanies.length} empresas`);
             
-            if (!companyError && company) {
-              user.company_name = company.name;
-              user.industry = company.industry;
-              user.size = company.size;
-            }
-          } catch (err) {
-            console.error(`Error al cargar información de empresa para usuario ${user.id}:`, err);
+            // Crear un mapa para acceso rápido
+            const companyMap = new Map<string, {user_id: string, name: string, industry: string, size: string}>();
+            allCompanies.forEach(company => {
+              companyMap.set(company.user_id, company);
+            });
+            
+            // Asignar información de empresa a cada usuario
+            formattedUsers.forEach((user: UserProfile) => {
+              const userCompany = companyMap.get(user.id);
+              if (userCompany) {
+                user.company_name = userCompany.name;
+                user.industry = userCompany.industry;
+                user.size = userCompany.size;
+              }
+            });
+          } else {
+            console.log('No se encontraron empresas en la base de datos');
           }
+        } catch (err) {
+          console.error('Error al procesar información de empresas:', err);
         }
 
         setUsers(formattedUsers);

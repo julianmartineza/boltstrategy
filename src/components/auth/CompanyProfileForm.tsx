@@ -38,27 +38,94 @@ const CompanyProfileForm: React.FC<CompanyProfileFormProps> = ({
   const [annualRevenue, setAnnualRevenue] = useState('');
   const [website, setWebsite] = useState('');
 
+  // Variable para almacenar el ID de la empresa si ya existe
+  const [companyId, setCompanyId] = useState<string | undefined>(undefined);
+
   useEffect(() => {
     if (!userId) return;
 
     const loadCompanyProfile = async () => {
       try {
         setLoading(true);
+        console.log('Cargando perfil de empresa para usuario:', userId);
         
+        // Intentar consulta directa a la tabla companies
+        let companyData = null;
+        
+        // Primer intento: consulta directa
         const { data, error } = await supabase
           .from('companies')
           .select('*')
           .eq('user_id', userId)
           .maybeSingle();
         
-        if (error) throw error;
+        if (error) {
+          console.error('Error en la consulta directa:', error);
+        } else if (data) {
+          console.log('Datos de empresa obtenidos con consulta directa:', data);
+          companyData = data;
+        } else {
+          console.log('No se encontró información de empresa con consulta directa');
+        }
         
-        if (data) {
-          setCompanyName(data.name || '');
-          setIndustry(data.industry || '');
-          setCompanySize(data.size || '');
-          setAnnualRevenue(data.annual_revenue?.toString() || '');
-          setWebsite(data.website || '');
+        // Segundo intento: consulta con filtro
+        if (!companyData) {
+          console.log('Intentando consulta con filtro...');
+          
+          // Consulta usando filter en lugar de eq
+          const { data: filterData, error: filterError } = await supabase
+            .from('companies')
+            .select('*')
+            .filter('user_id', 'eq', userId)
+            .maybeSingle();
+          
+          if (filterError) {
+            console.error('Error en la consulta con filtro:', filterError);
+          } else if (filterData) {
+            console.log('Datos obtenidos con consulta filtrada:', filterData);
+            companyData = filterData;
+          } else {
+            console.log('No se encontró información de empresa con consulta filtrada');
+          }
+        }
+        
+        // Tercer intento: consulta a todas las empresas
+        if (!companyData) {
+          console.log('Intentando consulta a todas las empresas...');
+          
+          // Obtener todas las empresas y filtrar manualmente
+          const { data: allCompanies, error: allError } = await supabase
+            .from('companies')
+            .select('*');
+          
+          if (allError) {
+            console.error('Error al obtener todas las empresas:', allError);
+          } else if (allCompanies && allCompanies.length > 0) {
+            // Buscar la empresa del usuario actual
+            const userCompany = allCompanies.find(company => company.user_id === userId);
+            
+            if (userCompany) {
+              console.log('Empresa encontrada en la lista completa:', userCompany);
+              companyData = userCompany;
+            } else {
+              console.log('No se encontró la empresa del usuario en la lista completa');
+            }
+          } else {
+            console.log('No se encontraron empresas en la base de datos');
+          }
+        }
+        
+        // Si se encontraron datos, actualizar el estado
+        if (companyData) {
+          setCompanyId(companyData.id);
+          setCompanyName(companyData.name || '');
+          setIndustry(companyData.industry || '');
+          setCompanySize(companyData.size || '');
+          setAnnualRevenue(companyData.annual_revenue?.toString() || '');
+          setWebsite(companyData.website || '');
+          console.log('Información de empresa cargada correctamente');
+        } else {
+          console.log('No se encontró información de empresa para este usuario');
         }
       } catch (err) {
         console.error('Error al cargar el perfil de empresa:', err);
@@ -81,7 +148,9 @@ const CompanyProfileForm: React.FC<CompanyProfileFormProps> = ({
     
     try {
       setSaving(true);
+      console.log('Guardando perfil de empresa para usuario:', userId);
       
+      // Crear objeto de datos de la empresa
       const companyData: CompanyData = {
         user_id: userId,
         name: companyName,
@@ -91,15 +160,29 @@ const CompanyProfileForm: React.FC<CompanyProfileFormProps> = ({
         website
       };
       
+      // Si ya existe un ID de empresa, incluirlo en los datos
+      if (companyId) {
+        companyData.id = companyId;
+        console.log('Actualizando empresa existente con ID:', companyId);
+      } else {
+        console.log('Creando nuevo registro de empresa');
+      }
+      
+      // Realizar la operación upsert
       const { error } = await supabase
         .from('companies')
         .upsert(companyData, { onConflict: 'user_id' });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error en la operación upsert:', error);
+        throw error;
+      }
       
+      console.log('Empresa guardada exitosamente');
       setSuccess('Información de empresa guardada exitosamente.');
       setTimeout(() => setSuccess(null), 3000);
       
+      // Si se proporcionó una función de callback, ejecutarla
       if (onComplete) {
         onComplete();
       }
