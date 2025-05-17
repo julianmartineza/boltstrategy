@@ -7,8 +7,9 @@ const EMBEDDING_MODEL = 'text-embedding-3-small'; // Modelo más ligero para emb
 // Caché de embeddings para evitar solicitudes duplicadas
 const embeddingCache = new Map<string, number[]>();
 
-// URL base para las APIs serverless
-// En desarrollo usamos la API de OpenAI directamente, en producción usamos nuestras funciones serverless
+// URL base para las APIs
+// En desarrollo local usamos directamente la API de OpenAI
+// En producción usamos la ruta relativa /api
 const API_BASE_URL = import.meta.env.DEV ? 'https://api.openai.com/v1' : '/api';
 
 // Obtener la clave API de OpenAI de las variables de entorno
