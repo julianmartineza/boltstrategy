@@ -8,7 +8,11 @@ const EMBEDDING_MODEL = 'text-embedding-3-small'; // Modelo más ligero para emb
 const embeddingCache = new Map<string, number[]>();
 
 // URL base para las APIs serverless
-const API_BASE_URL = '/api';
+// En desarrollo usamos la API de OpenAI directamente, en producción usamos nuestras funciones serverless
+const API_BASE_URL = import.meta.env.DEV ? 'https://api.openai.com/v1' : '/api';
+
+// Obtener la clave API de OpenAI de las variables de entorno
+const OPENAI_API_KEY = import.meta.env.OPENAI_API_KEY;
 
 export interface SimilarMessage {
   id: string;
@@ -38,17 +42,34 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     console.log(`📤 Enviando solicitud a la API para generar embedding usando modelo: ${EMBEDDING_MODEL}`);
     console.time('⏱️ Tiempo de respuesta embedding');
     
-    const response = await fetch(`${API_BASE_URL}/openai`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        action: 'embedding',
-        model: EMBEDDING_MODEL,
-        input: text
-      })
-    });
+    let response;
+    if (import.meta.env.DEV) {
+      // En desarrollo, llamamos directamente a la API de OpenAI
+      response = await fetch(`${API_BASE_URL}/embeddings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: EMBEDDING_MODEL,
+          input: text
+        })
+      });
+    } else {
+      // En producción, usamos nuestras funciones serverless
+      response = await fetch(`${API_BASE_URL}/openai`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action: 'embedding',
+          model: EMBEDDING_MODEL,
+          input: text
+        })
+      });
+    }
     
     if (!response.ok) {
       throw new Error(`Error en la API: ${response.status} ${response.statusText}`);
@@ -57,10 +78,19 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     const data = await response.json();
     
     console.timeEnd('⏱️ Tiempo de respuesta embedding');
-    console.log('📥 Respuesta de embedding recibida, longitud:', data.embedding.length);
+    
+    // Extraer el embedding según el formato de respuesta
+    let embedding;
+    if (import.meta.env.DEV) {
+      // La API de OpenAI devuelve los embeddings en un formato diferente
+      embedding = data.data[0].embedding;
+      console.log('📥 Respuesta de embedding recibida, longitud:', embedding.length);
+    } else {
+      embedding = data.embedding;
+      console.log('📥 Respuesta de embedding recibida, longitud:', embedding.length);
+    }
     
     // Guardar en caché para futuras solicitudes
-    const embedding = data.embedding;
     embeddingCache.set(cacheKey, embedding);
     
     // Limitar el tamaño de la caché (máximo 50 embeddings)
@@ -304,24 +334,48 @@ export async function generateBotResponse(
     try {
       console.time('⏱️ Tiempo de respuesta API');
       
-      const response = await fetch(`${API_BASE_URL}/openai`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          action: 'chat',
-          messages: messages.map(m => ({ 
-            role: m.role as 'system' | 'user' | 'assistant', 
-            content: m.content 
-          })),
-          model: CHAT_MODEL,
-          temperature: 0.7,
-          max_tokens: 3000,
-          presence_penalty: 0.6,
-          frequency_penalty: 0.3
-        })
-      });
+      let response;
+      if (import.meta.env.DEV) {
+        // En desarrollo, llamamos directamente a la API de OpenAI
+        response = await fetch(`${API_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENAI_API_KEY}`
+          },
+          body: JSON.stringify({
+            messages: messages.map(m => ({ 
+              role: m.role as 'system' | 'user' | 'assistant', 
+              content: m.content 
+            })),
+            model: CHAT_MODEL,
+            temperature: 0.7,
+            max_tokens: 3000,
+            presence_penalty: 0.6,
+            frequency_penalty: 0.3
+          })
+        });
+      } else {
+        // En producción, usamos nuestras funciones serverless
+        response = await fetch(`${API_BASE_URL}/openai`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            action: 'chat',
+            messages: messages.map(m => ({ 
+              role: m.role as 'system' | 'user' | 'assistant', 
+              content: m.content 
+            })),
+            model: CHAT_MODEL,
+            temperature: 0.7,
+            max_tokens: 3000,
+            presence_penalty: 0.6,
+            frequency_penalty: 0.3
+          })
+        });
+      }
 
       if (!response.ok) {
         // Verificar si es un error de límite de uso
@@ -334,7 +388,13 @@ export async function generateBotResponse(
       const data = await response.json();
       console.timeEnd('⏱️ Tiempo de respuesta API');
       
-      const botResponse = data.response || 'Lo siento, no pude generar una respuesta.';
+      let botResponse;
+      if (import.meta.env.DEV) {
+        // La API de OpenAI devuelve la respuesta en un formato diferente
+        botResponse = data.choices[0].message.content || 'Lo siento, no pude generar una respuesta.';
+      } else {
+        botResponse = data.response || 'Lo siento, no pude generar una respuesta.';
+      }
       
       // Guardar respuesta de bienvenida en caché
       if (messages[0].role === 'user' && messages[0].content === "Hola, ¿puedes ayudarme con esta actividad?" && botResponse) {
