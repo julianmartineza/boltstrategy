@@ -3,7 +3,7 @@ import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useProgramStore } from '../store/programStore';
 import { supabase } from '../lib/supabase';
-import { Menu, X, User, LogOut, ChevronRight, Building2, BookOpen, Calendar } from 'lucide-react';
+import { Menu, X, User, LogOut, ChevronRight, Building2, BookOpen, Calendar, BookMarked } from 'lucide-react';
 
 const StrategyProgram = React.lazy(() => import('../components/programs/strategy/StrategyProgram'));
 const CompanySetup = React.lazy(() => import('../components/CompanySetup'));
@@ -11,6 +11,7 @@ const CompanyProfile = React.lazy(() => import('./CompanyProfile'));
 const AdminDashboard = React.lazy(() => import('./admin/AdminDashboard'));
 const AdvisorPanel = React.lazy(() => import('../components/advisory/AdvisorPanel'));
 const AdvisorManager = React.lazy(() => import('../components/admin/AdvisorManager'));
+const CompanyAdvisoryPanel = React.lazy(() => import('../components/advisory/CompanyAdvisoryPanel'));
 
 export default function Dashboard() {
   const { signOut, user, isAdmin } = useAuthStore();
@@ -213,7 +214,7 @@ export default function Dashboard() {
                   className={`flex items-center px-4 py-3 text-sm ${
                     location.pathname.includes('/dashboard/company-profile') 
                       ? 'bg-blue-50 text-blue-600 border-r-4 border-blue-600' 
-                      : 'text-gray-700 hover:bg-gray-50'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
                   <span className="ml-3">Perfil de Empresa</span>
@@ -222,6 +223,26 @@ export default function Dashboard() {
                   )}
                 </Link>
               </li>
+              {hasCompany && (
+                <li>
+                  <Link
+                    to="/dashboard/advisory"
+                    className={`flex items-center px-4 py-3 text-sm ${
+                      location.pathname.includes('/dashboard/advisory') 
+                        ? 'bg-blue-50 text-blue-600 border-r-4 border-blue-600' 
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center">
+                      <BookMarked size={18} className="mr-2" />
+                      <span>Panel de Asesorías</span>
+                    </div>
+                    {location.pathname.includes('/dashboard/advisory') && (
+                      <ChevronRight className="ml-auto h-5 w-5 text-blue-600" />
+                    )}
+                  </Link>
+                </li>
+              )}
               {isAdmin && (
                 <li>
                   <Link
@@ -357,6 +378,14 @@ export default function Dashboard() {
                   element={<AdvisorPanel />} 
                 />
               )}
+              
+              {/* Ruta para el panel de asesorías de la empresa */}
+              {hasCompany && (
+                <Route 
+                  path="/advisory" 
+                  element={<CompanyAdvisoryPanel />} 
+                />
+              )}
               {isAdmin && (
                 <>
                   <Route 
@@ -387,6 +416,11 @@ export default function Dashboard() {
                   <Route 
                     path="/admin/advisors/:id" 
                     element={<AdvisorManager />} 
+                  />
+                  {/* Ruta para la gestión de asignaciones de asesores */}
+                  <Route 
+                    path="/admin/advisors" 
+                    element={<AdminDashboard />} 
                   />
                 </>
               )}

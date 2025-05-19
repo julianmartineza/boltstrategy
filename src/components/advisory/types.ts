@@ -13,6 +13,11 @@ export interface Advisor {
   calendar_sync_token?: string;
   calendar_refresh_token?: string;
   available: boolean;
+  // Configuración de horarios de trabajo
+  workingHoursStart?: string; // Formato: 'HH:MM' (ej: '09:00')
+  workingHoursEnd?: string; // Formato: 'HH:MM' (ej: '17:00')
+  slotDuration?: number; // Duración de los slots en minutos (ej: 60)
+  workingDays?: number[]; // Días de la semana (0 = domingo, 6 = sábado)
   created_at: string;
   updated_at: string;
 }

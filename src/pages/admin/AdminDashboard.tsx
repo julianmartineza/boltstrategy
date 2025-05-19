@@ -4,10 +4,11 @@ import { Navigate, useNavigate, useLocation } from 'react-router-dom';
 import ProgramsManager from './ProgramsManager';
 import ContentManager from './ContentManager';
 import ActivityEvaluation from './ActivityEvaluation';
-import { Layers, FileText, Settings, ClipboardCheck, Sliders } from 'lucide-react';
+import { Layers, FileText, Settings, ClipboardCheck, Sliders, Users } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import UserManager from '../../components/admin/UserManager';
 import ActivityContextManager from '../../components/admin/content-manager/ActivityContextManager';
+import AdvisorAssignmentManager from '../../components/admin/AdvisorAssignmentManager';
 
 const AdminDashboard: React.FC = () => {
   const { isAdmin, user } = useAuthStore();
@@ -15,16 +16,17 @@ const AdminDashboard: React.FC = () => {
   const location = useLocation();
   
   // Extraer la pestaña activa de la URL
-  const getTabFromUrl = (): 'programs' | 'content' | 'evaluation' | 'settings' | 'context' => {
+  const getTabFromUrl = (): 'programs' | 'content' | 'evaluation' | 'settings' | 'context' | 'advisors' => {
     const path = location.pathname;
     if (path.includes('/dashboard/admin/content')) return 'content';
     if (path.includes('/dashboard/admin/evaluation')) return 'evaluation';
     if (path.includes('/dashboard/admin/settings')) return 'settings';
     if (path.includes('/dashboard/admin/context')) return 'context';
+    if (path.includes('/dashboard/admin/advisors')) return 'advisors';
     return 'programs'; // Por defecto
   };
   
-  const [currentTab, setCurrentTab] = useState<'programs' | 'content' | 'evaluation' | 'settings' | 'context'>(getTabFromUrl());
+  const [currentTab, setCurrentTab] = useState<'programs' | 'content' | 'evaluation' | 'settings' | 'context' | 'advisors'>(getTabFromUrl());
   const [settingsTab, setSettingsTab] = useState<'users' | 'system'>('users');
 
   // Redirigir si el usuario no es administrador
@@ -41,7 +43,7 @@ const AdminDashboard: React.FC = () => {
   }, [location.pathname, currentTab]);
 
   // Cambiar de pestaña y actualizar la URL
-  const handleTabChange = (tab: 'programs' | 'content' | 'evaluation' | 'settings' | 'context') => {
+  const handleTabChange = (tab: 'programs' | 'content' | 'evaluation' | 'settings' | 'context' | 'advisors') => {
     setCurrentTab(tab);
     navigate(`/dashboard/admin/${tab}`);
   };
@@ -62,6 +64,8 @@ const AdminDashboard: React.FC = () => {
         return <ActivityEvaluation />;
       case 'context':
         return <ActivityContextManager />;
+      case 'advisors':
+        return <AdvisorAssignmentManager />;
       case 'settings':
         return (
           <div className="p-6 bg-white rounded-lg shadow-md">
@@ -134,47 +138,57 @@ const AdminDashboard: React.FC = () => {
         <h1 className="text-2xl font-bold text-blue-700 mb-6">Panel de Administración</h1>
         
         {/* Botones tipo thumbnails */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+        <div className="flex overflow-x-auto space-x-1 p-1 bg-gray-100 rounded-lg mb-6">
           <button
             onClick={() => handleTabChange('programs')}
             className={cn(
-              "flex flex-col items-center justify-center p-6 rounded-lg shadow-sm transition-all duration-200 border-2",
-              currentTab === 'programs' 
-                ? "bg-blue-50 border-blue-500 text-blue-700" 
-                : "bg-white border-transparent hover:border-blue-200 hover:bg-blue-50/50 text-gray-600"
+              "flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors",
+              currentTab === 'programs'
+                ? "bg-white shadow text-blue-600"
+                : "text-gray-600 hover:bg-gray-200"
             )}
           >
-            <Layers size={32} className="mb-2" />
-            <span className="font-medium">Programas</span>
-            <p className="text-xs mt-1 text-gray-500">Gestionar programas y etapas</p>
+            <Layers className="h-4 w-4 mr-2" />
+            Programas
           </button>
           
           <button
             onClick={() => handleTabChange('content')}
             className={cn(
-              "flex flex-col items-center justify-center p-6 rounded-lg shadow-sm transition-all duration-200 border-2",
-              currentTab === 'content' 
-                ? "bg-blue-50 border-blue-500 text-blue-700" 
-                : "bg-white border-transparent hover:border-blue-200 hover:bg-blue-50/50 text-gray-600"
+              "flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors",
+              currentTab === 'content'
+                ? "bg-white shadow text-blue-600"
+                : "text-gray-600 hover:bg-gray-200"
             )}
           >
-            <FileText size={32} className="mb-2" />
-            <span className="font-medium">Contenido</span>
-            <p className="text-xs mt-1 text-gray-500">Administrar contenido de etapas</p>
+            <FileText className="h-4 w-4 mr-2" />
+            Contenidos
+          </button>
+          
+          <button
+            onClick={() => handleTabChange('advisors')}
+            className={cn(
+              "flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors",
+              currentTab === 'advisors'
+                ? "bg-white shadow text-blue-600"
+                : "text-gray-600 hover:bg-gray-200"
+            )}
+          >
+            <Users className="h-4 w-4 mr-2" />
+            Asesores
           </button>
           
           <button
             onClick={() => handleTabChange('evaluation')}
             className={cn(
-              "flex flex-col items-center justify-center p-6 rounded-lg shadow-sm transition-all duration-200 border-2",
-              currentTab === 'evaluation' 
-                ? "bg-blue-50 border-blue-500 text-blue-700" 
-                : "bg-white border-transparent hover:border-blue-200 hover:bg-blue-50/50 text-gray-600"
+              "flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors",
+              currentTab === 'evaluation'
+                ? "bg-white shadow text-blue-600"
+                : "text-gray-600 hover:bg-gray-200"
             )}
           >
-            <ClipboardCheck size={32} className="mb-2" />
-            <span className="font-medium">Evaluación</span>
-            <p className="text-xs mt-1 text-gray-500">Configurar evaluación de actividades</p>
+            <ClipboardCheck className="h-4 w-4 mr-2" />
+            Evaluación
           </button>
           
           <button

@@ -128,10 +128,10 @@ const AdvisorAvailabilityManager: React.FC = () => {
     while (currentDate <= endDate) {
       const dayDate = new Date(currentDate);
       
-      // Horario de trabajo (9 AM a 5 PM)
-      const startHour = 9;
-      const endHour = 17;
-      const slotDuration = 60; // 60 minutos por slot
+      // Usar horario de trabajo personalizado del asesor o valores predeterminados
+      const startHour = advisor?.workingHoursStart ? parseInt(advisor.workingHoursStart.split(':')[0]) : 9;
+      const endHour = advisor?.workingHoursEnd ? parseInt(advisor.workingHoursEnd.split(':')[0]) : 17;
+      const slotDuration = advisor?.slotDuration || 60; // duración del slot en minutos
       
       const slots: TimeSlot[] = [];
       
@@ -197,6 +197,92 @@ const AdvisorAvailabilityManager: React.FC = () => {
       minute: '2-digit'
     });
   };
+
+  // Actualizar la configuración de horarios de trabajo
+  const [isEditingSettings, setIsEditingSettings] = useState(false);
+  const [workingHoursStart, setWorkingHoursStart] = useState('09:00');
+  const [workingHoursEnd, setWorkingHoursEnd] = useState('17:00');
+  const [slotDuration, setSlotDuration] = useState(60);
+  const [workingDays, setWorkingDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  // Cargar la configuración actual del asesor
+  useEffect(() => {
+    if (advisor) {
+      setWorkingHoursStart(advisor.workingHoursStart || '09:00');
+      setWorkingHoursEnd(advisor.workingHoursEnd || '17:00');
+      setSlotDuration(advisor.slotDuration || 60);
+      setWorkingDays(advisor.workingDays || [1, 2, 3, 4, 5]);
+    }
+  }, [advisor]);
+
+  // Guardar la configuración de horarios de trabajo
+  const saveWorkingHoursSettings = async () => {
+    if (!advisor) return;
+    
+    setSavingSettings(true);
+    setError(null);
+    
+    try {
+      // Actualizar el asesor en la base de datos
+      const updated = await advisoryService.updateAdvisor({
+        id: advisor.id,
+        workingHoursStart,
+        workingHoursEnd,
+        slotDuration,
+        workingDays
+      });
+      
+      if (updated) {
+        setSuccess('Configuración de horarios guardada correctamente');
+        setIsEditingSettings(false);
+        
+        // Actualizar el objeto asesor en el estado
+        setAdvisor({
+          ...advisor,
+          workingHoursStart,
+          workingHoursEnd,
+          slotDuration,
+          workingDays
+        });
+        
+        // Regenerar la disponibilidad con la nueva configuración
+        fetchCalendarEvents();
+      } else {
+        setError('Error al guardar la configuración de horarios');
+      }
+    } catch (err) {
+      console.error('Error al guardar la configuración de horarios:', err);
+      setError('Error al guardar la configuración. Por favor, inténtalo de nuevo.');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  // Cancelar la edición de la configuración
+  const cancelEditSettings = () => {
+    setIsEditingSettings(false);
+    
+    // Restaurar valores originales
+    if (advisor) {
+      setWorkingHoursStart(advisor.workingHoursStart || '09:00');
+      setWorkingHoursEnd(advisor.workingHoursEnd || '17:00');
+      setSlotDuration(advisor.slotDuration || 60);
+      setWorkingDays(advisor.workingDays || [1, 2, 3, 4, 5]);
+    }
+  };
+
+  // Manejar cambios en los días de trabajo
+  const toggleWorkingDay = (day: number) => {
+    if (workingDays.includes(day)) {
+      setWorkingDays(workingDays.filter(d => d !== day));
+    } else {
+      setWorkingDays([...workingDays, day].sort());
+    }
+  };
+
+  // Nombres de los días de la semana
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
   if (loading) {
     return (

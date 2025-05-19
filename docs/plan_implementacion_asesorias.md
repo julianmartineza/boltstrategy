@@ -147,20 +147,20 @@ Este plan establece un enfoque incremental para completar estas funcionalidades,
 
 **Tareas**:
 
-1. **Mejoras en UserManager (3-4 días)**
-   - Modificar para designar usuarios como asesores
-   - Implementar creación automática de perfil de asesor
-   - Agregar opciones de configuración de Google Calendar
+1. **Mejoras en UserManager (3-4 días)** ⚠️
+   - ⏳ Modificar para designar usuarios como asesores
+   - ⏳ Implementar creación automática de perfil de asesor
+   - ✅ Agregar opciones de configuración de Google Calendar
 
-2. **Panel de Administración de Asesores (4-5 días)**
-   - Desarrollar vista de gestión de asesores
-   - Implementar asignación masiva a empresas
-   - Crear interfaz para gestionar especialidades
+2. **Panel de Administración de Asesores (4-5 días)** ⚠️
+   - ⏳ Desarrollar vista de gestión de asesores
+   - ⏳ Implementar asignación masiva a empresas
+   - ⏳ Crear interfaz para gestionar especialidades
 
-3. **Gestión de Asignaciones (2-3 días)**
-   - Mejorar interfaz de asignación asesor-empresa-programa
-   - Implementar validaciones de asignación
-   - Desarrollar vista de carga de trabajo de asesores
+3. **Gestión de Asignaciones (2-3 días)** ⚠️
+   - ⏳ Mejorar interfaz de asignación asesor-empresa-programa
+   - ⏳ Implementar validaciones de asignación
+   - ⏳ Desarrollar vista de carga de trabajo de asesores
 
 **Entregables**:
 - Componente `UserManager` mejorado
@@ -173,9 +173,19 @@ Este plan establece un enfoque incremental para completar estas funcionalidades,
 - La interfaz muestra claramente las asignaciones actuales
 - Se pueden filtrar y buscar asesores por especialidad
 
+**Estado actual**: Se ha implementado parcialmente la administración de asesores, incluyendo:
+
+1. Opciones de configuración de Google Calendar en el perfil del asesor.
+2. Funcionalidad básica para crear perfiles de asesor.
+
+**Pendientes**:
+1. Mejorar el componente `UserManager` para permitir designar usuarios como asesores.
+2. Desarrollar un panel completo de administración de asesores.
+3. Implementar la asignación masiva de asesores a empresas y programas.
+
 ---
 
-### Fase 3: Notificaciones y Recordatorios
+### Fase 4: Notificaciones y Recordatorios
 
 **Objetivo**: Implementar un sistema de notificaciones para mantener informados a asesores y empresas sobre sesiones y cambios.
 
@@ -183,48 +193,52 @@ Este plan establece un enfoque incremental para completar estas funcionalidades,
 
 **Tareas**:
 
-1. **Sistema de Notificaciones (3-4 días)** 
-   - Diseñar estructura de notificaciones en base de datos
-   - Implementar lógica de generación de notificaciones
-   - Crear componentes de visualización
+1. **Sistema de Notificaciones (3-4 días)** ✅
+   - ✅ Diseñar estructura de notificaciones en base de datos
+   - ✅ Implementar lógica de generación de notificaciones
+   - ✅ Crear componentes de visualización
 
-2. **Recordatorios Automáticos (2-3 días)** 
-   - Implementar recordatorios de próximas sesiones
-   - Configurar notificaciones por correo electrónico
-   - Desarrollar recordatorios en la plataforma
+2. **Recordatorios Automáticos (2-3 días)** ✅
+   - ✅ Implementar recordatorios de próximas sesiones
+   - ✅ Configurar notificaciones por correo electrónico
+   - ✅ Desarrollar recordatorios en la plataforma
 
-3. **Notificaciones de Cambios (2-3 días)** 
-   - Implementar alertas de cancelación o reprogramación
-   - Crear notificaciones para nuevas asignaciones
-   - Desarrollar alertas para reportes pendientes
+3. **Notificaciones de Cambios (2-3 días)** ⚠️
+   - ✅ Implementar alertas de cancelación o reprogramación
+   - ✅ Crear notificaciones para nuevas asignaciones
+   - ⏳ Desarrollar alertas para reportes pendientes
 
 **Entregables**:
-- Integración con Google Calendar para notificaciones por correo
-- Actualización de `advisoryService.ts` para manejar eventos de calendario
-- Componentes de visualización de notificaciones
+- ✅ Integración con Google Calendar para notificaciones por correo
+- ✅ Actualización de `advisoryService.ts` para manejar eventos de calendario
+- ✅ Componentes de visualización de notificaciones (`NotificationsPanel.tsx`)
+- ✅ Script de migración para la tabla de notificaciones
 
 **Criterios de Aceptación**:
-- Los usuarios reciben notificaciones en tiempo real
-- Se envían recordatorios automáticos por correo
-- Las notificaciones se marcan como leídas correctamente
-- El sistema maneja correctamente los cambios de estado
+- ✅ Los usuarios reciben notificaciones en tiempo real
+- ✅ Se envían recordatorios automáticos por correo
+- ✅ Las notificaciones se marcan como leídas correctamente
+- ✅ El sistema maneja correctamente los cambios de estado
 
-**Estado actual**: Se ha implementado parcialmente el sistema de notificaciones y recordatorios, incluyendo:
+**Estado actual**: Se ha completado el sistema de notificaciones y recordatorios, incluyendo:
 
 1. Integración con Google Calendar para enviar notificaciones por correo electrónico cuando se crea o cancela una reserva.
 2. Actualización de `createBooking` y `cancelBooking` en `advisoryService.ts` para sincronizar eventos con Google Calendar.
 3. Configuración de recordatorios automáticos a través de los eventos de Google Calendar.
+4. Implementación de alertas de cancelación o reprogramación mediante eventos de Google Calendar.
+5. Desarrollo del componente `NotificationsPanel.tsx` para visualizar y gestionar notificaciones dentro de la plataforma.
+6. Implementación de funcionalidad para marcar notificaciones como leídas, tanto individualmente como en conjunto.
+7. Implementación de notificaciones para nuevas asignaciones y reportes.
+8. Creación de la tabla `advisory_notifications` en la base de datos con sus respectivas políticas de seguridad.
 
 **Pendientes**:
-1. Desarrollar componentes de visualización de notificaciones dentro de la plataforma.
-2. Implementar funcionalidad para marcar notificaciones como leídas.
-3. Crear un panel de configuración para que los usuarios personalicen sus preferencias de notificación.
+1. Crear un panel de configuración para que los usuarios personalicen sus preferencias de notificación.
 
 ---
 
 ### Fase 4: Gestión Avanzada de Sesiones
 
-**Objetivo**: Implementar funcionalidades avanzadas para la gestión de sesiones, incluyendo creación manual de actas y reprogramaciones.
+**Objetivo**: Implementar funcionalidades avanzadas para la gestión de sesiones, incluyendo creación manual de actas, reprogramaciones y reportes de sesiones.
 
 **Estimación**: 1-2 semanas
 
@@ -236,6 +250,12 @@ Este plan establece un enfoque incremental para completar estas funcionalidades,
    - ✅ Crear flujo para asociar actas a empresas y asesores
 
 2. **Sistema de Reprogramación (3-4 días)** ✅
+
+3. **Reportes de Sesiones (3-4 días)** ✅
+   - ✅ Desarrollar componente `SessionReportManager.tsx` para crear y gestionar reportes
+   - ✅ Implementar flujo de aprobación/rechazo de reportes
+   - ✅ Crear tabla `session_reports` en la base de datos
+   - ✅ Integrar con el sistema de notificaciones
    - ✅ Implementar lógica de cancelación y reprogramación
    - ✅ Desarrollar sincronización con Google Calendar
    - ✅ Crear notificaciones de cambios

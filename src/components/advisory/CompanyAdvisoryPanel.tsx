@@ -1,31 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../../store/authStore';
-import { Loader2, Calendar, FileText, Building, Clock, Check, X, AlertTriangle, UserCircle, CalendarRange, Bell, ClipboardList } from 'lucide-react';
+import { Loader2, Calendar, FileText, Building, Clock, Check, X, AlertTriangle, Bell, ClipboardList } from 'lucide-react';
 import { advisoryService } from './advisoryService';
-import { Advisor, AdvisoryBooking } from './types';
-import AdvisoryReportForm from './AdvisoryReportForm';
-import AdvisorProfileForm from './AdvisorProfileForm';
-import AdvisorAvailabilityManager from './AdvisorAvailabilityManager';
+import { supabase } from '../../lib/supabase';
 import NotificationsPanel from './NotificationsPanel';
 import SessionReportManager from './SessionReportManager';
 
-const AdvisorPanel: React.FC = () => {
+/**
+ * Panel de asesorías para empresas
+ * Permite a las empresas gestionar sus sesiones de asesoría, ver notificaciones y reportes
+ */
+const CompanyAdvisoryPanel: React.FC = () => {
   const { user } = useAuthStore();
   
-  const [advisor, setAdvisor] = useState<Advisor | null>(null);
-  const [bookings, setBookings] = useState<AdvisoryBooking[]>([]);
+  const [company, setCompany] = useState<any | null>(null);
+  const [bookings, setBookings] = useState<any[]>([]);
   const [pendingReports, setPendingReports] = useState<any[]>([]);
-  const [companies, setCompanies] = useState<any[]>([]);
+  const [advisors, setAdvisors] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'calendar' | 'reports' | 'companies' | 'profile' | 'availability' | 'notifications' | 'session-reports'>('calendar');
-  const [showReportForm, setShowReportForm] = useState(false);
-  const [selectedBooking, setSelectedBooking] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'calendar' | 'reports' | 'advisors' | 'notifications' | 'session-reports'>('calendar');
   
-  // Cargar datos del asesor
+  // Cargar datos de la empresa
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -33,39 +32,39 @@ const AdvisorPanel: React.FC = () => {
         
         setLoading(true);
         
-        // Verificar si el usuario es asesor
-        const isAdvisor = await advisoryService.isUserAdvisor(user.id);
+        // Verificar si el usuario tiene una empresa
+        // Importamos supabase directamente desde el archivo lib/supabase
+        const { data: companies, error: companyError } = await supabase
+          .from('companies')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
         
-        if (!isAdvisor) {
-          setError('No tienes permisos de asesor.');
+        if (companyError) {
+          throw companyError;
+        }
+        
+        if (!companies) {
+          setError('No se encontró tu perfil de empresa.');
           setLoading(false);
           return;
         }
         
-        // Cargar perfil del asesor
-        const advisorData = await advisoryService.getAdvisorByUserId(user.id);
+        // Cargar reservas de la empresa
+        const bookingsData = await advisoryService.getCompanyBookings(companies.id);
         
-        if (!advisorData) {
-          setError('No se encontró tu perfil de asesor.');
-          setLoading(false);
-          return;
-        }
+        // Cargar reportes pendientes de revisión
+        const pendingReportsData = await advisoryService.getPendingReportsForCompany(companies.id);
         
-        // Cargar reservas del asesor
-        const bookingsData = await advisoryService.getAdvisorBookings(advisorData.id);
+        // Cargar asesores asignados
+        const advisorsData = await advisoryService.getCompanyAdvisors(companies.id);
         
-        // Cargar reportes pendientes
-        const pendingReportsData = await advisoryService.getPendingReports(advisorData.id);
-        
-        // Cargar empresas asignadas
-        const companiesData = await advisoryService.getAdvisorCompanies(advisorData.id);
-        
-        setAdvisor(advisorData);
+        setCompany(companies);
         setBookings(bookingsData);
         setPendingReports(pendingReportsData);
-        setCompanies(companiesData);
+        setAdvisors(advisorsData);
       } catch (err) {
-        console.error('Error al cargar datos del asesor:', err);
+        console.error('Error al cargar datos de la empresa:', err);
         setError('Error al cargar los datos. Por favor, inténtalo de nuevo.');
       } finally {
         setLoading(false);
@@ -74,52 +73,6 @@ const AdvisorPanel: React.FC = () => {
     
     fetchData();
   }, [user]);
-  
-  // Función para crear un reporte
-  const handleCreateReport = async (report: {
-    bookingId: string;
-    notes: string;
-    commitments: string;
-    submitted: boolean;
-  }) => {
-    try {
-      setLoading(true);
-      
-      const reportId = await advisoryService.createReport({
-        bookingId: report.bookingId,
-        notes: report.notes,
-        commitments: report.commitments,
-        submitted: report.submitted
-      });
-      
-      if (!reportId) {
-        throw new Error('Error al crear el reporte');
-      }
-      
-      // Recargar reportes pendientes
-      if (advisor) {
-        const updatedReports = await advisoryService.getPendingReports(advisor.id);
-        setPendingReports(updatedReports);
-      }
-      
-      setShowReportForm(false);
-      setSelectedBooking(null);
-      setSuccess('Reporte creado exitosamente.');
-      
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err) {
-      console.error('Error al crear reporte:', err);
-      setError('Error al crear el reporte. Por favor, inténtalo de nuevo.');
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Función para abrir el formulario de reporte
-  const handleOpenReportForm = (bookingId: string) => {
-    setSelectedBooking(bookingId);
-    setShowReportForm(true);
-  };
   
   // Filtrar reservas para el calendario
   const getUpcomingBookings = () => {
@@ -153,10 +106,10 @@ const AdvisorPanel: React.FC = () => {
     );
   }
   
-  if (!advisor) {
+  if (!company) {
     return (
       <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-        <p>{error || 'No se encontró tu perfil de asesor.'}</p>
+        <p>{error || 'No se encontró tu perfil de empresa.'}</p>
       </div>
     );
   }
@@ -183,10 +136,10 @@ const AdvisorPanel: React.FC = () => {
           </div>
         )}
         
-        {/* Información del asesor */}
+        {/* Información de la empresa */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold mb-2">Panel de Asesor</h1>
-          <p className="text-gray-600">Bienvenido, {advisor.name}</p>
+          <h1 className="text-2xl font-bold mb-2">Panel de Asesorías</h1>
+          <p className="text-gray-600">Bienvenido, {company.name}</p>
         </div>
         
         {/* Alertas */}
@@ -194,8 +147,8 @@ const AdvisorPanel: React.FC = () => {
           <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded mb-4 flex items-start">
             <AlertTriangle size={20} className="mr-2 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="font-medium">Tienes {pendingReports.length} actas pendientes por completar</p>
-              <p className="text-sm">Por favor, completa las actas de las sesiones realizadas.</p>
+              <p className="font-medium">Tienes {pendingReports.length} reportes pendientes por revisar</p>
+              <p className="text-sm">Por favor, revisa los reportes de las sesiones realizadas.</p>
             </div>
           </div>
         )}
@@ -227,7 +180,7 @@ const AdvisorPanel: React.FC = () => {
             >
               <div className="flex items-center">
                 <FileText size={18} className="mr-2" />
-                Actas Pendientes
+                Reportes Pendientes
                 {pendingReports.length > 0 && (
                   <span className="ml-2 bg-red-500 text-white rounded-full text-xs px-2 py-0.5">
                     {pendingReports.length}
@@ -252,29 +205,15 @@ const AdvisorPanel: React.FC = () => {
             
             <button
               className={`py-2 px-4 border-b-2 font-medium text-sm ${
-                activeTab === 'companies'
+                activeTab === 'advisors'
                   ? 'border-blue-500 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               }`}
-              onClick={() => setActiveTab('companies')}
+              onClick={() => setActiveTab('advisors')}
             >
               <div className="flex items-center">
                 <Building size={18} className="mr-2" />
-                Empresas Asignadas
-              </div>
-            </button>
-
-            <button
-              className={`py-2 px-4 border-b-2 font-medium text-sm ${
-                activeTab === 'availability'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab('availability')}
-            >
-              <div className="flex items-center">
-                <CalendarRange size={18} className="mr-2" />
-                Disponibilidad
+                Asesores Asignados
               </div>
             </button>
             
@@ -289,20 +228,6 @@ const AdvisorPanel: React.FC = () => {
               <div className="flex items-center">
                 <Bell size={18} className="mr-2" />
                 Notificaciones
-              </div>
-            </button>
-            
-            <button
-              className={`py-2 px-4 border-b-2 font-medium text-sm ${
-                activeTab === 'profile'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              onClick={() => setActiveTab('profile')}
-            >
-              <div className="flex items-center">
-                <UserCircle size={18} className="mr-2" />
-                Mi Perfil
               </div>
             </button>
           </nav>
@@ -335,7 +260,7 @@ const AdvisorPanel: React.FC = () => {
                           </p>
                           <p className="text-gray-600 flex items-center mt-1">
                             <Building size={16} className="mr-2" />
-                            {booking.company?.name || 'Empresa no asignada'}
+                            {booking.advisor?.name || 'Asesor no asignado'}
                           </p>
                         </div>
                       </div>
@@ -364,7 +289,7 @@ const AdvisorPanel: React.FC = () => {
                           </p>
                           <p className="text-gray-600 flex items-center mt-1">
                             <Building size={16} className="mr-2" />
-                            {booking.company?.name || 'Empresa no asignada'}
+                            {booking.advisor?.name || 'Asesor no asignado'}
                           </p>
                         </div>
                         
@@ -375,12 +300,9 @@ const AdvisorPanel: React.FC = () => {
                               Completada
                             </span>
                           ) : (
-                            <button
-                              className="text-blue-500 hover:text-blue-700 text-sm"
-                              onClick={() => handleOpenReportForm(booking.id)}
-                            >
-                              Crear Acta
-                            </button>
+                            <span className="text-gray-500">
+                              {booking.status === 'cancelled' ? 'Cancelada' : booking.status}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -393,75 +315,94 @@ const AdvisorPanel: React.FC = () => {
             </div>
           )}
           
-          {/* Actas Pendientes */}
+          {/* Reportes Pendientes */}
           {activeTab === 'reports' && (
             <div>
-              <h2 className="text-xl font-semibold mb-4">Actas Pendientes</h2>
+              <h2 className="text-xl font-semibold mb-4">Reportes Pendientes de Revisión</h2>
               
               {pendingReports.length > 0 ? (
                 <div className="space-y-4">
                   {pendingReports.map((report) => (
                     <div 
-                      key={report.booking_id} 
+                      key={report.id} 
                       className="p-4 rounded-md border border-yellow-200 bg-yellow-50"
                     >
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className="font-medium">{report.session_title || 'Sesión sin título'}</p>
+                          <p className="font-medium">{report.title || 'Reporte sin título'}</p>
                           <p className="text-gray-600 flex items-center mt-1">
                             <Calendar size={16} className="mr-2" />
-                            {formatDateTime(report.start_time)}
+                            {formatDateTime(report.created_at)}
                           </p>
                           <p className="text-gray-600 flex items-center mt-1">
                             <Building size={16} className="mr-2" />
-                            {report.company_name || 'Empresa no asignada'}
+                            {report.advisor_name || 'Asesor no asignado'}
                           </p>
                         </div>
                         
-                        <button
-                          className="bg-blue-500 hover:bg-blue-700 text-white text-sm py-1 px-3 rounded"
-                          onClick={() => handleOpenReportForm(report.booking_id)}
-                        >
-                          Completar Acta
-                        </button>
+                        <div className="flex space-x-2">
+                          <button
+                            className="bg-green-500 hover:bg-green-700 text-white text-sm py-1 px-3 rounded"
+                            onClick={() => {
+                              // Implementar lógica para aprobar reporte
+                              advisoryService.updateSessionReportStatus(report.id, 'approved');
+                              setSuccess('Reporte aprobado correctamente');
+                              setPendingReports(pendingReports.filter(r => r.id !== report.id));
+                            }}
+                          >
+                            Aprobar
+                          </button>
+                          <button
+                            className="bg-red-500 hover:bg-red-700 text-white text-sm py-1 px-3 rounded"
+                            onClick={() => {
+                              // Implementar lógica para rechazar reporte
+                              const feedback = prompt('Por favor, proporciona un feedback para el rechazo:');
+                              if (feedback) {
+                                advisoryService.updateSessionReportStatus(report.id, 'rejected', feedback);
+                                setSuccess('Reporte rechazado correctamente');
+                                setPendingReports(pendingReports.filter(r => r.id !== report.id));
+                              }
+                            }}
+                          >
+                            Rechazar
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-600">No tienes actas pendientes por completar.</p>
+                <p className="text-gray-600">No tienes reportes pendientes por revisar.</p>
               )}
             </div>
           )}
           
-          {/* Empresas Asignadas */}
-          {activeTab === 'companies' && (
+          {/* Asesores Asignados */}
+          {activeTab === 'advisors' && (
             <div>
-              <h2 className="text-xl font-semibold mb-4">Empresas Asignadas</h2>
+              <h2 className="text-xl font-semibold mb-4">Asesores Asignados</h2>
               
-              {companies.length > 0 ? (
+              {advisors.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {companies.map((company) => (
+                  {advisors.map((advisor) => (
                     <div 
-                      key={`${company.id}-${company.program_id}`} 
+                      key={advisor.id} 
                       className="p-4 rounded-md border border-gray-200 bg-white hover:bg-gray-50"
                     >
-                      <p className="font-medium">{company.name}</p>
+                      <p className="font-medium">{advisor.name}</p>
                       <p className="text-gray-600 text-sm mt-1">
-                        Programa: {company.program_name}
+                        {advisor.specialization || 'Sin especialización'}
+                      </p>
+                      <p className="text-gray-600 text-sm mt-1">
+                        {advisor.email}
                       </p>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-600">No tienes empresas asignadas.</p>
+                <p className="text-gray-600">No tienes asesores asignados.</p>
               )}
             </div>
-          )}
-
-          {/* Disponibilidad */}
-          {activeTab === 'availability' && (
-            <AdvisorAvailabilityManager />
           )}
           
           {/* Notificaciones */}
@@ -473,33 +414,10 @@ const AdvisorPanel: React.FC = () => {
           {activeTab === 'session-reports' && (
             <SessionReportManager />
           )}
-          
-          {/* Perfil */}
-          {activeTab === 'profile' && (
-            <AdvisorProfileForm />
-          )}
         </div>
       </div>
-      
-      {/* Formulario de reporte */}
-      {showReportForm && selectedBooking && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-            <h3 className="text-xl font-bold mb-4">Crear Acta de Asesoría</h3>
-            
-            <AdvisoryReportForm
-              bookingId={selectedBooking}
-              onSubmit={handleCreateReport}
-              onCancel={() => {
-                setShowReportForm(false);
-                setSelectedBooking(null);
-              }}
-            />
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
-export default AdvisorPanel;
+export default CompanyAdvisoryPanel;

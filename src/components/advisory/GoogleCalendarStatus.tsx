@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { advisoryService } from './advisoryService';
-import { googleCalendarService } from './googleCalendarService';
+import googleCalendarService from './googleCalendarService';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription, AlertTitle } from '../ui/alert';

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
-import { googleCalendarService } from './googleCalendarService';
+import googleCalendarService from './googleCalendarService';
 import { advisoryService } from './advisoryService';
 
 const GoogleAuthCallback: React.FC = () => {

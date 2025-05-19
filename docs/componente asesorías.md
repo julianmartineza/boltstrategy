@@ -135,10 +135,25 @@ CREATE TABLE advisor_assignments (
 
 ## 5. Consideraciones técnicas
 
-- Usar OAuth2 para que el asesor sincronice su cuenta de Google.
-- Gestionar tokens de acceso y refresco desde `advisors.calendar_sync_token`.
-- Considerar usar Edge Functions o cron jobs para manejar eventos o refrescar datos de calendario.
-- Adaptar `@admin/content-manager` para que soporte este nuevo tipo de contenido con lógica específica.
+### 5.1. Integración con Google Calendar
+
+- ✅ Usar OAuth2 para que el asesor sincronice su cuenta de Google.
+- ✅ Gestionar tokens de acceso y refresco desde `advisors.calendar_sync_token` y `advisors.calendar_refresh_token`.
+- ✅ Implementar mecanismos de refresco automático de tokens cuando expiren.
+- ✅ Sincronización bidireccional de eventos entre la plataforma y Google Calendar.
+- ⏳ Considerar usar Edge Functions o cron jobs para manejar eventos o refrescar datos de calendario.
+
+### 5.2. Gestión de disponibilidad
+
+- ✅ Calcular la disponibilidad real del asesor basada en sus eventos de Google Calendar.
+- ✅ Permitir configuración de horarios laborales y duración de slots por parte del asesor.
+- ✅ Manejar conflictos de horario y solapamientos entre eventos.
+- ⏳ Optimizar consultas para mejorar rendimiento con muchos eventos.
+
+### 5.3. Integración con el sistema
+
+- ⏳ Adaptar `@admin/content-manager` para que soporte este nuevo tipo de contenido con lógica específica.
+- ✅ Implementar componentes reutilizables para la gestión de disponibilidad y reservas.
 
 ---
 
@@ -180,6 +195,69 @@ Se debe implementar un panel específico para asesores que incluya:
 ## 8. Recomendaciones de implementación
 
 - Pilotear primero en un programa específico.
+
+---
+
+## 9. Estado actual de implementación
+
+### 9.1. Integración con Google Calendar
+
+**Completado:**
+- ✅ Configuración de OAuth2 para autenticación con Google Calendar
+- ✅ Implementación del flujo de autorización y callback
+- ✅ Almacenamiento seguro de tokens en la base de datos
+- ✅ Refresco automático de tokens expirados
+- ✅ Sincronización bidireccional de eventos
+- ✅ Componente para mostrar el estado de conexión con Google Calendar
+
+**Pendiente:**
+- ⏳ Pruebas exhaustivas con múltiples asesores y escenarios
+- ⏳ Implementación de Edge Functions para sincronización periódica
+- ⏳ Manejo de webhooks para actualizaciones en tiempo real
+
+### 9.2. Gestión de disponibilidad
+
+**Completado:**
+- ✅ Componente `AdvisorAvailabilityManager` para gestionar disponibilidad
+- ✅ Configuración de horarios laborales y duración de slots
+- ✅ Cálculo de disponibilidad basado en eventos de Google Calendar
+- ✅ Visualización de eventos y slots disponibles
+
+**Pendiente:**
+- ⏳ Optimización de rendimiento para calendarios con muchos eventos
+- ⏳ Mejoras en la interfaz de usuario para selección de horarios
+- ⏳ Implementación de vistas de calendario avanzadas (mes, semana, día)
+
+### 9.3. Sistema de notificaciones
+
+**Completado:**
+- ✅ Notificaciones por correo electrónico a través de Google Calendar
+- ✅ Recordatorios automáticos para sesiones programadas
+- ✅ Alertas de cancelación o reprogramación
+
+**Pendiente:**
+- ⏳ Componentes de visualización de notificaciones en la plataforma
+- ⏳ Panel de configuración de preferencias de notificación
+- ⏳ Notificaciones para nuevas asignaciones y reportes pendientes
+
+### 9.4. Administración de asesores
+
+**Completado:**
+- ✅ Estructura básica para la gestión de perfiles de asesores
+- ✅ Configuración de Google Calendar en el perfil del asesor
+
+**Pendiente:**
+- ⏳ Mejoras en el componente `UserManager` para designar usuarios como asesores
+- ⏳ Panel completo de administración de asesores
+- ⏳ Interfaz para asignación masiva de asesores a empresas y programas
+
+### 9.5. Próximos pasos prioritarios
+
+1. Completar las pruebas de la integración con Google Calendar con credenciales reales
+2. Desarrollar el panel de administración de asesores
+3. Implementar componentes de visualización de notificaciones
+4. Optimizar el rendimiento de las consultas de disponibilidad
+5. Implementar Edge Functions para sincronización periódica
 - Validar integración completa con agendamiento y reportes.
 - Establecer dashboard de seguimiento para administradores y asesores.
 
