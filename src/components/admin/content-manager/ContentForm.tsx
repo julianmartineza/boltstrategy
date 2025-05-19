@@ -177,6 +177,96 @@ const ContentForm: React.FC<ContentFormProps> = ({
     }
   }, [content, isEditing]);
 
+  // Función para crear asignaciones de horas para todas las empresas en un programa
+  const createAdvisoryAllocationsForModule = async (programModuleId: string, duration: number) => {
+    try {
+      // Obtener el programa asociado al módulo
+      const { data: moduleData, error: moduleError } = await supabase
+        .from('strategy_stages')
+        .select('program_id')
+        .eq('id', programModuleId)
+        .single();
+      
+      if (moduleError) {
+        console.error('Error al obtener información del módulo:', moduleError);
+        return;
+      }
+      
+      const programId = moduleData?.program_id;
+      
+      if (!programId) {
+        console.error('No se encontró el ID del programa para el módulo');
+        return;
+      }
+      
+      // Obtener todas las empresas inscritas en este programa
+      const { data: enrollments, error: enrollmentsError } = await supabase
+        .from('program_enrollments')
+        .select('company_id')
+        .eq('program_id', programId);
+      
+      if (enrollmentsError) {
+        console.error('Error al obtener empresas inscritas:', enrollmentsError);
+        return;
+      }
+      
+      if (!enrollments || enrollments.length === 0) {
+        console.log('No hay empresas inscritas en este programa');
+        return;
+      }
+      
+      // Crear asignaciones de horas para cada empresa
+      const companyIds = enrollments.map(enrollment => enrollment.company_id);
+      
+      // Calcular minutos totales basados en la duración de la sesión
+      // Por defecto, asignamos tiempo para 2 sesiones
+      const totalMinutes = duration * 2;
+      
+      // Verificar asignaciones existentes para no duplicar
+      const { data: existingAllocations, error: checkError } = await supabase
+        .from('advisory_allocations')
+        .select('company_id')
+        .eq('program_module_id', programModuleId)
+        .in('company_id', companyIds);
+      
+      if (checkError) {
+        console.error('Error al verificar asignaciones existentes:', checkError);
+      }
+      
+      // Filtrar solo las empresas que no tienen asignaciones
+      const existingCompanyIds = existingAllocations?.map(a => a.company_id) || [];
+      const companiesToAllocate = companyIds.filter(id => !existingCompanyIds.includes(id));
+      
+      if (companiesToAllocate.length === 0) {
+        console.log('Todas las empresas ya tienen asignaciones para este módulo');
+        return;
+      }
+      
+      // Crear las nuevas asignaciones
+      const allocations = companiesToAllocate.map(companyId => ({
+        company_id: companyId,
+        program_module_id: programModuleId,
+        total_minutes: totalMinutes,
+        used_minutes: 0
+      }));
+      
+      const { error: insertError } = await supabase
+        .from('advisory_allocations')
+        .insert(allocations);
+      
+      if (insertError) {
+        console.error('Error al crear asignaciones de horas:', insertError);
+      } else {
+        console.log(`Asignaciones de horas creadas para ${allocations.length} empresas`);
+        setSuccessMessage(`Asignaciones de horas creadas automáticamente para ${allocations.length} empresas`);
+        setShowSuccessMessage(true);
+        setTimeout(() => setShowSuccessMessage(false), 3000);
+      }
+    } catch (err) {
+      console.error('Error general al crear asignaciones de horas:', err);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -209,6 +299,24 @@ const ContentForm: React.FC<ContentFormProps> = ({
           duration: contentData.duration,
           session_type: contentData.session_type
         };
+        
+        // Guardar la duración para usarla después de guardar
+        const sessionDuration = contentData.duration;
+        
+        // Guardar la sesión y luego crear asignaciones de horas
+        onSave(updatedContent, activityData);
+        
+        // Si estamos editando y tenemos el ID del módulo, crear asignaciones de horas
+        if (moduleId) {
+          // Esperar un momento para asegurarnos de que la sesión se guardó correctamente
+          setTimeout(() => {
+            createAdvisoryAllocationsForModule(moduleId, sessionDuration);
+          }, 1000);
+        } else {
+          console.log('No se pudo crear asignaciones de horas: moduleId no disponible');
+        }
+        
+        return; // Salir para evitar la llamada a onSave al final
       }
 
       // Si es una actividad, asegurarse de que se guarde como tipo 'activity'

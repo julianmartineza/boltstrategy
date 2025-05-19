@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import VideoPlayer from '../../VideoPlayer';
 import { Chat } from '../../chat/Chat';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
+import AdvisorySessionComponent from '../../advisory/AdvisorySessionComponent';
+import { useAuthStore } from '../../../store/authStore';
+import { supabase } from '../../../lib/supabase';
 
 // Definición de tipo actualizada para incluir 'advisory_session'
 type StageContent = {
@@ -56,6 +59,59 @@ export function StageContent({
 
   // Obtener el contenido actual
   const currentContent = content[currentIndex];
+  
+  const { user } = useAuthStore();
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [advisorySessionId, setAdvisorySessionId] = useState<string | null>(null);
+  
+  // Obtener el ID de la empresa del usuario actual
+  useEffect(() => {
+    const fetchCompanyId = async () => {
+      if (!user) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('companies')
+          .select('id')
+          .eq('user_id', user.id)
+          .single();
+        
+        if (error) throw error;
+        if (data) setCompanyId(data.id);
+      } catch (err) {
+        console.error('Error al obtener el ID de la empresa:', err);
+      }
+    };
+    
+    fetchCompanyId();
+  }, [user]);
+  
+  // Obtener el ID de la sesión de asesoría cuando el contenido cambia
+  useEffect(() => {
+    const fetchAdvisorySessionId = async () => {
+      if (!currentContent || currentContent.content_type !== 'advisory_session') {
+        setAdvisorySessionId(null);
+        return;
+      }
+      
+      try {
+        // Buscar el ID de la sesión de asesoría en el registro de contenido
+        const { data, error } = await supabase
+          .from('content_registry')
+          .select('content_id')
+          .eq('id', currentContent.id)
+          .single();
+        
+        if (error) throw error;
+        if (data) setAdvisorySessionId(data.content_id);
+      } catch (err) {
+        console.error('Error al obtener el ID de la sesión de asesoría:', err);
+      }
+    };
+    
+    fetchAdvisorySessionId();
+  }, [currentContent]);
+  // Logs detallados para depuración
   
   // Logs detallados para depuración
   console.log('========== DATOS EN STAGECOMPONENT ==========');
@@ -160,6 +216,23 @@ export function StageContent({
                   </div>
                 )}
               </div>
+            </div>
+          ) : currentContent?.content_type === 'advisory_session' ? (
+            <div className="w-full">
+              {companyId && advisorySessionId ? (
+                <AdvisorySessionComponent 
+                  sessionId={advisorySessionId} 
+                  companyId={companyId} 
+                />
+              ) : (
+                <div className="p-4 text-center text-gray-500">
+                  {!companyId ? (
+                    <p>No se pudo determinar tu empresa. Por favor, contacta al administrador.</p>
+                  ) : (
+                    <p>Cargando información de la sesión de asesoría...</p>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="prose max-w-none w-full">

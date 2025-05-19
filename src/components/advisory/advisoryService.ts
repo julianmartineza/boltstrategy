@@ -131,6 +131,7 @@ export const advisoryService = {
     programId: string
   ): Promise<string | null> {
     try {
+      // Asignar el asesor a la empresa
       const { data, error } = await supabase
         .rpc('assign_advisor_to_company', {
           p_advisor_id: advisorId,
@@ -139,10 +140,107 @@ export const advisoryService = {
         });
       
       if (error) throw error;
+      
+      // Si la asignación fue exitosa, crear asignaciones de horas para todas las sesiones de asesoría
+      // en este programa para esta empresa
+      if (data) {
+        await this.createAdvisoryAllocationsForCompany(companyId, programId);
+      }
+      
       return data;
     } catch (error) {
       console.error('Error al asignar asesor a empresa:', error);
       return null;
+    }
+  },
+  
+  // Crear asignaciones de horas para todas las sesiones de asesoría en un programa para una empresa
+  async createAdvisoryAllocationsForCompany(companyId: string, programId: string): Promise<void> {
+    try {
+      // 1. Obtener todos los módulos del programa que contienen sesiones de asesoría
+      const { data: moduleContents, error: modulesError } = await supabase
+        .from('program_module_contents')
+        .select(`
+          program_module_id,
+          content_registry:content_registry_id (id, content_type, content_id)
+        `)
+        .eq('content_registry.content_type', 'advisory_session');
+      
+      if (modulesError) {
+        console.error('Error al obtener módulos con sesiones de asesoría:', modulesError);
+        return;
+      }
+      
+      if (!moduleContents || moduleContents.length === 0) {
+        console.log('No hay sesiones de asesoría configuradas en este programa');
+        return;
+      }
+      
+      // 2. Obtener información de las sesiones de asesoría para conocer su duración
+      const contentIds = moduleContents
+        .map(m => m.content_registry?.content_id)
+        .filter(id => id); // Filtrar valores nulos
+      
+      if (contentIds.length === 0) return;
+      
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('advisory_sessions')
+        .select('id, duration')
+        .in('id', contentIds);
+      
+      if (sessionsError) {
+        console.error('Error al obtener información de sesiones:', sessionsError);
+        return;
+      }
+      
+      // 3. Para cada módulo, verificar si ya existe una asignación y crearla si no existe
+      for (const moduleContent of moduleContents) {
+        const moduleId = moduleContent.program_module_id;
+        const contentId = moduleContent.content_registry?.content_id;
+        
+        if (!moduleId || !contentId) continue;
+        
+        // Buscar la duración de esta sesión
+        const session = sessions?.find(s => s.id === contentId);
+        const duration = session?.duration || 60; // Valor predeterminado: 60 minutos
+        
+        // Verificar si ya existe una asignación para este módulo y empresa
+        const { data: existingAllocation, error: checkError } = await supabase
+          .from('advisory_allocations')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('program_module_id', moduleId)
+          .maybeSingle();
+        
+        if (checkError) {
+          console.error('Error al verificar asignación existente:', checkError);
+          continue;
+        }
+        
+        // Si no existe, crear una nueva asignación
+        if (!existingAllocation) {
+          // Calcular minutos totales basados en la duración de la sesión
+          // Por defecto, asignamos tiempo para 2 sesiones
+          const totalMinutes = duration * 2;
+          
+          const { error: insertError } = await supabase
+            .from('advisory_allocations')
+            .insert({
+              company_id: companyId,
+              program_module_id: moduleId,
+              total_minutes: totalMinutes,
+              used_minutes: 0
+            });
+          
+          if (insertError) {
+            console.error('Error al crear asignación de horas:', insertError);
+          } else {
+            console.log(`Asignación de horas creada para módulo ${moduleId} y empresa ${companyId}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error general al crear asignaciones de horas:', err);
     }
   },
 
