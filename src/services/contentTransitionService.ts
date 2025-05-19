@@ -478,10 +478,183 @@ export const updateContent = async (
       }
     }
     
-    // Para otros tipos, necesitamos identificar si está en la nueva estructura
-    // o en la antigua, y actualizar en consecuencia
+    // Para videos, buscamos directamente en video_contents
+    if (content.content_type === 'video') {
+      console.log(`Actualizando video con ID: ${content.id}`);
+      
+      // Buscar directamente en video_contents
+      const { data: videoContent, error: findError } = await supabase
+        .from('video_contents')
+        .select('*')
+        .eq('id', content.id)
+        .maybeSingle();
+      
+      if (findError && findError.code !== 'PGRST116') {
+        console.error('Error al buscar video por ID:', findError);
+      }
+      
+      // Si encontramos el video directamente, lo actualizamos
+      if (videoContent) {
+        console.log(`✅ Video encontrado directamente: ${videoContent.id}`);
+        
+        // Actualizar contenido de video
+        const { error: videoError } = await supabase
+          .from('video_contents')
+          .update({ 
+            title: content.title,
+            video_url: content.url || content.content,
+            source: content.provider || 'youtube'
+          })
+          .eq('id', content.id);
+        
+        if (videoError) {
+          console.error('Error al actualizar video:', videoError);
+          throw new Error(`Error al actualizar video: ${videoError.message}`);
+        }
+        
+        // Verificar si existe un registro en content_registry
+        const { data: existingRegistry, error: registryCheckError } = await supabase
+          .from('content_registry')
+          .select('*')
+          .eq('content_id', content.id)
+          .eq('content_type', 'video')
+          .maybeSingle();
+        
+        if (registryCheckError && registryCheckError.code !== 'PGRST116') {
+          console.error('Error al verificar registro existente:', registryCheckError);
+        }
+        
+        // Si no existe registro, lo creamos
+        if (!existingRegistry) {
+          console.log('Creando registro en content_registry para video existente');
+          
+          const { data: newRegistry, error: createError } = await supabase
+            .from('content_registry')
+            .insert({
+              content_id: content.id,
+              content_table: 'video_contents',
+              content_type: 'video',
+              title: content.title,
+              stage_id: content.stage_id,
+              status: 'active'
+            })
+            .select()
+            .single();
+          
+          if (createError) {
+            console.error('Error al crear registro:', createError);
+          } else {
+            console.log('✅ Registro creado correctamente:', newRegistry);
+          }
+        } else {
+          // Actualizar el registro existente
+          const { error: updateRegistryError } = await supabase
+            .from('content_registry')
+            .update({ 
+              title: content.title
+            })
+            .eq('id', existingRegistry.id);
+          
+          if (updateRegistryError) {
+            console.error('Error al actualizar registro:', updateRegistryError);
+          }
+        }
+        
+        console.log('✅ Video actualizado correctamente');
+        return content;
+      }
+    }
     
-    // Primero intentamos encontrar el registro en content_registry
+    // Para texto, buscamos directamente en text_contents
+    if (content.content_type === 'text') {
+      console.log(`Actualizando texto con ID: ${content.id}`);
+      
+      // Buscar directamente en text_contents
+      const { data: textContent, error: findError } = await supabase
+        .from('text_contents')
+        .select('*')
+        .eq('id', content.id)
+        .maybeSingle();
+      
+      if (findError && findError.code !== 'PGRST116') {
+        console.error('Error al buscar texto por ID:', findError);
+      }
+      
+      // Si encontramos el texto directamente, lo actualizamos
+      if (textContent) {
+        console.log(`✅ Texto encontrado directamente: ${textContent.id}`);
+        
+        // Actualizar contenido de texto
+        const { error: textError } = await supabase
+          .from('text_contents')
+          .update({ 
+            title: content.title,
+            content: content.content
+          })
+          .eq('id', content.id);
+        
+        if (textError) {
+          console.error('Error al actualizar texto:', textError);
+          throw new Error(`Error al actualizar texto: ${textError.message}`);
+        }
+        
+        // Verificar si existe un registro en content_registry
+        const { data: existingRegistry, error: registryCheckError } = await supabase
+          .from('content_registry')
+          .select('*')
+          .eq('content_id', content.id)
+          .eq('content_type', 'text')
+          .maybeSingle();
+        
+        if (registryCheckError && registryCheckError.code !== 'PGRST116') {
+          console.error('Error al verificar registro existente:', registryCheckError);
+        }
+        
+        // Si no existe registro, lo creamos
+        if (!existingRegistry) {
+          console.log('Creando registro en content_registry para texto existente');
+          
+          const { data: newRegistry, error: createError } = await supabase
+            .from('content_registry')
+            .insert({
+              content_id: content.id,
+              content_table: 'text_contents',
+              content_type: 'text',
+              title: content.title,
+              stage_id: content.stage_id,
+              status: 'active'
+            })
+            .select()
+            .single();
+          
+          if (createError) {
+            console.error('Error al crear registro:', createError);
+          } else {
+            console.log('✅ Registro creado correctamente:', newRegistry);
+          }
+        } else {
+          // Actualizar el registro existente
+          const { error: updateRegistryError } = await supabase
+            .from('content_registry')
+            .update({ 
+              title: content.title
+            })
+            .eq('id', existingRegistry.id);
+          
+          if (updateRegistryError) {
+            console.error('Error al actualizar registro:', updateRegistryError);
+          }
+        }
+        
+        console.log('✅ Texto actualizado correctamente');
+        return content;
+      }
+    }
+    
+    // Si llegamos aquí, intentamos el método tradicional con content_registry
+    console.log('Intentando actualizar contenido usando content_registry...');
+    
+    // Buscar en content_registry
     const { data: registryData, error: registryError } = await supabase
       .from('content_registry')
       .select('*')
