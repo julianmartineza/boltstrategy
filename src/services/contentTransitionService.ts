@@ -236,87 +236,245 @@ export const updateContent = async (
   activityData?: ActivityData
 ) => {
   try {
-    // Para actividades, seguimos usando la estructura modular moderna
+    // Para actividades, primero intentamos buscar directamente en activity_contents
     if (content.content_type === 'activity') {
-      // Si activityData no está definido, intentamos extraerlo del content.activity_data
-      let finalActivityData: ActivityData = activityData || {
-        prompt: '',
-        initial_message: '',
-        system_instructions: '',
-        max_exchanges: 5,
-        step: 1,
-        prompt_section: '',
-        dependencies: []
-      };
+      console.log(`Actualizando actividad con ID: ${content.id}`);
       
-      // Si activityData está vacío pero hay datos en content.activity_data, usamos esos
-      if (Object.keys(finalActivityData).length === 0 && content.activity_data) {
-        try {
-          finalActivityData = typeof content.activity_data === 'string' 
-            ? JSON.parse(content.activity_data) 
-            : content.activity_data;
-          
-          console.log('Datos de actividad extraídos de content.activity_data:', finalActivityData);
-        } catch (error) {
-          console.error('Error al parsear activity_data:', error);
-        }
+      // Buscar directamente en activity_contents
+      const { data: activityContent, error: findError } = await supabase
+        .from('activity_contents')
+        .select('*')
+        .eq('id', content.id)
+        .maybeSingle();
+      
+      if (findError && findError.code !== 'PGRST116') {
+        console.error('Error al buscar actividad por ID:', findError);
       }
       
-      // Asegurarnos de que los campos importantes estén presentes
-      if (content.prompt_section) {
-        finalActivityData.prompt_section = content.prompt_section;
-      }
-      
-      if (content.system_instructions) {
-        finalActivityData.system_instructions = content.system_instructions;
-      }
-      
-      // Asegurarnos de que las dependencias se pasen correctamente
-      if (content.dependencies) {
-        finalActivityData.dependencies = content.dependencies;
-      }
-      
-      // Asegurarnos de que todos los campos requeridos estén presentes
-      finalActivityData = {
-        ...finalActivityData,
-        prompt: finalActivityData.prompt || '',
-        initial_message: finalActivityData.initial_message || '',
-        system_instructions: finalActivityData.system_instructions || '',
-        max_exchanges: finalActivityData.max_exchanges || 5,
-        step: finalActivityData.step || 1,
-        prompt_section: finalActivityData.prompt_section || '',
-        dependencies: finalActivityData.dependencies || []
-      };
-      
-      console.log('Actualizando actividad con datos completos:', {
-        stage_id: content.stage_id,
-        title: content.title,
-        activityData: finalActivityData,
-        prompt_section: finalActivityData.prompt_section,
-        system_instructions: finalActivityData.system_instructions,
-        dependencies: finalActivityData.dependencies
-      });
-      
-      // Verificar que stage_id no sea undefined
-      if (!content.stage_id) {
-        console.error('Error: stage_id es undefined, no se puede actualizar la actividad');
-        throw new Error('stage_id es requerido para actualizar la actividad');
-      }
-      
-      // Actualizar el contenido de actividad en la nueva estructura
-      const activityContent = await contentRegistryService.updateActivityContent(
-        content.stage_id,
-        content.title,
-        finalActivityData,
-        finalActivityData.prompt_section,
-        finalActivityData.system_instructions
-      );
-      
+      // Si encontramos la actividad directamente, la actualizamos
       if (activityContent) {
-        console.log('Actividad actualizada con estructura modular:', activityContent);
-        return activityContent;
+        console.log(`✅ Actividad encontrada directamente: ${activityContent.id}`);
+        
+        // Preparar los datos de la actividad
+        let finalActivityData: ActivityData = activityData || {
+          prompt: '',
+          initial_message: '',
+          system_instructions: '',
+          max_exchanges: 5,
+          step: 1,
+          prompt_section: '',
+          dependencies: []
+        };
+        
+        // Si activityData está vacío pero hay datos en content.activity_data, usamos esos
+        if (Object.keys(finalActivityData).length === 0 && content.activity_data) {
+          try {
+            finalActivityData = typeof content.activity_data === 'string' 
+              ? JSON.parse(content.activity_data) 
+              : content.activity_data;
+            
+            console.log('Datos de actividad extraídos de content.activity_data:', finalActivityData);
+          } catch (error) {
+            console.error('Error al parsear activity_data:', error);
+          }
+        }
+        
+        // Si hay datos en activityContent.activity_data y no tenemos datos completos, los usamos como base
+        if (activityContent.activity_data && Object.keys(finalActivityData).length === 0) {
+          try {
+            const existingData = typeof activityContent.activity_data === 'string'
+              ? JSON.parse(activityContent.activity_data)
+              : activityContent.activity_data;
+            
+            finalActivityData = {
+              ...existingData,
+              ...finalActivityData
+            };
+            
+            console.log('Datos existentes de actividad incorporados:', finalActivityData);
+          } catch (error) {
+            console.error('Error al parsear datos existentes:', error);
+          }
+        }
+        
+        // Asegurarnos de que los campos importantes estén presentes
+        if (content.prompt_section) {
+          finalActivityData.prompt_section = content.prompt_section;
+        }
+        
+        if (content.system_instructions) {
+          finalActivityData.system_instructions = content.system_instructions;
+        }
+        
+        // Asegurarnos de que las dependencias se pasen correctamente
+        if (content.dependencies) {
+          finalActivityData.dependencies = content.dependencies;
+        }
+        
+        // Asegurarnos de que todos los campos requeridos estén presentes
+        finalActivityData = {
+          ...finalActivityData,
+          prompt: finalActivityData.prompt || '',
+          initial_message: finalActivityData.initial_message || '',
+          system_instructions: finalActivityData.system_instructions || '',
+          max_exchanges: finalActivityData.max_exchanges || 5,
+          step: finalActivityData.step || 1,
+          prompt_section: finalActivityData.prompt_section || '',
+          dependencies: finalActivityData.dependencies || []
+        };
+        
+        // Actualizar directamente en activity_contents
+        const { error: updateError } = await supabase
+          .from('activity_contents')
+          .update({
+            title: content.title,
+            activity_data: finalActivityData,
+            prompt_section: finalActivityData.prompt_section,
+            system_instructions: finalActivityData.system_instructions,
+            dependencies: finalActivityData.dependencies,
+            stage_id: content.stage_id || activityContent.stage_id
+          })
+          .eq('id', content.id);
+        
+        if (updateError) {
+          console.error('Error al actualizar actividad:', updateError);
+          throw new Error(`Error al actualizar actividad: ${updateError.message}`);
+        }
+        
+        // Verificar si existe un registro en content_registry
+        const { data: existingRegistry, error: registryCheckError } = await supabase
+          .from('content_registry')
+          .select('*')
+          .eq('content_id', content.id)
+          .eq('content_type', 'activity')
+          .maybeSingle();
+        
+        if (registryCheckError && registryCheckError.code !== 'PGRST116') {
+          console.error('Error al verificar registro existente:', registryCheckError);
+        }
+        
+        // Si no existe registro, lo creamos
+        if (!existingRegistry) {
+          console.log('Creando registro en content_registry para actividad existente');
+          
+          const { data: newRegistry, error: createError } = await supabase
+            .from('content_registry')
+            .insert({
+              content_id: content.id,
+              content_table: 'activity_contents',
+              content_type: 'activity',
+              title: content.title,
+              stage_id: content.stage_id || activityContent.stage_id,
+              status: 'active'
+            })
+            .select()
+            .single();
+          
+          if (createError) {
+            console.error('Error al crear registro:', createError);
+          } else {
+            console.log('✅ Registro creado correctamente:', newRegistry);
+          }
+        } else {
+          // Actualizar el registro existente
+          const { error: updateRegistryError } = await supabase
+            .from('content_registry')
+            .update({ 
+              title: content.title
+            })
+            .eq('id', existingRegistry.id);
+          
+          if (updateRegistryError) {
+            console.error('Error al actualizar registro:', updateRegistryError);
+          }
+        }
+        
+        console.log('✅ Actividad actualizada correctamente');
+        return content;
       } else {
-        throw new Error('Error al actualizar actividad');
+        // Si no encontramos la actividad directamente, intentamos usar el servicio de registro
+        console.log('No se encontró la actividad directamente, intentando con contentRegistryService...');
+        
+        // Verificar que stage_id no sea undefined
+        if (!content.stage_id) {
+          console.error('Error: stage_id es undefined, no se puede actualizar la actividad');
+          throw new Error('stage_id es requerido para actualizar la actividad');
+        }
+        
+        // Preparar los datos de la actividad
+        let finalActivityData: ActivityData = activityData || {
+          prompt: '',
+          initial_message: '',
+          system_instructions: '',
+          max_exchanges: 5,
+          step: 1,
+          prompt_section: '',
+          dependencies: []
+        };
+        
+        // Si activityData está vacío pero hay datos en content.activity_data, usamos esos
+        if (Object.keys(finalActivityData).length === 0 && content.activity_data) {
+          try {
+            finalActivityData = typeof content.activity_data === 'string' 
+              ? JSON.parse(content.activity_data) 
+              : content.activity_data;
+            
+            console.log('Datos de actividad extraídos de content.activity_data:', finalActivityData);
+          } catch (error) {
+            console.error('Error al parsear activity_data:', error);
+          }
+        }
+        
+        // Asegurarnos de que los campos importantes estén presentes
+        if (content.prompt_section) {
+          finalActivityData.prompt_section = content.prompt_section;
+        }
+        
+        if (content.system_instructions) {
+          finalActivityData.system_instructions = content.system_instructions;
+        }
+        
+        // Asegurarnos de que las dependencias se pasen correctamente
+        if (content.dependencies) {
+          finalActivityData.dependencies = content.dependencies;
+        }
+        
+        // Asegurarnos de que todos los campos requeridos estén presentes
+        finalActivityData = {
+          ...finalActivityData,
+          prompt: finalActivityData.prompt || '',
+          initial_message: finalActivityData.initial_message || '',
+          system_instructions: finalActivityData.system_instructions || '',
+          max_exchanges: finalActivityData.max_exchanges || 5,
+          step: finalActivityData.step || 1,
+          prompt_section: finalActivityData.prompt_section || '',
+          dependencies: finalActivityData.dependencies || []
+        };
+        
+        console.log('Actualizando actividad con datos completos:', {
+          stage_id: content.stage_id,
+          title: content.title,
+          activityData: finalActivityData,
+          prompt_section: finalActivityData.prompt_section,
+          system_instructions: finalActivityData.system_instructions,
+          dependencies: finalActivityData.dependencies
+        });
+        
+        // Actualizar el contenido de actividad usando el servicio de registro
+        const activityContent = await contentRegistryService.updateActivityContent(
+          content.stage_id,
+          content.title,
+          finalActivityData,
+          finalActivityData.prompt_section,
+          finalActivityData.system_instructions
+        );
+        
+        if (activityContent) {
+          console.log('Actividad actualizada con estructura modular:', activityContent);
+          return activityContent;
+        } else {
+          throw new Error('Error al actualizar actividad');
+        }
       }
     }
     
@@ -445,8 +603,343 @@ export const updateContent = async (
       // Si llegamos aquí, devolvemos el contenido original como fallback
       return content;
     } else {
-      // El contenido no está en la nueva estructura, pero como ya se migró todo, esto no debería ocurrir
-      throw new Error('Contenido no encontrado en la nueva estructura');
+      // El contenido no está en content_registry, necesitamos buscarlo directamente en las tablas específicas
+      console.log(`Contenido no encontrado en content_registry por ID: ${content.id}. Buscando directamente en tablas específicas...`);
+      
+      // Actualizar según el tipo de contenido
+      if (content.content_type === 'text') {
+        // Buscar directamente en text_contents
+        const { data: textContent, error: findError } = await supabase
+          .from('text_contents')
+          .select('*')
+          .eq('id', content.id)
+          .maybeSingle();
+        
+        if (findError && findError.code !== 'PGRST116') {
+          console.error('Error al buscar texto por ID:', findError);
+        }
+        
+        if (textContent) {
+          console.log(`✅ Contenido de texto encontrado directamente: ${textContent.id}`);
+          
+          // Actualizar contenido de texto
+          const { error: textError } = await supabase
+            .from('text_contents')
+            .update({ 
+              title: content.title,
+              content: content.content
+            })
+            .eq('id', content.id);
+          
+          if (textError) throw textError;
+          
+          // Verificar si existe un registro en content_registry
+          const { data: existingRegistry, error: registryCheckError } = await supabase
+            .from('content_registry')
+            .select('*')
+            .eq('content_id', content.id)
+            .eq('content_type', 'text')
+            .maybeSingle();
+          
+          if (registryCheckError && registryCheckError.code !== 'PGRST116') {
+            console.error('Error al verificar registro existente:', registryCheckError);
+          }
+          
+          // Si no existe registro, lo creamos
+          if (!existingRegistry) {
+            console.log('Creando registro en content_registry para contenido de texto existente');
+            
+            const { data: newRegistry, error: createError } = await supabase
+              .from('content_registry')
+              .insert({
+                content_id: content.id,
+                content_table: 'text_contents',
+                content_type: 'text',
+                title: content.title,
+                stage_id: content.stage_id,
+                status: 'active'
+              })
+              .select()
+              .single();
+            
+            if (createError) {
+              console.error('Error al crear registro:', createError);
+            } else {
+              console.log('✅ Registro creado correctamente:', newRegistry);
+            }
+          } else {
+            // Actualizar el registro existente
+            const { error: updateRegistryError } = await supabase
+              .from('content_registry')
+              .update({ 
+                title: content.title
+              })
+              .eq('id', existingRegistry.id);
+            
+            if (updateRegistryError) {
+              console.error('Error al actualizar registro:', updateRegistryError);
+            }
+          }
+          
+          return content;
+        }
+      } else if (content.content_type === 'video') {
+        // Buscar directamente en video_contents
+        const { data: videoContent, error: findError } = await supabase
+          .from('video_contents')
+          .select('*')
+          .eq('id', content.id)
+          .maybeSingle();
+        
+        if (findError && findError.code !== 'PGRST116') {
+          console.error('Error al buscar video por ID:', findError);
+        }
+        
+        if (videoContent) {
+          console.log(`✅ Contenido de video encontrado directamente: ${videoContent.id}`);
+          
+          // Actualizar contenido de video
+          const { error: videoError } = await supabase
+            .from('video_contents')
+            .update({ 
+              title: content.title,
+              video_url: content.url || content.content,
+              source: content.provider || 'youtube'
+            })
+            .eq('id', content.id);
+          
+          if (videoError) throw videoError;
+          
+          // Verificar si existe un registro en content_registry
+          const { data: existingRegistry, error: registryCheckError } = await supabase
+            .from('content_registry')
+            .select('*')
+            .eq('content_id', content.id)
+            .eq('content_type', 'video')
+            .maybeSingle();
+          
+          if (registryCheckError && registryCheckError.code !== 'PGRST116') {
+            console.error('Error al verificar registro existente:', registryCheckError);
+          }
+          
+          // Si no existe registro, lo creamos
+          if (!existingRegistry) {
+            console.log('Creando registro en content_registry para contenido de video existente');
+            
+            const { data: newRegistry, error: createError } = await supabase
+              .from('content_registry')
+              .insert({
+                content_id: content.id,
+                content_table: 'video_contents',
+                content_type: 'video',
+                title: content.title,
+                stage_id: content.stage_id,
+                status: 'active'
+              })
+              .select()
+              .single();
+            
+            if (createError) {
+              console.error('Error al crear registro:', createError);
+            } else {
+              console.log('✅ Registro creado correctamente:', newRegistry);
+            }
+          } else {
+            // Actualizar el registro existente
+            const { error: updateRegistryError } = await supabase
+              .from('content_registry')
+              .update({ 
+                title: content.title
+              })
+              .eq('id', existingRegistry.id);
+            
+            if (updateRegistryError) {
+              console.error('Error al actualizar registro:', updateRegistryError);
+            }
+          }
+          
+          return content;
+        }
+      } else if (content.content_type === 'advisory_session') {
+        // Buscar directamente en advisory_sessions
+        const { data: advisorySession, error: findError } = await supabase
+          .from('advisory_sessions')
+          .select('*')
+          .eq('id', content.id)
+          .maybeSingle();
+        
+        if (findError && findError.code !== 'PGRST116') {
+          console.error('Error al buscar sesión de asesoría por ID:', findError);
+        }
+        
+        // Si no encontramos por ID, intentamos por título
+        if (!advisorySession) {
+          const { data: advisoryByTitle, error: titleError } = await supabase
+            .from('advisory_sessions')
+            .select('*')
+            .eq('title', content.title)
+            .maybeSingle();
+          
+          if (titleError && titleError.code !== 'PGRST116') {
+            console.error('Error al buscar sesión de asesoría por título:', titleError);
+          }
+          
+          if (advisoryByTitle) {
+            console.log(`✅ Sesión de asesoría encontrada por título: ${advisoryByTitle.id}`);
+            
+            // Preparar los datos para la actualización
+            const updateData: any = { 
+              title: content.title,
+              description: content.content || ''
+            };
+            
+            // Agregar duración si está presente
+            if (content.duration !== undefined) {
+              updateData.duration = content.duration;
+            } else if (content.content_metadata?.duration !== undefined) {
+              updateData.duration = content.content_metadata.duration;
+            }
+            
+            // Actualizar la sesión de asesoría
+            const { error: updateError } = await supabase
+              .from('advisory_sessions')
+              .update(updateData)
+              .eq('id', advisoryByTitle.id);
+            
+            if (updateError) {
+              throw new Error(`Error al actualizar la sesión de asesoría: ${updateError.message}`);
+            }
+            
+            // Verificar si existe un registro en content_registry
+            const { data: existingRegistry, error: registryCheckError } = await supabase
+              .from('content_registry')
+              .select('*')
+              .eq('content_id', advisoryByTitle.id)
+              .eq('content_type', 'advisory_session')
+              .maybeSingle();
+            
+            if (registryCheckError && registryCheckError.code !== 'PGRST116') {
+              console.error('Error al verificar registro existente:', registryCheckError);
+            }
+            
+            // Si no existe registro, lo creamos
+            if (!existingRegistry) {
+              console.log('Creando registro en content_registry para sesión de asesoría existente');
+              
+              const { data: newRegistry, error: createError } = await supabase
+                .from('content_registry')
+                .insert({
+                  content_id: advisoryByTitle.id,
+                  content_table: 'advisory_sessions',
+                  content_type: 'advisory_session',
+                  title: content.title,
+                  stage_id: content.stage_id,
+                  status: 'active'
+                })
+                .select()
+                .single();
+              
+              if (createError) {
+                console.error('Error al crear registro:', createError);
+              } else {
+                console.log('✅ Registro creado correctamente:', newRegistry);
+              }
+            } else {
+              // Actualizar el registro existente
+              const { error: updateRegistryError } = await supabase
+                .from('content_registry')
+                .update({ 
+                  title: content.title
+                })
+                .eq('id', existingRegistry.id);
+              
+              if (updateRegistryError) {
+                console.error('Error al actualizar registro:', updateRegistryError);
+              }
+            }
+            
+            return {...content, id: advisoryByTitle.id};
+          }
+        } else {
+          console.log(`✅ Sesión de asesoría encontrada directamente por ID: ${advisorySession.id}`);
+          
+          // Preparar los datos para la actualización
+          const updateData: any = { 
+            title: content.title,
+            description: content.content || ''
+          };
+          
+          // Agregar duración si está presente
+          if (content.duration !== undefined) {
+            updateData.duration = content.duration;
+          } else if (content.content_metadata?.duration !== undefined) {
+            updateData.duration = content.content_metadata.duration;
+          }
+          
+          // Actualizar la sesión de asesoría
+          const { error: updateError } = await supabase
+            .from('advisory_sessions')
+            .update(updateData)
+            .eq('id', content.id);
+          
+          if (updateError) {
+            throw new Error(`Error al actualizar la sesión de asesoría: ${updateError.message}`);
+          }
+          
+          // Verificar si existe un registro en content_registry
+          const { data: existingRegistry, error: registryCheckError } = await supabase
+            .from('content_registry')
+            .select('*')
+            .eq('content_id', content.id)
+            .eq('content_type', 'advisory_session')
+            .maybeSingle();
+          
+          if (registryCheckError && registryCheckError.code !== 'PGRST116') {
+            console.error('Error al verificar registro existente:', registryCheckError);
+          }
+          
+          // Si no existe registro, lo creamos
+          if (!existingRegistry) {
+            console.log('Creando registro en content_registry para sesión de asesoría existente');
+            
+            const { data: newRegistry, error: createError } = await supabase
+              .from('content_registry')
+              .insert({
+                content_id: content.id,
+                content_table: 'advisory_sessions',
+                content_type: 'advisory_session',
+                title: content.title,
+                stage_id: content.stage_id,
+                status: 'active'
+              })
+              .select()
+              .single();
+            
+            if (createError) {
+              console.error('Error al crear registro:', createError);
+            } else {
+              console.log('✅ Registro creado correctamente:', newRegistry);
+            }
+          } else {
+            // Actualizar el registro existente
+            const { error: updateRegistryError } = await supabase
+              .from('content_registry')
+              .update({ 
+                title: content.title
+              })
+              .eq('id', existingRegistry.id);
+            
+            if (updateRegistryError) {
+              console.error('Error al actualizar registro:', updateRegistryError);
+            }
+          }
+          
+          return content;
+        }
+      }
+      
+      // Si llegamos aquí, no pudimos encontrar el contenido por ningún método
+      throw new Error('Contenido no encontrado en ninguna tabla específica después de múltiples intentos de búsqueda');
     }
     
   } catch (error) {
