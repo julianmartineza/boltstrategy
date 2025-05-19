@@ -468,12 +468,42 @@ const ContentManager: React.FC = () => {
       } else if (content.content_type === 'video') {
         // Para contenido de video, usar la estructura modular
         try {
-          // Asegurarse de que la URL esté correctamente asignada
-          const videoContent = {
+          console.log('Preparando datos para actualizar video:', content);
+          
+          // Asegurarse de que todos los campos necesarios estén correctamente asignados
+          const videoContent: ActivityContent = {
             ...content,
-            url: content.content // Usar content.content como URL del video
+            url: content.content || content.url, // Usar content.content o content.url como URL del video
+            provider: content.provider || 'youtube', // Asegurar que provider esté definido
+            content_type: 'video' as 'video' // Asegurar que el tipo de contenido sea correcto con type assertion
           };
           
+          console.log('Datos de video preparados:', videoContent);
+          
+          // Intentar actualizar directamente en video_contents primero
+          try {
+            const { error } = await supabase
+              .from('video_contents')
+              .update({
+                title: videoContent.title,
+                video_url: videoContent.url || videoContent.content,
+                source: videoContent.provider || 'youtube'
+              })
+              .eq('id', videoContent.id);
+            
+            if (error) {
+              console.log('No se pudo actualizar directamente en video_contents:', error);
+              console.log('Intentando con contentTransitionService...');
+            } else {
+              console.log('✅ Video actualizado directamente en video_contents');
+              updatedContent = videoContent;
+              return;
+            }
+          } catch (directError) {
+            console.error('Error al intentar actualizar directamente:', directError);
+          }
+          
+          // Si la actualización directa falló, usar contentTransitionService
           const result = await contentTransitionService.updateContent(
             videoContent,
             undefined
