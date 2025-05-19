@@ -428,8 +428,67 @@ const ContentManager: React.FC = () => {
       let updatedContent: ActivityContent;
       
       if (content.content_type === 'advisory_session') {
-        // Para sesiones de asesoría, usar siempre la estructura modular
+        // Para sesiones de asesoría, usar actualización directa primero
         try {
+          console.log('Preparando datos para actualizar sesión de asesoría:', content);
+          
+          // Buscar primero el ID real de la sesión en content_registry
+          const { data: registryData, error: registryError } = await supabase
+            .from('content_registry')
+            .select('*')
+            .eq('id', content.id)
+            .eq('content_type', 'advisory_session')
+            .maybeSingle();
+          
+          if (registryError && registryError.code !== 'PGRST116') {
+            console.error('Error al buscar sesión de asesoría en content_registry:', registryError);
+          }
+          
+          // Si encontramos el registro, usamos el content_id para actualizar advisory_sessions
+          if (registryData && registryData.content_id) {
+            console.log(`✅ Registro encontrado en content_registry: ${registryData.content_id}`);
+            
+            // Preparar los datos de la sesión de asesoría
+            const sessionToUpdate = {
+              title: content.title,
+              description: content.content || ''
+            };
+            
+            // Intentar actualizar directamente en advisory_sessions
+            const { error: sessionError } = await supabase
+              .from('advisory_sessions')
+              .update(sessionToUpdate)
+              .eq('id', registryData.content_id);
+            
+            if (sessionError) {
+              console.log('No se pudo actualizar directamente en advisory_sessions:', sessionError);
+              console.log('Intentando con contentTransitionService...');
+            } else {
+              console.log('✅ Sesión de asesoría actualizada directamente en advisory_sessions');
+              updatedContent = content;
+              
+              // Actualizar también el título en content_registry
+              await supabase
+                .from('content_registry')
+                .update({ title: content.title })
+                .eq('id', content.id);
+              
+              console.log('✅ Título actualizado en content_registry');
+              
+              // Actualizar la interfaz de usuario
+              // Actualizar la lista de contenidos
+              setContents(prev => prev.map(c => c.id === content.id ? updatedContent : c));
+              // Cerrar el formulario de edición
+              setEditingContent(null);
+              // Mostrar mensaje de éxito
+              showSuccessMessage('Contenido actualizado correctamente');
+              // Desactivar indicador de carga
+              setContentLoading(false);
+              return;
+            }
+          }
+          
+          // Si la actualización directa falla, usar contentTransitionService
           const result = await contentTransitionService.updateContent(
             content,
             undefined
@@ -447,8 +506,62 @@ const ContentManager: React.FC = () => {
           return;
         }
       } else if (content.content_type === 'text') {
-        // Para contenido de texto, usar la estructura modular
+        // Para contenido de texto, usar actualización directa primero
         try {
+          console.log('Preparando datos para actualizar texto:', content);
+          
+          // Buscar primero el ID real del texto en content_registry
+          const { data: registryData, error: registryError } = await supabase
+            .from('content_registry')
+            .select('*')
+            .eq('id', content.id)
+            .eq('content_type', 'text')
+            .maybeSingle();
+          
+          if (registryError && registryError.code !== 'PGRST116') {
+            console.error('Error al buscar texto en content_registry:', registryError);
+          }
+          
+          // Si encontramos el registro, usamos el content_id para actualizar text_contents
+          if (registryData && registryData.content_id) {
+            console.log(`✅ Registro encontrado en content_registry: ${registryData.content_id}`);
+            
+            // Intentar actualizar directamente en text_contents
+            const { error: textError } = await supabase
+              .from('text_contents')
+              .update({
+                title: content.title,
+                content: content.content
+              })
+              .eq('id', registryData.content_id);
+            
+            if (textError) {
+              console.log('No se pudo actualizar directamente en text_contents:', textError);
+              console.log('Intentando con contentTransitionService...');
+            } else {
+              console.log('✅ Texto actualizado directamente en text_contents');
+              updatedContent = content;
+              
+              // Actualizar también el título en content_registry
+              await supabase
+                .from('content_registry')
+                .update({ title: content.title })
+                .eq('id', content.id);
+              
+              // Actualizar la interfaz de usuario
+              // Actualizar la lista de contenidos
+              setContents(prev => prev.map(c => c.id === content.id ? updatedContent : c));
+              // Cerrar el formulario de edición
+              setEditingContent(null);
+              // Mostrar mensaje de éxito
+              showSuccessMessage('Contenido actualizado correctamente');
+              // Desactivar indicador de carga
+              setContentLoading(false);
+              return;
+            }
+          }
+          
+          // Si la actualización directa falla, usar contentTransitionService
           const result = await contentTransitionService.updateContent(
             content,
             undefined
@@ -470,6 +583,26 @@ const ContentManager: React.FC = () => {
         try {
           console.log('Preparando datos para actualizar video:', content);
           
+          // Buscar primero el ID real del video en content_registry
+          const { data: registryData, error: registryError } = await supabase
+            .from('content_registry')
+            .select('*')
+            .eq('id', content.id)
+            .eq('content_type', 'video')
+            .maybeSingle();
+          
+          if (registryError && registryError.code !== 'PGRST116') {
+            console.error('Error al buscar video en content_registry:', registryError);
+          }
+          
+          // Si no encontramos el registro, no podemos continuar
+          if (!registryData || !registryData.content_id) {
+            console.error('No se encontró el registro en content_registry o no tiene content_id');
+            throw new Error('No se pudo encontrar el ID real del video');
+          }
+          
+          console.log(`✅ Registro encontrado en content_registry: ${registryData.content_id}`);
+          
           // Asegurarse de que todos los campos necesarios estén correctamente asignados
           const videoContent: ActivityContent = {
             ...content,
@@ -480,7 +613,7 @@ const ContentManager: React.FC = () => {
           
           console.log('Datos de video preparados:', videoContent);
           
-          // Intentar actualizar directamente en video_contents primero
+          // Intentar actualizar directamente en video_contents primero usando el ID real del video
           try {
             const { error } = await supabase
               .from('video_contents')
@@ -489,7 +622,7 @@ const ContentManager: React.FC = () => {
                 video_url: videoContent.url || videoContent.content,
                 source: videoContent.provider || 'youtube'
               })
-              .eq('id', videoContent.id);
+              .eq('id', registryData.content_id); // Usar el ID real del video
             
             if (error) {
               console.log('No se pudo actualizar directamente en video_contents:', error);
@@ -498,20 +631,15 @@ const ContentManager: React.FC = () => {
               console.log('✅ Video actualizado directamente en video_contents');
               updatedContent = videoContent;
               
-              // Actualizar también en content_registry si existe
+              // Ya tenemos el ID del registro en content_registry, actualizamos directamente
               try {
-                const { data: registryData } = await supabase
+                // Actualizamos el título en content_registry usando el ID original del contenido
+                await supabase
                   .from('content_registry')
-                  .select('*')
-                  .eq('content_id', videoContent.id)
-                  .maybeSingle();
+                  .update({ title: videoContent.title })
+                  .eq('id', content.id);
                 
-                if (registryData) {
-                  await supabase
-                    .from('content_registry')
-                    .update({ title: videoContent.title })
-                    .eq('id', registryData.id);
-                }
+                console.log('✅ Título actualizado en content_registry');
               } catch (registryError) {
                 console.error('Error al actualizar content_registry:', registryError);
                 // Continuamos aunque falle la actualización del registro
@@ -550,8 +678,77 @@ const ContentManager: React.FC = () => {
           return;
         }
       } else if (content.content_type === 'activity') {
-        // Para actividades, usar la estructura modular
+        // Para actividades, usar actualización directa primero
         try {
+          console.log('Preparando datos para actualizar actividad:', content);
+          
+          // Buscar primero el ID real de la actividad en content_registry
+          const { data: registryData, error: registryError } = await supabase
+            .from('content_registry')
+            .select('*')
+            .eq('id', content.id)
+            .eq('content_type', 'activity')
+            .maybeSingle();
+          
+          if (registryError && registryError.code !== 'PGRST116') {
+            console.error('Error al buscar actividad en content_registry:', registryError);
+          }
+          
+          // Si encontramos el registro, usamos el content_id para actualizar activity_contents
+          if (registryData && registryData.content_id) {
+            console.log(`✅ Registro encontrado en content_registry: ${registryData.content_id}`);
+            
+            // Preparar los datos de la actividad
+            const activityToUpdate: any = {
+              title: content.title
+            };
+            
+            // Si hay datos adicionales de actividad, incluirlos
+            if (activityData) {
+              // Usamos una asignación genérica para evitar errores de TypeScript
+              // ya que activityData puede contener diferentes propiedades según el tipo de actividad
+              Object.keys(activityData).forEach(key => {
+                if (key !== 'title') { // No sobreescribir el título que ya asignamos
+                  (activityToUpdate as any)[key] = (activityData as any)[key];
+                }
+              });
+            }
+            
+            // Intentar actualizar directamente en activity_contents
+            const { error: activityError } = await supabase
+              .from('activity_contents')
+              .update(activityToUpdate)
+              .eq('id', registryData.content_id);
+            
+            if (activityError) {
+              console.log('No se pudo actualizar directamente en activity_contents:', activityError);
+              console.log('Intentando con contentTransitionService...');
+            } else {
+              console.log('✅ Actividad actualizada directamente en activity_contents');
+              updatedContent = content;
+              
+              // Actualizar también el título en content_registry
+              await supabase
+                .from('content_registry')
+                .update({ title: content.title })
+                .eq('id', content.id);
+              
+              console.log('✅ Título actualizado en content_registry');
+              
+              // Actualizar la interfaz de usuario
+              // Actualizar la lista de contenidos
+              setContents(prev => prev.map(c => c.id === content.id ? updatedContent : c));
+              // Cerrar el formulario de edición
+              setEditingContent(null);
+              // Mostrar mensaje de éxito
+              showSuccessMessage('Contenido actualizado correctamente');
+              // Desactivar indicador de carga
+              setContentLoading(false);
+              return;
+            }
+          }
+          
+          // Si la actualización directa falla, usar contentTransitionService
           const result = await contentTransitionService.updateContent(
             content,
             activityData
