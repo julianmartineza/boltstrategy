@@ -497,6 +497,35 @@ const ContentManager: React.FC = () => {
             } else {
               console.log('✅ Video actualizado directamente en video_contents');
               updatedContent = videoContent;
+              
+              // Actualizar también en content_registry si existe
+              try {
+                const { data: registryData } = await supabase
+                  .from('content_registry')
+                  .select('*')
+                  .eq('content_id', videoContent.id)
+                  .maybeSingle();
+                
+                if (registryData) {
+                  await supabase
+                    .from('content_registry')
+                    .update({ title: videoContent.title })
+                    .eq('id', registryData.id);
+                }
+              } catch (registryError) {
+                console.error('Error al actualizar content_registry:', registryError);
+                // Continuamos aunque falle la actualización del registro
+              }
+              
+              // Actualizar la interfaz de usuario
+              // Actualizar la lista de contenidos
+              setContents(prev => prev.map(c => c.id === content.id ? updatedContent : c));
+              // Cerrar el formulario de edición
+              setEditingContent(null);
+              // Mostrar mensaje de éxito
+              showSuccessMessage('Contenido actualizado correctamente');
+              // Desactivar indicador de carga
+              setContentLoading(false);
               return;
             }
           } catch (directError) {
