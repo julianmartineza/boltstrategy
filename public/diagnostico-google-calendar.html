@@ -192,6 +192,27 @@
     const apiBaseUrl = window.location.origin; // URL base de la API (mismo origen)
     const logs = [];
     
+    // Función para cambiar entre pestañas
+    function openTab(evt, tabName) {
+      // Ocultar todos los contenidos de pestañas
+      const tabContents = document.getElementsByClassName('tab-content');
+      for (let i = 0; i < tabContents.length; i++) {
+        tabContents[i].classList.remove('active');
+      }
+      
+      // Desactivar todas las pestañas
+      const tabs = document.getElementsByClassName('tab');
+      for (let i = 0; i < tabs.length; i++) {
+        tabs[i].classList.remove('active');
+      }
+      
+      // Activar la pestaña seleccionada y su contenido
+      document.getElementById(tabName).classList.add('active');
+      evt.currentTarget.classList.add('active');
+      
+      log(`Cambiado a pestaña: ${tabName}`);
+    }
+    
     // Función para agregar registros
     function log(message, type = 'info') {
       const timestamp = new Date().toISOString();
