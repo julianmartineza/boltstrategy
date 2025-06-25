@@ -115,7 +115,7 @@ export const googleCalendarService = {
       // Esto protege el client_secret que no debe estar en el frontend
       console.log('Enviando solicitud a la API serverless...');
       
-      const response = await fetch(`${API_BASE_URL}/google-auth`, {
+      const response = await fetch(`${API_BASE_URL}/exchange-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -170,7 +170,7 @@ export const googleCalendarService = {
         throw new Error('Token de refresco no proporcionado');
       }
       
-      const response = await fetch(`${API_BASE_URL}/google-auth`, {
+      const response = await fetch(`${API_BASE_URL}/exchange-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
