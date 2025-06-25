@@ -106,6 +106,7 @@ export const googleCalendarService = {
       console.log('Verificando credenciales:');
       console.log('- Client ID configurado:', GOOGLE_CLIENT_ID ? 'Sí' : 'No');
       console.log('- Redirect URI:', REDIRECT_URI);
+      console.log('- API Base URL configurada:', API_BASE_URL);
       
       if (!GOOGLE_CLIENT_ID) {
         throw new Error('Client ID de Google no configurado correctamente en el archivo .env');
@@ -114,6 +115,9 @@ export const googleCalendarService = {
       // Usar la API serverless para intercambiar el código por tokens
       // Esto protege el client_secret que no debe estar en el frontend
       console.log('Enviando solicitud a la API serverless...');
+      console.log(`URL completa de solicitud: ${API_BASE_URL}/exchange-code`);
+      console.log('Método: POST');
+      console.log('Datos enviados:', { code: code.substring(0, 10) + '...', grantType: 'authorization_code' });
       
       const response = await fetch(`${API_BASE_URL}/exchange-code`, {
         method: 'POST',
