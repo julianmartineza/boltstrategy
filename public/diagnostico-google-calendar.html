@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diagnóstico de Conexión Google Calendar</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      color: #1a73e8;
+      border-bottom: 2px solid #1a73e8;
+      padding-bottom: 10px;
+    }
+    .card {
+      background-color: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    button {
+      background-color: #1a73e8;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background-color: #0d62c9;
+    }
+    .error {
+      background-color: #fdecea;
+      border-left: 4px solid #d93025;
+      padding: 10px 15px;
+      margin: 10px 0;
+    }
+    .success {
+      background-color: #e6f4ea;
+      border-left: 4px solid #1e8e3e;
+      padding: 10px 15px;
+      margin: 10px 0;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .log-container {
+      max-height: 300px;
+      overflow-y: auto;
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .log-entry {
+      margin-bottom: 5px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 5px;
+    }
+    .timestamp {
+      color: #666;
+      font-size: 0.8em;
+    }
+    .tab-container {
+      margin-bottom: 20px;
+    }
+    .tab {
+      display: inline-block;
+      padding: 10px 20px;
+      cursor: pointer;
+      background-color: #f1f1f1;
+      border-radius: 4px 4px 0 0;
+    }
+    .tab.active {
+      background-color: #1a73e8;
+      color: white;
+    }
+    .tab-content {
+      display: none;
+      padding: 20px;
+      border: 1px solid #ddd;
+      border-radius: 0 0 4px 4px;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .copy-button {
+      background-color: #f1f1f1;
+      color: #333;
+      border: 1px solid #ddd;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      float: right;
+    }
+    .copy-button:hover {
+      background-color: #e1e1e1;
+    }
+    .input-group {
+      margin-bottom: 15px;
+    }
+    .input-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    .input-group input, .input-group textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: inherit;
+    }
+  </style>
+</head>
+<body>
+  <h1>Diagnóstico de Conexión Google Calendar</h1>
+  
+  <div class="card">
+    <h2>Información del Entorno</h2>
+    <div id="env-info">Cargando información del entorno...</div>
+  </div>
+
+  <div class="tab-container">
+    <div class="tab active" onclick="openTab(event, 'test-tab')">Pruebas de API</div>
+    <div class="tab" onclick="openTab(event, 'auth-tab')">Flujo de Autorización</div>
+    <div class="tab" onclick="openTab(event, 'logs-tab')">Registros</div>
+  </div>
+
+  <div id="test-tab" class="tab-content active">
+    <div class="card">
+      <h2>Prueba de API Serverless</h2>
+      <p>Prueba la función API serverless que maneja el intercambio de tokens con Google.</p>
+      
+      <div class="input-group">
+        <label for="code-input">Código de autorización:</label>
+        <input type="text" id="code-input" placeholder="Pega aquí el código de autorización de Google">
+      </div>
+      
+      <button onclick="testExchangeCode()">Probar Intercambio de Código</button>
+      <button onclick="testRefreshToken()">Probar Refresco de Token</button>
+      
+      <h3>Resultado:</h3>
+      <pre id="api-result">No hay resultados aún.</pre>
+    </div>
+  </div>
+
+  <div id="auth-tab" class="tab-content">
+    <div class="card">
+      <h2>Flujo de Autorización OAuth</h2>
+      <p>Inicia el flujo de autorización de Google Calendar para probar la integración completa.</p>
+      
+      <button onclick="startAuthFlow()">Iniciar Autorización</button>
+      
+      <div class="input-group">
+        <label for="redirect-uri">URL de Redirección Configurada:</label>
+        <input type="text" id="redirect-uri" readonly>
+      </div>
+      
+      <h3>Parámetros de Autorización:</h3>
+      <pre id="auth-params">No hay parámetros aún.</pre>
+    </div>
+  </div>
+
+  <div id="logs-tab" class="tab-content">
+    <div class="card">
+      <h2>Registros de Depuración</h2>
+      <button onclick="clearLogs()">Limpiar Registros</button>
+      <button class="copy-button" onclick="copyLogs()">Copiar Registros</button>
+      
+      <div class="log-container" id="log-container"></div>
+    </div>
+  </div>
+
+  <script>
+    // Variables globales
+    const apiBaseUrl = window.location.origin; // URL base de la API (mismo origen)
+    const logs = [];
+    
+    // Función para agregar registros
+    function log(message, type = 'info') {
+      const timestamp = new Date().toISOString();
+      const logEntry = {
+        timestamp,
+        message,
+        type
+      };
+      logs.push(logEntry);
+      
+      const logContainer = document.getElementById('log-container');
+      const logElement = document.createElement('div');
+      logElement.className = `log-entry log-${type}`;
+      logElement.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+      logContainer.appendChild(logElement);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+    
+    // Función para limpiar registros
+    function clearLogs() {
+      logs.length = 0;
+      document.getElementById('log-container').innerHTML = '';
+      log('Registros limpiados');
+    }
+    
+    // Función para copiar registros
+    function copyLogs() {
+      const logText = logs.map(entry => `[${entry.timestamp}] ${entry.message}`).join('\n');
+      navigator.clipboard.writeText(logText)
+        .then(() => {
+          log('Registros copiados al portapapeles', 'success');
+        })
+        .catch(err => {
+          log(`Error al copiar registros: ${err}`, 'error');
+        });
+    }
+    
+    // Función para cambiar entre pestañas
+    function openTab(evt, tabName) {
+      const tabContents = document.getElementsByClassName('tab-content');
+      for (let i = 0; i < tabContents.length; i++) {
+        tabContents[i].className = tabContents[i].className.replace(' active', '');
+      }
+      
+      const tabs = document.getElementsByClassName('tab');
+      for (let i = 0; i < tabs.length; i++) {
+        tabs[i].className = tabs[i].className.replace(' active', '');
+      }
+      
+      document.getElementById(tabName).className += ' active';
+      evt.currentTarget.className += ' active';
+    }
+    
+    // Función para probar el intercambio de código
+    async function testExchangeCode() {
+      const code = document.getElementById('code-input').value.trim();
+      
+      if (!code) {
+        log('Error: Debes ingresar un código de autorización', 'error');
+        return;
+      }
+      
+      log(`Probando intercambio de código: ${code.substring(0, 10)}...`);
+      
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/exchange-code`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            code,
+            grantType: 'authorization_code'
+          })
+        });
+        
+        const result = await response.json();
+        
+        document.getElementById('api-result').textContent = JSON.stringify(result, null, 2);
+        
+        if (response.ok) {
+          log('Intercambio de código exitoso', 'success');
+        } else {
+          log(`Error en intercambio de código: ${result.error || 'Error desconocido'}`, 'error');
+        }
+      } catch (error) {
+        log(`Error al realizar la solicitud: ${error.message}`, 'error');
+        document.getElementById('api-result').textContent = `Error: ${error.message}`;
+      }
+    }
+    
+    // Función para probar el refresco de token
+    async function testRefreshToken() {
+      const refreshToken = prompt('Ingresa el refresh_token para probar:');
+      
+      if (!refreshToken) {
+        log('Operación cancelada', 'info');
+        return;
+      }
+      
+      log('Probando refresco de token...');
+      
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/exchange-code`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            refreshToken,
+            grantType: 'refresh_token'
+          })
+        });
+        
+        const result = await response.json();
+        
+        document.getElementById('api-result').textContent = JSON.stringify(result, null, 2);
+        
+        if (response.ok) {
+          log('Refresco de token exitoso', 'success');
+        } else {
+          log(`Error en refresco de token: ${result.error || 'Error desconocido'}`, 'error');
+        }
+      } catch (error) {
+        log(`Error al realizar la solicitud: ${error.message}`, 'error');
+        document.getElementById('api-result').textContent = `Error: ${error.message}`;
+      }
+    }
+    
+    // Función para iniciar el flujo de autorización
+    function startAuthFlow() {
+      // Obtener la URL de redirección configurada
+      const redirectUri = document.getElementById('redirect-uri').value;
+      
+      if (!redirectUri) {
+        log('Error: No se ha detectado una URL de redirección válida', 'error');
+        return;
+      }
+      
+      // Construir la URL de autorización
+      const clientId = window.googleClientId || '';
+      
+      if (!clientId) {
+        log('Error: No se ha detectado un Client ID válido', 'error');
+        return;
+      }
+      
+      const scopes = [
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/calendar.events'
+      ];
+      
+      const authParams = {
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        scope: scopes.join(' '),
+        access_type: 'offline',
+        prompt: 'consent'
+      };
+      
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams(authParams)}`;
+      
+      // Mostrar los parámetros de autorización
+      document.getElementById('auth-params').textContent = JSON.stringify(authParams, null, 2);
+      
+      log(`Iniciando flujo de autorización con URL: ${authUrl.substring(0, 50)}...`);
+      
+      // Abrir la URL de autorización en una nueva ventana
+      window.open(authUrl, '_blank');
+    }
+    
+    // Función para cargar información del entorno
+    async function loadEnvironmentInfo() {
+      log('Cargando información del entorno...');
+      
+      try {
+        // Intentar detectar variables de entorno del cliente
+        const clientId = import.meta.env?.VITE_GOOGLE_CLIENT_ID || '';
+        const redirectUri = import.meta.env?.VITE_GOOGLE_REDIRECT_URI || '';
+        
+        // Guardar para uso global
+        window.googleClientId = clientId;
+        
+        // Actualizar la interfaz
+        document.getElementById('redirect-uri').value = redirectUri;
+        
+        const envInfo = {
+          apiBaseUrl,
+          clientId: clientId ? `${clientId.substring(0, 10)}...` : 'No detectado',
+          redirectUri: redirectUri || 'No detectado',
+          userAgent: navigator.userAgent,
+          hostname: window.location.hostname
+        };
+        
+        document.getElementById('env-info').innerHTML = `
+          <ul>
+            <li><strong>URL Base de API:</strong> ${envInfo.apiBaseUrl}</li>
+            <li><strong>Client ID:</strong> ${envInfo.clientId}</li>
+            <li><strong>URL de Redirección:</strong> ${envInfo.redirectUri}</li>
+            <li><strong>Hostname:</strong> ${envInfo.hostname}</li>
+          </ul>
+        `;
+        
+        log('Información del entorno cargada', 'success');
+      } catch (error) {
+        log(`Error al cargar información del entorno: ${error.message}`, 'error');
+        document.getElementById('env-info').innerHTML = `<div class="error">Error al cargar información: ${error.message}</div>`;
+      }
+    }
+    
+    // Inicializar la página
+    document.addEventListener('DOMContentLoaded', () => {
+      log('Página de diagnóstico cargada');
+      loadEnvironmentInfo();
+    });
+  </script>
+</body>
+</html>

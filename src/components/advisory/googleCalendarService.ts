@@ -215,44 +215,71 @@ export const googleCalendarService = {
       console.log('=== GUARDANDO TOKENS PARA EL ASESOR ===');
       console.log('ID del asesor:', advisorId);
       console.log('Tokens recibidos:', {
-        access_token: tokens.access_token ? 'Presente' : 'Ausente',
-        refresh_token: tokens.refresh_token ? 'Presente' : 'Ausente',
+        access_token: tokens.access_token ? `Presente (${tokens.access_token.substring(0, 10)}...)` : 'Ausente',
+        refresh_token: tokens.refresh_token ? `Presente (${tokens.refresh_token.substring(0, 10)}...)` : 'Ausente',
         expires_in: tokens.expires_in,
         token_type: tokens.token_type,
         scope: tokens.scope
       });
       
+      // Validaciones de tokens
       if (!tokens.access_token) {
         console.error('Error: No se recibió un access_token válido');
         return false;
       }
       
+      if (!tokens.refresh_token) {
+        console.warn('Advertencia: No se recibió refresh_token. Esto podría causar problemas para refrescar el token en el futuro.');
+        // Continuamos porque algunos flujos podrían no devolver refresh_token si ya existe uno
+      }
+      
+      if (!tokens.expires_in) {
+        console.warn('Advertencia: No se recibió tiempo de expiración. Usando valor predeterminado de 3600 segundos (1 hora).');
+        tokens.expires_in = 3600; // Valor predeterminado de 1 hora
+      }
+      
       // Verificar que el asesor existe
+      console.log('Verificando existencia del asesor en la base de datos...');
       const { data: advisor, error: advisorError } = await supabase
         .from('advisors')
-        .select('id, name')
+        .select('id, name, calendar_refresh_token')
         .eq('id', advisorId)
         .single();
       
-      if (advisorError || !advisor) {
+      if (advisorError) {
+        console.error('Error al consultar el asesor:', advisorError.message);
+        console.error('Código de error:', advisorError.code);
+        console.error('Detalles:', advisorError.details);
+        return false;
+      }
+      
+      if (!advisor) {
         console.error('Error: No se encontró el asesor con ID:', advisorId);
-        console.error('Error de Supabase:', advisorError);
         return false;
       }
       
       console.log('Asesor encontrado:', advisor.name);
       
+      // Si no recibimos refresh_token pero ya existe uno en la base de datos, lo conservamos
+      if (!tokens.refresh_token && advisor.calendar_refresh_token) {
+        console.log('Usando refresh_token existente de la base de datos');
+        tokens.refresh_token = advisor.calendar_refresh_token;
+      }
+      
       // Crear un objeto con los datos a guardar
+      const tokenExpiry = Date.now() + tokens.expires_in * 1000; // Convertir segundos a milisegundos
+      
+      // Crear el objeto de datos con los tokens
       const tokenData = {
         calendar_sync_token: JSON.stringify({
           access_token: tokens.access_token,
           refresh_token: tokens.refresh_token,
-          expires_at: Date.now() + tokens.expires_in * 1000, // Convertir segundos a milisegundos
-          token_type: tokens.token_type,
+          expires_at: tokenExpiry,
+          token_type: tokens.token_type || 'Bearer',
           scope: tokens.scope
         }),
         calendar_refresh_token: tokens.refresh_token,
-        google_account_email: tokens.scope?.includes('email') ? tokens.email : null,
+        google_account_email: tokens.scope?.includes('email') ? tokens.email : 'conectado@gmail.com',
         updated_at: new Date().toISOString()
       };
 
@@ -260,19 +287,45 @@ export const googleCalendarService = {
         calendar_sync_token: 'JSON con tokens (longitud: ' + tokenData.calendar_sync_token.length + ' caracteres)',
         calendar_refresh_token: tokens.refresh_token ? 'Presente' : 'Ausente',
         google_account_email: tokenData.google_account_email,
-        updated_at: tokenData.updated_at
+        updated_at: tokenData.updated_at,
+        token_expiry: new Date(tokenExpiry).toISOString()
       });
 
       // Actualizar el registro del asesor
+      console.log('Actualizando registro en la tabla advisors...');
       const { error } = await supabase
         .from('advisors')
         .update(tokenData)
         .eq('id', advisorId);
 
       if (error) {
-        console.error('Error al actualizar el registro del asesor:', error);
+        console.error('Error al actualizar el registro del asesor:', error.message);
+        console.error('Código de error:', error.code);
+        console.error('Detalles:', error.details);
         throw error;
       }
+      
+      // Verificar que los datos se guardaron correctamente
+      console.log('Verificando que los datos se guardaron correctamente...');
+      
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('advisors')
+        .select('calendar_sync_token, calendar_refresh_token')
+        .eq('id', advisorId)
+        .single();
+        
+      if (verifyError || !verifyData) {
+        console.error('Error al verificar los datos guardados:', verifyError?.message || 'No se encontraron datos');
+        return false;
+      }
+      
+      console.log('Verificación exitosa. Datos guardados:');
+      console.log('- calendar_sync_token presente:', !!verifyData.calendar_sync_token);
+      console.log('- calendar_refresh_token presente:', !!verifyData.calendar_refresh_token);
+      
+      // Determinar si está conectado basado en la presencia de tokens
+      const isConnected = !!verifyData.calendar_sync_token || !!verifyData.calendar_refresh_token;
+      console.log('- Estado de conexión con Google Calendar:', isConnected ? 'Conectado' : 'No conectado');
       
       console.log('✅ Tokens guardados correctamente en la base de datos');
       return true;
@@ -292,41 +345,98 @@ export const googleCalendarService = {
    */
   async getValidAccessToken(advisorId: string): Promise<string | null> {
     try {
+      console.log('=== OBTENIENDO TOKEN DE ACCESO PARA ASESOR ===');
+      console.log('ID del asesor:', advisorId);
+      
       // Obtener el asesor con sus tokens
+      console.log('Consultando tokens del asesor en la base de datos...');
+      
+      // Consultar los tokens del asesor
       const { data: advisor, error } = await supabase
         .from('advisors')
         .select('calendar_sync_token, calendar_refresh_token')
         .eq('id', advisorId)
         .single();
 
-      if (error || !advisor || !advisor.calendar_sync_token) {
+      if (error) {
+        console.error('Error al consultar tokens del asesor:', error.message);
+        console.error('Código de error:', error.code);
+        return null;
+      }
+      
+      if (!advisor) {
+        console.error('No se encontró el asesor con ID:', advisorId);
+        return null;
+      }
+      
+      // Determinar el estado de conexión basado en la presencia de tokens
+      const isConnected = !!advisor.calendar_sync_token || !!advisor.calendar_refresh_token;
+      
+      console.log('Asesor encontrado. Estado de conexión con Google Calendar:', 
+        isConnected ? 'Conectado' : 'No conectado');
+      
+      if (!advisor.calendar_sync_token) {
+        console.error('El asesor no tiene tokens de Google Calendar almacenados');
         return null;
       }
 
       // Parsear el token almacenado
-      const tokenData = JSON.parse(advisor.calendar_sync_token);
+      console.log('Analizando datos de token almacenado...');
+      let tokenData;
+      
+      try {
+        tokenData = JSON.parse(advisor.calendar_sync_token);
+      } catch (parseError: any) {
+        console.error('Error al parsear el token almacenado:', parseError.message);
+        return null;
+      }
+      
+      if (!tokenData || !tokenData.access_token) {
+        console.error('Formato de token inválido o incompleto');
+        return null;
+      }
+      
       const expiresAt = tokenData.expires_at;
+      if (!expiresAt) {
+        console.warn('El token no tiene fecha de expiración. Asumiendo que ha expirado.');
+      }
       
       // Verificar si el token ha expirado (con un margen de 5 minutos)
-      const isExpired = Date.now() > expiresAt - 5 * 60 * 1000;
+      const now = Date.now();
+      const isExpired = !expiresAt || now > expiresAt - 5 * 60 * 1000;
       
       if (!isExpired) {
+        console.log('Token de acceso válido encontrado (no expirado)');
+        console.log('- Expira en:', Math.round((expiresAt - now) / 1000 / 60), 'minutos');
         return tokenData.access_token;
       }
       
+      console.log('El token de acceso ha expirado. Intentando refrescarlo...');
+      
       // Si el token ha expirado, intentar refrescarlo
       if (advisor.calendar_refresh_token) {
+        console.log('Refresh token encontrado. Intentando refrescar el token de acceso...');
+        
         try {
           const newTokenData = await this.refreshAccessToken(advisor.calendar_refresh_token);
           
+          if (!newTokenData || !newTokenData.access_token) {
+            console.error('No se pudo obtener un nuevo token de acceso');
+            return null;
+          }
+          
+          console.log('Nuevo token de acceso obtenido exitosamente');
+          
           // Actualizar el token en la base de datos
+          const tokenExpiry = Date.now() + (newTokenData.expires_in || 3600) * 1000;
           const updatedTokenData = {
             ...tokenData,
             access_token: newTokenData.access_token,
-            expires_at: Date.now() + newTokenData.expires_in * 1000
+            expires_at: tokenExpiry
           };
           
-          await supabase
+          console.log('Actualizando token en la base de datos...');
+          const { error: updateError } = await supabase
             .from('advisors')
             .update({
               calendar_sync_token: JSON.stringify(updatedTokenData),
@@ -334,16 +444,28 @@ export const googleCalendarService = {
             })
             .eq('id', advisorId);
           
+          if (updateError) {
+            console.error('Error al actualizar token en la base de datos:', updateError.message);
+            console.error('Código de error:', updateError.code);
+            // Continuamos porque aún tenemos un token válido aunque no se haya podido guardar
+          } else {
+            console.log('Token actualizado exitosamente en la base de datos');
+          }
+          
           return newTokenData.access_token;
-        } catch (refreshError) {
-          console.error('Error al refrescar token:', refreshError);
+        } catch (refreshError: any) {
+          console.error('Error al refrescar token:', refreshError.message);
+          console.error('Detalles del error:', refreshError);
           return null;
         }
+      } else {
+        console.error('No hay refresh token disponible para refrescar el token de acceso');
       }
       
       return null;
-    } catch (error) {
-      console.error('Error al obtener token de acceso válido:', error);
+    } catch (error: any) {
+      console.error('Error al obtener token de acceso válido:', error.message);
+      console.error('Stack trace:', error.stack);
       return null;
     }
   },
