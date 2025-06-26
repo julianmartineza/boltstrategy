@@ -235,23 +235,42 @@ module.exports = async function handler(req, res) {
         
         if (!saveResult.success) {
           console.error('Error al guardar tokens en Supabase:', saveResult.error);
-          // Aunque falle el guardado, seguimos devolviendo los tokens al cliente
-          return res.status(200).json({
-            ...response.data,
-            supabase_save_error: saveResult.error
-          });
+          // Registrar el error pero continuar
+          console.log('Continuando a pesar del error de guardado');
+        } else {
+          console.log('Tokens guardados correctamente en Supabase');
         }
-        
-        console.log('Tokens guardados correctamente en Supabase');
       } else {
         console.log('No se proporcionó ID de asesor, omitiendo guardado en Supabase');
       }
       
-      // Devolver los tokens obtenidos al cliente
-      return res.status(200).json({
-        ...response.data,
-        saved_to_supabase: saveResult.success
-      });
+      // Verificar si se proporcionó una URL de redirección
+      const redirectUrl = req.body.redirectUrl;
+      
+      if (redirectUrl) {
+        // Modo diagnóstico: redirigir a la página de diagnóstico con parámetros
+        console.log(`Redireccionando a URL proporcionada: ${redirectUrl}`);
+        
+        // Añadir información de éxito a la URL de redirección
+        const redirectUrlObj = new URL(redirectUrl, 'http://localhost');
+        redirectUrlObj.searchParams.append('success', 'true');
+        redirectUrlObj.searchParams.append('tokenSaved', saveResult.success.toString());
+        
+        if (saveResult.error) {
+          redirectUrlObj.searchParams.append('saveError', encodeURIComponent(saveResult.error));
+        }
+        
+        // Redireccionar al usuario a la página de diagnóstico con información de éxito
+        console.log(`Redireccionando a: ${redirectUrlObj.pathname}${redirectUrlObj.search}`);
+        return res.redirect(302, `${redirectUrlObj.pathname}${redirectUrlObj.search}`);
+      } else {
+        // Modo aplicación: devolver los tokens como JSON para que el frontend los procese
+        console.log('Devolviendo tokens como JSON al cliente');
+        return res.status(200).json({
+          ...response.data,
+          saved_to_supabase: saveResult.success
+        });
+      }
     } catch (googleError) {
       // Manejar errores específicos de la llamada a Google
       console.error('❌ Error en la llamada a Google API:');

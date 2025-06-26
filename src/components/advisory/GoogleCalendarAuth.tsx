@@ -61,8 +61,12 @@ const GoogleCalendarAuth: React.FC<GoogleCalendarAuthProps> = ({
         try {
           console.log('Procesando código de autorización con ID de asesor:', advisorId);
           
-          // Intercambiar el código por tokens, pasando el ID del asesor
-          const tokens = await googleCalendarService.exchangeCodeForTokens(code, advisorId);
+          // Construir la URL de redirección para volver al perfil del asesor
+          const currentUrl = window.location.href.split('?')[0]; // URL actual sin parámetros
+          console.log('URL de redirección para volver al perfil:', currentUrl);
+          
+          // Intercambiar el código por tokens, pasando el ID del asesor y la URL de redirección
+          const tokens = await googleCalendarService.exchangeCodeForTokens(code, advisorId, currentUrl);
           
           // Guardar los tokens en la base de datos
           // Nota: Esto podría ser redundante si el endpoint ya guardó los tokens,
