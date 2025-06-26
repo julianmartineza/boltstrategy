@@ -59,10 +59,14 @@ const GoogleCalendarAuth: React.FC<GoogleCalendarAuthProps> = ({
         setError(null);
         
         try {
-          // Intercambiar el código por tokens
-          const tokens = await googleCalendarService.exchangeCodeForTokens(code);
+          console.log('Procesando código de autorización con ID de asesor:', advisorId);
+          
+          // Intercambiar el código por tokens, pasando el ID del asesor
+          const tokens = await googleCalendarService.exchangeCodeForTokens(code, advisorId);
           
           // Guardar los tokens en la base de datos
+          // Nota: Esto podría ser redundante si el endpoint ya guardó los tokens,
+          // pero lo mantenemos como respaldo por si acaso
           const saved = await googleCalendarService.saveTokensForAdvisor(advisorId, tokens);
           
           if (saved) {

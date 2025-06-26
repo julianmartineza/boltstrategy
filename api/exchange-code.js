@@ -1,6 +1,7 @@
 // API Serverless para Vercel para manejar la autenticación con Google Calendar
 const axios = require('axios');
 const dotenv = require('dotenv');
+const { createClient } = require('@supabase/supabase-js');
 
 // Cargar variables de entorno
 dotenv.config();
@@ -9,6 +10,11 @@ dotenv.config();
 const GOOGLE_CLIENT_ID = process.env.VITE_GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.VITE_GOOGLE_CLIENT_SECRET;
 const GOOGLE_REDIRECT_URI = process.env.VITE_GOOGLE_REDIRECT_URI || '';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
+
+// Inicializar cliente de Supabase
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // URL para el intercambio de tokens de Google
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -40,6 +46,8 @@ const validateEnvVars = () => {
   if (!GOOGLE_CLIENT_ID) missingVars.push('VITE_GOOGLE_CLIENT_ID');
   if (!GOOGLE_CLIENT_SECRET) missingVars.push('VITE_GOOGLE_CLIENT_SECRET');
   if (!GOOGLE_REDIRECT_URI) missingVars.push('VITE_GOOGLE_REDIRECT_URI');
+  if (!SUPABASE_URL) missingVars.push('VITE_SUPABASE_URL');
+  if (!SUPABASE_ANON_KEY) missingVars.push('VITE_SUPABASE_ANON_KEY');
   
   if (missingVars.length > 0) {
     console.error(`Faltan variables de entorno: ${missingVars.join(', ')}`);
@@ -50,8 +58,64 @@ const validateEnvVars = () => {
   console.log(`- VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID ? 'Configurado' : 'No configurado'}`);
   console.log(`- VITE_GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET ? 'Configurado' : 'No configurado'}`);
   console.log(`- VITE_GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}`);
+  console.log(`- VITE_SUPABASE_URL: ${SUPABASE_URL ? 'Configurado' : 'No configurado'}`);
+  console.log(`- VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY ? 'Configurado' : 'No configurado'}`);
   
   return true;
+};
+
+// Función para guardar tokens en Supabase
+const saveTokensToSupabase = async (tokens, advisorId) => {
+  if (!advisorId) {
+    console.error('No se proporcionó ID de asesor para guardar tokens');
+    return { success: false, error: 'No se proporcionó ID de asesor' };
+  }
+
+  try {
+    console.log(`Guardando tokens para el asesor ID: ${advisorId}`);
+    
+    // Calcular expiración del token
+    const expiresIn = tokens.expires_in || 3600;
+    const tokenExpiry = new Date();
+    tokenExpiry.setSeconds(tokenExpiry.getSeconds() + expiresIn);
+    
+    // Preparar datos para guardar en Supabase
+    const tokenData = {
+      calendar_sync_token: JSON.stringify({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_at: tokenExpiry.toISOString(),
+        token_type: tokens.token_type || 'Bearer',
+        scope: tokens.scope
+      }),
+      calendar_refresh_token: tokens.refresh_token,
+      google_account_email: tokens.scope?.includes('email') ? tokens.email : 'conectado@gmail.com',
+      updated_at: new Date().toISOString()
+    };
+    
+    console.log('Datos de token preparados para guardar (sin tokens sensibles):', {
+      ...tokenData,
+      calendar_sync_token: 'JSON con tokens (omitido)',
+      calendar_refresh_token: 'Token de refresco (omitido)'
+    });
+    
+    // Actualizar el registro del asesor en Supabase
+    const { data, error } = await supabase
+      .from('advisors')
+      .update(tokenData)
+      .eq('id', advisorId);
+    
+    if (error) {
+      console.error('Error al guardar tokens en Supabase:', error);
+      return { success: false, error: error.message };
+    }
+    
+    console.log('✅ Tokens guardados exitosamente en Supabase');
+    return { success: true };
+  } catch (error) {
+    console.error('Error al guardar tokens:', error);
+    return { success: false, error: error.message };
+  }
 };
 
 /**
@@ -94,12 +158,13 @@ module.exports = async function handler(req, res) {
     }
     
     // Extraer parámetros del cuerpo de la solicitud
-    const { code, refreshToken, grantType } = req.body;
+    const { code, refreshToken, grantType, advisorId } = req.body;
     
     console.log('Parámetros recibidos:');
     console.log(`- grantType: ${grantType || 'No especificado'}`);
     console.log(`- code: ${code ? 'Presente (primeros caracteres: ' + code.substring(0, 10) + '...)' : 'No presente'}`);
     console.log(`- refreshToken: ${refreshToken ? 'Presente' : 'No presente'}`);
+    console.log(`- advisorId: ${advisorId || 'No especificado'}`);
     
 
     // Preparar datos para la solicitud a Google según el tipo de operación
@@ -162,8 +227,31 @@ module.exports = async function handler(req, res) {
       console.log('- expires_in:', response.data.expires_in);
       console.log('- token_type:', response.data.token_type);
       
+      // Si se proporcionó un ID de asesor, guardar los tokens en Supabase
+      let saveResult = { success: true };
+      if (advisorId) {
+        console.log(`Intentando guardar tokens para el asesor ID: ${advisorId}`);
+        saveResult = await saveTokensToSupabase(response.data, advisorId);
+        
+        if (!saveResult.success) {
+          console.error('Error al guardar tokens en Supabase:', saveResult.error);
+          // Aunque falle el guardado, seguimos devolviendo los tokens al cliente
+          return res.status(200).json({
+            ...response.data,
+            supabase_save_error: saveResult.error
+          });
+        }
+        
+        console.log('Tokens guardados correctamente en Supabase');
+      } else {
+        console.log('No se proporcionó ID de asesor, omitiendo guardado en Supabase');
+      }
+      
       // Devolver los tokens obtenidos al cliente
-      return res.status(200).json(response.data);
+      return res.status(200).json({
+        ...response.data,
+        saved_to_supabase: saveResult.success
+      });
     } catch (googleError) {
       // Manejar errores específicos de la llamada a Google
       console.error('❌ Error en la llamada a Google API:');

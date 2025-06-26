@@ -97,9 +97,10 @@ export const googleCalendarService = {
    * Intercambia el código de autorización por tokens de acceso y refresco
    * Utiliza una API serverless para proteger el client_secret
    * @param code Código de autorización recibido de Google
+   * @param advisorId ID del asesor (opcional)
    * @returns Tokens de acceso y refresco
    */
-  async exchangeCodeForTokens(code: string): Promise<GoogleTokens> {
+  async exchangeCodeForTokens(code: string, advisorId?: string): Promise<GoogleTokens> {
     try {
       console.log('=== INICIANDO INTERCAMBIO DE CÓDIGO POR TOKENS ===');
       console.log('Código recibido:', code.substring(0, 10) + '...');
@@ -119,16 +120,30 @@ export const googleCalendarService = {
       console.log('Método: POST');
       console.log('Datos enviados:', { code: code.substring(0, 10) + '...', grantType: 'authorization_code' });
       
+      // Incluir el ID del asesor en la solicitud si está disponible
+      const requestData = { 
+        code,
+        grantType: 'authorization_code'
+      };
+      
+      if (advisorId) {
+        console.log('Incluyendo ID del asesor en la solicitud:', advisorId);
+        Object.assign(requestData, { advisorId });
+      }
+      
       const response = await fetch(`${API_BASE_URL}/exchange-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ 
-          code,
-          grantType: 'authorization_code'
-        })
+        body: JSON.stringify(requestData)
       });
+      
+      console.log('Datos enviados a la API:', {
+        ...requestData,
+        code: requestData.code.substring(0, 10) + '...'
+      });
+      
 
       console.log('Respuesta recibida de la API - Status:', response.status, response.statusText);
       
