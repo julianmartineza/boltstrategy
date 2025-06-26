@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diagnóstico Completo OAuth Google Calendar</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      color: #1a73e8;
+      border-bottom: 2px solid #1a73e8;
+      padding-bottom: 10px;
+    }
+    .card {
+      background-color: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    button {
+      background-color: #1a73e8;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-top: 10px;
+    }
+    button:hover {
+      background-color: #0d62c9;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 16px;
+    }
+    label {
+      font-weight: bold;
+    }
+    .error {
+      background-color: #fdecea;
+      border-left: 4px solid #d93025;
+      padding: 10px 15px;
+      margin: 10px 0;
+    }
+    .success {
+      background-color: #e6f4ea;
+      border-left: 4px solid #1e8e3e;
+      padding: 10px 15px;
+      margin: 10px 0;
+    }
+    .info {
+      background-color: #e8f0fe;
+      border-left: 4px solid #1a73e8;
+      padding: 10px 15px;
+      margin: 10px 0;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    #log-container {
+      max-height: 300px;
+      overflow-y: auto;
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: monospace;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Diagnóstico Completo OAuth Google Calendar</h1>
+  
+  <div class="card">
+    <h2>1. Configuración</h2>
+    <div class="info">
+      <p>Esta página te permite probar el flujo completo de OAuth con Google Calendar, incluyendo el guardado de tokens en la base de datos.</p>
+    </div>
+    
+    <div>
+      <label for="client-id">Client ID de Google:</label>
+      <input type="text" id="client-id" placeholder="Ingresa tu Client ID de Google">
+    </div>
+    
+    <div>
+      <label for="advisor-id">ID del Asesor:</label>
+      <input type="text" id="advisor-id" placeholder="Ingresa el ID del asesor para guardar los tokens">
+    </div>
+    
+    <div>
+      <label for="redirect-uri">URI de redirección:</label>
+      <input type="text" id="redirect-uri" value="https://flowev1.vercel.app/auth/google/callback">
+      <p class="info" style="font-size: 0.9em;">Esta URI debe coincidir exactamente con la configurada en la consola de desarrolladores de Google.</p>
+    </div>
+    
+    <button id="start-auth">Iniciar Autorización con Google</button>
+  </div>
+
+  <div class="card">
+    <h2>2. Resultados</h2>
+    <div id="results">
+      <div class="info">Inicia el proceso de autorización para ver los resultados aquí.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. Verificar Tokens</h2>
+    <div>
+      <label for="check-advisor-id">ID del Asesor para verificar:</label>
+      <input type="text" id="check-advisor-id" placeholder="Ingresa el ID del asesor">
+    </div>
+    
+    <button id="check-tokens">Verificar Tokens en Base de Datos</button>
+    <div id="check-result"></div>
+  </div>
+
+  <div class="card">
+    <h2>Registros</h2>
+    <div id="log-container">
+      <div id="logs"></div>
+    </div>
+  </div>
+
+  <script>
+    // Función para agregar logs
+    function addLog(message, type = 'info') {
+      const logElement = document.createElement('div');
+      logElement.className = type;
+      const timestamp = new Date().toLocaleTimeString();
+      logElement.innerHTML = `<strong>${timestamp}</strong>: ${message}`;
+      document.getElementById('logs').appendChild(logElement);
+      console.log(`[${type.toUpperCase()}] ${message}`);
+      
+      // Hacer scroll al final de los logs
+      const logContainer = document.getElementById('log-container');
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+    
+    // Iniciar flujo de autorización
+    function startAuth() {
+      const clientId = document.getElementById('client-id').value.trim();
+      const advisorId = document.getElementById('advisor-id').value.trim();
+      const redirectUri = document.getElementById('redirect-uri').value.trim();
+      
+      if (!clientId) {
+        addLog('Por favor ingresa el Client ID de Google', 'error');
+        return;
+      }
+      
+      if (!advisorId) {
+        addLog('Por favor ingresa el ID del asesor', 'error');
+        return;
+      }
+      
+      if (!redirectUri) {
+        addLog('Por favor ingresa la URI de redirección', 'error');
+        return;
+      }
+      
+      addLog(`Iniciando autorización con Client ID: ${clientId.substring(0, 10)}...`);
+      addLog(`ID del asesor: ${advisorId}`);
+      addLog(`URI de redirección: ${redirectUri}`);
+      
+      try {
+        // Guardar el ID del asesor en localStorage para usarlo después
+        localStorage.setItem('advisorId', advisorId);
+        
+        // Construir URL de autorización
+        const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+        authUrl.searchParams.append('client_id', clientId);
+        authUrl.searchParams.append('redirect_uri', redirectUri);
+        authUrl.searchParams.append('response_type', 'code');
+        authUrl.searchParams.append('scope', 'https://www.googleapis.com/auth/calendar');
+        authUrl.searchParams.append('access_type', 'offline');
+        authUrl.searchParams.append('prompt', 'consent');
+        
+        // Añadir estado para identificar esta solicitud
+        const state = btoa(JSON.stringify({
+          source: 'diagnostico-completo',
+          timestamp: new Date().getTime(),
+          advisorId: advisorId
+        }));
+        authUrl.searchParams.append('state', state);
+        
+        addLog(`URL de autorización: ${authUrl.toString()}`);
+        
+        // Redirigir a la URL de autorización
+        window.location.href = authUrl.toString();
+      } catch (error) {
+        addLog(`Error al iniciar autorización: ${error.message}`, 'error');
+      }
+    }
+    
+    // Intercambiar código por tokens
+    async function exchangeCode(code, advisorId) {
+      if (!code) {
+        addLog('No se proporcionó código de autorización', 'error');
+        return;
+      }
+      
+      if (!advisorId) {
+        addLog('No se proporcionó ID del asesor', 'error');
+        return;
+      }
+      
+      addLog(`Intercambiando código por tokens: ${code.substring(0, 10)}...`);
+      addLog(`ID del asesor: ${advisorId}`);
+      
+      try {
+        const apiBaseUrl = window.location.origin;
+        const redirectUrl = window.location.href.split('?')[0]; // URL actual sin parámetros
+        
+        const response = await fetch(`${apiBaseUrl}/api/exchange-code-diagnostico`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            code,
+            advisorId,
+            redirectUrl
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Error desconocido');
+        }
+        
+        addLog('Tokens recibidos y guardados correctamente', 'success');
+        document.getElementById('results').innerHTML = `
+          <div class="success">Tokens recibidos y guardados correctamente para el asesor ID: ${advisorId}</div>
+          <pre>${JSON.stringify(data, null, 2)}</pre>
+        `;
+        
+        // Actualizar el campo de verificación con el mismo ID
+        document.getElementById('check-advisor-id').value = advisorId;
+      } catch (error) {
+        addLog(`Error al intercambiar código: ${error.message}`, 'error');
+        document.getElementById('results').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+      }
+    }
+    
+    // Verificar tokens en base de datos
+    async function checkTokens() {
+      const advisorId = document.getElementById('check-advisor-id').value.trim();
+      if (!advisorId) {
+        addLog('Por favor ingresa el ID del asesor', 'error');
+        document.getElementById('check-result').innerHTML = '<div class="error">ID del asesor requerido</div>';
+        return;
+      }
+      
+      addLog(`Verificando tokens para el asesor: ${advisorId}`);
+      document.getElementById('check-result').innerHTML = '<div class="info">Verificando...</div>';
+      
+      try {
+        const apiBaseUrl = window.location.origin;
+        const response = await fetch(`${apiBaseUrl}/api/check-tokens?advisorId=${advisorId}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Error desconocido');
+        }
+        
+        if (data.hasTokens) {
+          addLog('Tokens encontrados en la base de datos', 'success');
+          document.getElementById('check-result').innerHTML = `
+            <div class="success">Tokens encontrados en la base de datos</div>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        } else {
+          addLog('No se encontraron tokens para este asesor', 'error');
+          document.getElementById('check-result').innerHTML = `
+            <div class="error">No se encontraron tokens para este asesor</div>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        }
+      } catch (error) {
+        addLog(`Error al verificar tokens: ${error.message}`, 'error');
+        document.getElementById('check-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+      }
+    }
+    
+    // Verificar si hay un código en la URL (redirección desde Google)
+    function checkUrlForCode() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const error = urlParams.get('error');
+      const state = urlParams.get('state');
+      const success = urlParams.get('success');
+      const tokenSaved = urlParams.get('tokenSaved');
+      const saveError = urlParams.get('saveError');
+      
+      // Recuperar ID del asesor de localStorage
+      const advisorId = localStorage.getItem('advisorId');
+      
+      if (success === 'true') {
+        // Mostrar resultado de la operación de guardado
+        if (tokenSaved === 'true') {
+          addLog('Tokens guardados correctamente en la base de datos', 'success');
+          document.getElementById('results').innerHTML = `
+            <div class="success">Tokens guardados correctamente en la base de datos</div>
+          `;
+        } else {
+          addLog(`Error al guardar tokens: ${saveError || 'Error desconocido'}`, 'error');
+          document.getElementById('results').innerHTML = `
+            <div class="error">Error al guardar tokens: ${saveError || 'Error desconocido'}</div>
+          `;
+        }
+        
+        // Si tenemos el ID del asesor, actualizar el campo de verificación
+        if (advisorId) {
+          document.getElementById('check-advisor-id').value = advisorId;
+        }
+      } else if (code) {
+        // Tenemos un código de autorización
+        addLog(`Código de autorización recibido: ${code.substring(0, 10)}...`, 'success');
+        
+        // Intentar decodificar el estado para obtener el ID del asesor
+        let stateAdvisorId = null;
+        if (state) {
+          try {
+            const stateData = JSON.parse(atob(state));
+            stateAdvisorId = stateData.advisorId;
+            addLog(`ID del asesor recuperado del estado: ${stateAdvisorId}`);
+          } catch (e) {
+            addLog('No se pudo decodificar el estado', 'error');
+          }
+        }
+        
+        // Usar el ID del asesor del estado o de localStorage
+        const finalAdvisorId = stateAdvisorId || advisorId;
+        
+        if (finalAdvisorId) {
+          addLog(`Usando ID del asesor: ${finalAdvisorId}`);
+          document.getElementById('advisor-id').value = finalAdvisorId;
+          
+          // Intercambiar código automáticamente
+          exchangeCode(code, finalAdvisorId);
+        } else {
+          addLog('No se pudo determinar el ID del asesor. Por favor, ingrésalo manualmente.', 'error');
+          document.getElementById('results').innerHTML = `
+            <div class="error">No se pudo determinar el ID del asesor. Por favor, ingrésalo manualmente y haz clic en "Verificar Tokens".</div>
+          `;
+        }
+      } else if (error) {
+        // Error en la autorización
+        addLog(`Error en la autorización: ${error}`, 'error');
+        document.getElementById('results').innerHTML = `<div class="error">Error en la autorización: ${error}</div>`;
+      }
+    }
+    
+    // Configurar event listeners cuando el DOM esté cargado
+    document.addEventListener('DOMContentLoaded', () => {
+      addLog('Página de diagnóstico cargada');
+      checkUrlForCode();
+      
+      document.getElementById('start-auth').addEventListener('click', startAuth);
+      document.getElementById('check-tokens').addEventListener('click', checkTokens);
+    });
+  </script>
+</body>
+</html>
