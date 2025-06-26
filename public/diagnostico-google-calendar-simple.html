@@ -73,13 +73,9 @@
   <h1>Diagnóstico Google Calendar OAuth</h1>
   
   <div class="card">
-    <h2>Información del Entorno</h2>
-    <div id="env-info">Cargando información del entorno...</div>
-  </div>
-
-  <div class="card">
     <h2>1. Iniciar Flujo de Autorización</h2>
-    <p>Haz clic en el botón para iniciar el flujo de autorización con Google Calendar.</p>
+    <p>Ingresa tu Client ID de Google y haz clic en el botón para iniciar el flujo de autorización.</p>
+    <input type="text" id="client-id-input" placeholder="Client ID de Google" style="width: 70%; padding: 8px; margin-right: 10px;">
     <button id="auth-button">Iniciar Autorización con Google</button>
   </div>
 
@@ -122,37 +118,13 @@
       logContainer.scrollTop = logContainer.scrollHeight;
     }
     
-    // Cargar información del entorno
-    async function loadEnvironmentInfo() {
-      addLog('Cargando información del entorno...');
-      
-      try {
-        // En HTML estático no podemos acceder a variables de entorno
-        // Usaremos valores predeterminados o solicitaremos al usuario
-        let clientId = 'No disponible - Configurar manualmente';
-        let redirectUri = window.location.origin + '/auth/google-callback';
-        
-        let html = `
-          <p><strong>Client ID:</strong> ${clientId.length > 15 ? clientId.substring(0, 10) + '...' + clientId.substring(clientId.length - 5) : clientId}</p>
-          <p><strong>Redirect URI:</strong> ${redirectUri}</p>
-          <p><strong>API Endpoint:</strong> ${apiBaseUrl}/api/exchange-code</p>
-        `;
-        
-        document.getElementById('env-info').innerHTML = html;
-        addLog('Información del entorno cargada', 'success');
-      } catch (error) {
-        document.getElementById('env-info').innerHTML = `<div class="error">Error al cargar información del entorno: ${error.message}</div>`;
-        addLog(`Error al cargar información del entorno: ${error.message}`, 'error');
-      }
-    }
-    
     // Iniciar flujo de autorización
     function startAuthFlow() {
       addLog('Iniciando flujo de autorización...');
       
       try {
-        // Solicitar client ID manualmente
-        const clientId = prompt('Por favor ingresa el Client ID de Google:', '');
+        // Obtener Client ID del input
+        const clientId = document.getElementById('client-id-input').value.trim();
         if (!clientId) {
           throw new Error('Client ID requerido para continuar');
         }
@@ -276,7 +248,6 @@
     document.addEventListener('DOMContentLoaded', () => {
       // Inicializar la página
       addLog('Página de diagnóstico cargada');
-      loadEnvironmentInfo();
       checkUrlForCode();
       
       // Configurar botones
