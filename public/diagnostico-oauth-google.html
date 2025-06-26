@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Diagnóstico Google Calendar OAuth</title>
+  <title>Diagnóstico OAuth Google Calendar</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -33,11 +33,21 @@
       border-radius: 4px;
       cursor: pointer;
       font-size: 16px;
-      margin-right: 10px;
-      margin-bottom: 10px;
+      margin-top: 10px;
     }
     button:hover {
       background-color: #0d62c9;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 16px;
+    }
+    label {
+      font-weight: bold;
     }
     .error {
       background-color: #fdecea;
@@ -51,6 +61,12 @@
       padding: 10px 15px;
       margin: 10px 0;
     }
+    .info {
+      background-color: #e8f0fe;
+      border-left: 4px solid #1a73e8;
+      padding: 10px 15px;
+      margin: 10px 0;
+    }
     pre {
       background-color: #f5f5f5;
       padding: 10px;
@@ -59,7 +75,7 @@
       white-space: pre-wrap;
     }
     #log-container {
-      max-height: 400px;
+      max-height: 300px;
       overflow-y: auto;
       background-color: #f5f5f5;
       padding: 10px;
@@ -70,52 +86,57 @@
   </style>
 </head>
 <body>
-  <h1>Diagnóstico Google Calendar OAuth</h1>
+  <h1>Diagnóstico OAuth Google Calendar</h1>
   
   <div class="card">
-    <h2>1. Iniciar Flujo de Autorización</h2>
-    <p>Ingresa tu Client ID de Google y haz clic en el botón para iniciar el flujo de autorización.</p>
+    <h2>1. Configuración</h2>
+    <div class="info">
+      <p>Asegúrate de que la URI de redirección coincida exactamente con la configurada en la consola de desarrolladores de Google.</p>
+    </div>
+    
     <div>
-      <label for="client-id-input">Client ID de Google:</label>
-      <input type="text" id="client-id-input" placeholder="Client ID de Google" style="width: 70%; padding: 8px; margin-right: 10px;">
+      <label for="client-id">Client ID de Google:</label>
+      <input type="text" id="client-id" placeholder="Ingresa tu Client ID de Google">
     </div>
-    <div style="margin-top: 10px;">
-      <label for="redirect-uri-input">URI de redirección:</label>
-      <input type="text" id="redirect-uri-input" value="https://flowev1.vercel.app/auth/google/callback" style="width: 70%; padding: 8px; margin-right: 10px;">
+    
+    <div>
+      <label for="redirect-uri">URI de redirección:</label>
+      <input type="text" id="redirect-uri" value="https://flowev1.vercel.app/auth/google/callback">
     </div>
-    <div style="margin-top: 10px;">
-      <button id="auth-button">Iniciar Autorización con Google</button>
-    </div>
-    <div class="info" style="margin-top: 15px; padding: 10px; background-color: #e8f0fe; border-left: 4px solid #1a73e8;">
-      <p><strong>Nota:</strong> Asegúrate de que la URI de redirección coincida exactamente con la configurada en la consola de desarrolladores de Google.</p>
-    </div>
+    
+    <button id="start-auth">Iniciar Autorización con Google</button>
   </div>
 
   <div class="card">
-    <h2>2. Intercambiar Código por Tokens</h2>
-    <p>Si ya tienes un código de autorización, puedes intercambiarlo por tokens aquí.</p>
-    <input type="text" id="code-input" placeholder="Código de autorización" style="width: 70%; padding: 8px; margin-right: 10px;">
-    <button id="exchange-button">Intercambiar Código</button>
-    <div id="exchange-result" style="margin-top: 10px;"></div>
+    <h2>2. Intercambiar Código</h2>
+    <div>
+      <label for="auth-code">Código de autorización:</label>
+      <textarea id="auth-code" rows="3" placeholder="El código aparecerá aquí automáticamente después de la autorización"></textarea>
+    </div>
+    
+    <button id="exchange-code">Intercambiar Código por Tokens</button>
+    <div id="exchange-result"></div>
   </div>
 
   <div class="card">
-    <h2>3. Verificar Tokens en Base de Datos</h2>
-    <p>Verifica si los tokens se guardaron correctamente en la base de datos.</p>
-    <input type="text" id="advisor-id" placeholder="ID del asesor" style="width: 70%; padding: 8px; margin-right: 10px;">
-    <button id="check-button">Verificar Tokens</button>
-    <div id="check-result" style="margin-top: 10px;"></div>
+    <h2>3. Verificar Tokens</h2>
+    <div>
+      <label for="advisor-id">ID del Asesor:</label>
+      <input type="text" id="advisor-id" placeholder="Ingresa el ID del asesor">
+    </div>
+    
+    <button id="check-tokens">Verificar Tokens en Base de Datos</button>
+    <div id="check-result"></div>
   </div>
 
-  <div id="log-container">
-    <h3>Registros</h3>
-    <div id="logs"></div>
+  <div class="card">
+    <h2>Registros</h2>
+    <div id="log-container">
+      <div id="logs"></div>
+    </div>
   </div>
 
   <script>
-    // Variables globales
-    const apiBaseUrl = window.location.origin;
-    
     // Función para agregar logs
     function addLog(message, type = 'info') {
       const logElement = document.createElement('div');
@@ -131,25 +152,24 @@
     }
     
     // Iniciar flujo de autorización
-    function startAuthFlow() {
-      addLog('Iniciando flujo de autorización...');
+    function startAuth() {
+      const clientId = document.getElementById('client-id').value.trim();
+      const redirectUri = document.getElementById('redirect-uri').value.trim();
+      
+      if (!clientId) {
+        addLog('Por favor ingresa el Client ID de Google', 'error');
+        return;
+      }
+      
+      if (!redirectUri) {
+        addLog('Por favor ingresa la URI de redirección', 'error');
+        return;
+      }
+      
+      addLog(`Iniciando autorización con Client ID: ${clientId.substring(0, 10)}...`);
+      addLog(`URI de redirección: ${redirectUri}`);
       
       try {
-        // Obtener Client ID del formulario
-        const clientId = document.getElementById('client-id-input').value.trim();
-        if (!clientId) {
-          throw new Error('Client ID requerido para continuar');
-        }
-        
-        // Obtener URI de redirección del formulario
-        const redirectUri = document.getElementById('redirect-uri-input').value.trim();
-        if (!redirectUri) {
-          throw new Error('URI de redirección requerida para continuar');
-        }
-        
-        addLog(`Usando Client ID: ${clientId.substring(0, 10)}...`);
-        addLog(`Usando URI de redirección: ${redirectUri}`);
-        
         // Construir URL de autorización
         const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
         authUrl.searchParams.append('client_id', clientId);
@@ -159,18 +179,18 @@
         authUrl.searchParams.append('access_type', 'offline');
         authUrl.searchParams.append('prompt', 'consent');
         
-        addLog(`URL de autorización: ${authUrl.toString()}`, 'info');
+        addLog(`URL de autorización: ${authUrl.toString()}`);
         
         // Redirigir a la URL de autorización
         window.location.href = authUrl.toString();
       } catch (error) {
-        addLog(`Error al iniciar flujo de autorización: ${error.message}`, 'error');
+        addLog(`Error al iniciar autorización: ${error.message}`, 'error');
       }
     }
     
     // Intercambiar código por tokens
     async function exchangeCode() {
-      const code = document.getElementById('code-input').value.trim();
+      const code = document.getElementById('auth-code').value.trim();
       if (!code) {
         addLog('Por favor ingresa un código de autorización', 'error');
         document.getElementById('exchange-result').innerHTML = '<div class="error">Código de autorización requerido</div>';
@@ -178,9 +198,10 @@
       }
       
       addLog(`Intercambiando código por tokens: ${code.substring(0, 10)}...`);
-      document.getElementById('exchange-result').innerHTML = 'Procesando...';
+      document.getElementById('exchange-result').innerHTML = '<div class="info">Procesando...</div>';
       
       try {
+        const apiBaseUrl = window.location.origin;
         const response = await fetch(`${apiBaseUrl}/api/exchange-code`, {
           method: 'POST',
           headers: {
@@ -216,10 +237,10 @@
       }
       
       addLog(`Verificando tokens para el asesor: ${advisorId}`);
-      document.getElementById('check-result').innerHTML = 'Verificando...';
+      document.getElementById('check-result').innerHTML = '<div class="info">Verificando...</div>';
       
       try {
-        // Esta es una llamada a una API que deberías implementar para verificar los tokens
+        const apiBaseUrl = window.location.origin;
         const response = await fetch(`${apiBaseUrl}/api/check-tokens?advisorId=${advisorId}`);
         const data = await response.json();
         
@@ -254,24 +275,20 @@
       
       if (code) {
         addLog(`Código de autorización recibido: ${code.substring(0, 10)}...`, 'success');
-        document.getElementById('code-input').value = code;
-        // Opcionalmente, intercambiar el código automáticamente
-        // exchangeCode();
+        document.getElementById('auth-code').value = code;
       } else if (error) {
         addLog(`Error en la autorización: ${error}`, 'error');
       }
     }
     
-    // Configurar event listeners
+    // Configurar event listeners cuando el DOM esté cargado
     document.addEventListener('DOMContentLoaded', () => {
-      // Inicializar la página
       addLog('Página de diagnóstico cargada');
       checkUrlForCode();
       
-      // Configurar botones
-      document.getElementById('auth-button').addEventListener('click', startAuthFlow);
-      document.getElementById('exchange-button').addEventListener('click', exchangeCode);
-      document.getElementById('check-button').addEventListener('click', checkTokens);
+      document.getElementById('start-auth').addEventListener('click', startAuth);
+      document.getElementById('exchange-code').addEventListener('click', exchangeCode);
+      document.getElementById('check-tokens').addEventListener('click', checkTokens);
     });
   </script>
 </body>
