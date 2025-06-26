@@ -80,14 +80,14 @@
   <div class="card">
     <h2>1. Iniciar Flujo de Autorización</h2>
     <p>Haz clic en el botón para iniciar el flujo de autorización con Google Calendar.</p>
-    <button id="auth-button" onclick="startAuthFlow()">Iniciar Autorización con Google</button>
+    <button id="auth-button">Iniciar Autorización con Google</button>
   </div>
 
   <div class="card">
     <h2>2. Intercambiar Código por Tokens</h2>
     <p>Si ya tienes un código de autorización, puedes intercambiarlo por tokens aquí.</p>
     <input type="text" id="code-input" placeholder="Código de autorización" style="width: 70%; padding: 8px; margin-right: 10px;">
-    <button onclick="exchangeCode()">Intercambiar Código</button>
+    <button id="exchange-button">Intercambiar Código</button>
     <div id="exchange-result" style="margin-top: 10px;"></div>
   </div>
 
@@ -95,7 +95,7 @@
     <h2>3. Verificar Tokens en Base de Datos</h2>
     <p>Verifica si los tokens se guardaron correctamente en la base de datos.</p>
     <input type="text" id="advisor-id" placeholder="ID del asesor" style="width: 70%; padding: 8px; margin-right: 10px;">
-    <button onclick="checkTokens()">Verificar Tokens</button>
+    <button id="check-button">Verificar Tokens</button>
     <div id="check-result" style="margin-top: 10px;"></div>
   </div>
 
@@ -105,6 +105,478 @@
   </div>
 
   <script>
+    // Variables globales
+    const apiBaseUrl = window.location.origin;
+    
+    // Función para agregar logs
+    function addLog(message, type = 'info') {
+      const logElement = document.createElement('div');
+      logElement.className = type;
+      const timestamp = new Date().toLocaleTimeString();
+      logElement.innerHTML = `<strong>${timestamp}</strong>: ${message}`;
+      document.getElementById('logs').appendChild(logElement);
+      console.log(`[${type.toUpperCase()}] ${message}`);
+      
+      // Hacer scroll al final de los logs
+      const logContainer = document.getElementById('log-container');
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+    
+    // Cargar información del entorno
+    async function loadEnvironmentInfo() {
+      addLog('Cargando información del entorno...');
+      
+      try {
+        // Intentar obtener variables de entorno
+        let clientId = '';
+        let redirectUri = '';
+        
+        // Intentar diferentes formas de acceder a las variables de entorno
+        try {
+          clientId = window.VITE_GOOGLE_CLIENT_ID || '';
+        } catch (e) {}
+        
+        if (!clientId) {
+          try {
+            clientId = import.meta?.env?.VITE_GOOGLE_CLIENT_ID || '';
+          } catch (e) {}
+        }
+        
+        if (!clientId) {
+          clientId = 'No disponible - Configurar manualmente';
+        }
+        
+        try {
+          redirectUri = window.VITE_GOOGLE_REDIRECT_URI || '';
+        } catch (e) {}
+        
+        if (!redirectUri) {
+          try {
+            redirectUri = import.meta?.env?.VITE_GOOGLE_REDIRECT_URI || '';
+          } catch (e) {}
+        }
+        
+        if (!redirectUri) {
+          redirectUri = window.location.origin + '/auth/google-callback';
+        }
+        
+        let html = `
+          <p><strong>Client ID:</strong> ${clientId.length > 15 ? clientId.substring(0, 10) + '...' + clientId.substring(clientId.length - 5) : clientId}</p>
+          <p><strong>Redirect URI:</strong> ${redirectUri}</p>
+          <p><strong>API Endpoint:</strong> ${apiBaseUrl}/api/exchange-code</p>
+        `;
+        
+        document.getElementById('env-info').innerHTML = html;
+        addLog('Información del entorno cargada', 'success');
+      } catch (error) {
+        document.getElementById('env-info').innerHTML = `<div class="error">Error al cargar información del entorno: ${error.message}</div>`;
+        addLog(`Error al cargar información del entorno: ${error.message}`, 'error');
+      }
+    }
+    
+    // Iniciar flujo de autorización
+    function startAuthFlow() {
+      addLog('Iniciando flujo de autorización...');
+      
+      try {
+        // Intentar obtener el client ID
+        let clientId = '';
+        
+        try {
+          clientId = window.VITE_GOOGLE_CLIENT_ID || '';
+        } catch (e) {}
+        
+        if (!clientId) {
+          try {
+            clientId = import.meta?.env?.VITE_GOOGLE_CLIENT_ID || '';
+          } catch (e) {}
+        }
+        
+        if (!clientId) {
+          // Solicitar client ID manualmente
+          clientId = prompt('Por favor ingresa el Client ID de Google:', '');
+          if (!clientId) {
+            throw new Error('Client ID requerido para continuar');
+          }
+        }
+        
+        // Obtener redirect URI
+        let redirectUri = '';
+        
+        try {
+          redirectUri = window.VITE_GOOGLE_REDIRECT_URI || '';
+        } catch (e) {}
+        
+        if (!redirectUri) {
+          try {
+            redirectUri = import.meta?.env?.VITE_GOOGLE_REDIRECT_URI || '';
+          } catch (e) {}
+        }
+        
+        if (!redirectUri) {
+          redirectUri = window.location.origin + '/auth/google-callback';
+        }
+        
+        // Construir URL de autorización
+        const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+        authUrl.searchParams.append('client_id', clientId);
+        authUrl.searchParams.append('redirect_uri', redirectUri);
+        authUrl.searchParams.append('response_type', 'code');
+        authUrl.searchParams.append('scope', 'https://www.googleapis.com/auth/calendar');
+        authUrl.searchParams.append('access_type', 'offline');
+        authUrl.searchParams.append('prompt', 'consent');
+        
+        addLog(`URL de autorización: ${authUrl.toString()}`, 'info');
+        
+        // Redirigir a la URL de autorización
+        window.location.href = authUrl.toString();
+      } catch (error) {
+        addLog(`Error al iniciar flujo de autorización: ${error.message}`, 'error');
+      }
+    }
+    
+    // Intercambiar código por tokens
+    async function exchangeCode() {
+      const code = document.getElementById('code-input').value.trim();
+      if (!code) {
+        addLog('Por favor ingresa un código de autorización', 'error');
+        document.getElementById('exchange-result').innerHTML = '<div class="error">Código de autorización requerido</div>';
+        return;
+      }
+      
+      addLog(`Intercambiando código por tokens: ${code.substring(0, 10)}...`);
+      document.getElementById('exchange-result').innerHTML = 'Procesando...';
+      
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/exchange-code`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ code })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Error desconocido');
+        }
+        
+        addLog('Tokens recibidos correctamente', 'success');
+        document.getElementById('exchange-result').innerHTML = `
+          <div class="success">Tokens recibidos correctamente</div>
+          <pre>${JSON.stringify(data, null, 2)}</pre>
+        `;
+      } catch (error) {
+        addLog(`Error al intercambiar código: ${error.message}`, 'error');
+        document.getElementById('exchange-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+      }
+    }
+    
+    // Verificar tokens en base de datos
+    async function checkTokens() {
+      const advisorId = document.getElementById('advisor-id').value.trim();
+      if (!advisorId) {
+        addLog('Por favor ingresa el ID del asesor', 'error');
+        document.getElementById('check-result').innerHTML = '<div class="error">ID del asesor requerido</div>';
+        return;
+      }
+      
+      addLog(`Verificando tokens para el asesor: ${advisorId}`);
+      document.getElementById('check-result').innerHTML = 'Verificando...';
+      
+      try {
+        // Esta es una llamada a una API que deberías implementar para verificar los tokens
+        const response = await fetch(`${apiBaseUrl}/api/check-tokens?advisorId=${advisorId}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Error desconocido');
+        }
+        
+        if (data.hasTokens) {
+          addLog('Tokens encontrados en la base de datos', 'success');
+          document.getElementById('check-result').innerHTML = `
+            <div class="success">Tokens encontrados en la base de datos</div>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        } else {
+          addLog('No se encontraron tokens para este asesor', 'error');
+          document.getElementById('check-result').innerHTML = `
+            <div class="error">No se encontraron tokens para este asesor</div>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        }
+      } catch (error) {
+        addLog(`Error al verificar tokens: ${error.message}`, 'error');
+        document.getElementById('check-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+      }
+    }
+    
+    // Verificar si hay un código en la URL (redirección desde Google)
+    function checkUrlForCode() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const error = urlParams.get('error');
+      
+      if (code) {
+        addLog(`Código de autorización recibido: ${code.substring(0, 10)}...`, 'success');
+        document.getElementById('code-input').value = code;
+        // Opcionalmente, intercambiar el código automáticamente
+        // exchangeCode();
+      } else if (error) {
+        addLog(`Error en la autorización: ${error}`, 'error');
+      }
+    }
+    
+    // Configurar event listeners
+    document.addEventListener('DOMContentLoaded', () => {
+      // Inicializar la página
+      addLog('Página de diagnóstico cargada');
+      loadEnvironmentInfo();
+      checkUrlForCode();
+      
+      // Configurar botones
+      document.getElementById('auth-button').addEventListener('click', startAuthFlow);
+      document.getElementById('exchange-button').addEventListener('click', exchangeCode);
+      document.getElementById('check-button').addEventListener('click', checkTokens);
+    });
+    // Variables globales
+    const apiBaseUrl = window.location.origin;
+    
+    // Función para agregar logs
+    function addLog(message, type = 'info') {
+      const logElement = document.createElement('div');
+      logElement.className = type;
+      const timestamp = new Date().toLocaleTimeString();
+      logElement.innerHTML = `<strong>${timestamp}</strong>: ${message}`;
+      document.getElementById('logs').appendChild(logElement);
+      console.log(`[${type.toUpperCase()}] ${message}`);
+      
+      // Hacer scroll al final de los logs
+      const logContainer = document.getElementById('log-container');
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+    
+    // Cargar información del entorno
+    async function loadEnvironmentInfo() {
+      addLog('Cargando información del entorno...');
+      
+      try {
+        // Intentar obtener variables de entorno
+        let clientId = '';
+        let redirectUri = '';
+        
+        // Intentar diferentes formas de acceder a las variables de entorno
+        try {
+          clientId = window.VITE_GOOGLE_CLIENT_ID || '';
+        } catch (e) {}
+        
+        if (!clientId) {
+          try {
+            clientId = import.meta?.env?.VITE_GOOGLE_CLIENT_ID || '';
+          } catch (e) {}
+        }
+        
+        if (!clientId) {
+          clientId = 'No disponible - Configurar manualmente';
+        }
+        
+        try {
+          redirectUri = window.VITE_GOOGLE_REDIRECT_URI || '';
+        } catch (e) {}
+        
+        if (!redirectUri) {
+          try {
+            redirectUri = import.meta?.env?.VITE_GOOGLE_REDIRECT_URI || '';
+          } catch (e) {}
+        }
+        
+        if (!redirectUri) {
+          redirectUri = window.location.origin + '/auth/google-callback';
+        }
+        
+        let html = `
+          <p><strong>Client ID:</strong> ${clientId.length > 15 ? clientId.substring(0, 10) + '...' + clientId.substring(clientId.length - 5) : clientId}</p>
+          <p><strong>Redirect URI:</strong> ${redirectUri}</p>
+          <p><strong>API Endpoint:</strong> ${apiBaseUrl}/api/exchange-code</p>
+        `;
+        
+        document.getElementById('env-info').innerHTML = html;
+        addLog('Información del entorno cargada', 'success');
+      } catch (error) {
+        document.getElementById('env-info').innerHTML = `<div class="error">Error al cargar información del entorno: ${error.message}</div>`;
+        addLog(`Error al cargar información del entorno: ${error.message}`, 'error');
+      }
+    }
+    
+    // Iniciar flujo de autorización
+    function startAuthFlow() {
+      addLog('Iniciando flujo de autorización...');
+      
+      try {
+        // Intentar obtener el client ID
+        let clientId = '';
+        
+        try {
+          clientId = window.VITE_GOOGLE_CLIENT_ID || '';
+        } catch (e) {}
+        
+        if (!clientId) {
+          try {
+            clientId = import.meta?.env?.VITE_GOOGLE_CLIENT_ID || '';
+          } catch (e) {}
+        }
+        
+        if (!clientId) {
+          // Solicitar client ID manualmente
+          clientId = prompt('Por favor ingresa el Client ID de Google:', '');
+          if (!clientId) {
+            throw new Error('Client ID requerido para continuar');
+          }
+        }
+        
+        // Obtener redirect URI
+        let redirectUri = '';
+        
+        try {
+          redirectUri = window.VITE_GOOGLE_REDIRECT_URI || '';
+        } catch (e) {}
+        
+        if (!redirectUri) {
+          try {
+            redirectUri = import.meta?.env?.VITE_GOOGLE_REDIRECT_URI || '';
+          } catch (e) {}
+        }
+        
+        if (!redirectUri) {
+          redirectUri = window.location.origin + '/auth/google-callback';
+        }
+        
+        // Construir URL de autorización
+        const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+        authUrl.searchParams.append('client_id', clientId);
+        authUrl.searchParams.append('redirect_uri', redirectUri);
+        authUrl.searchParams.append('response_type', 'code');
+        authUrl.searchParams.append('scope', 'https://www.googleapis.com/auth/calendar');
+        authUrl.searchParams.append('access_type', 'offline');
+        authUrl.searchParams.append('prompt', 'consent');
+        
+        addLog(`URL de autorización: ${authUrl.toString()}`, 'info');
+        
+        // Redirigir a la URL de autorización
+        window.location.href = authUrl.toString();
+      } catch (error) {
+        addLog(`Error al iniciar flujo de autorización: ${error.message}`, 'error');
+      }
+    }
+    
+    // Intercambiar código por tokens
+    async function exchangeCode() {
+      const code = document.getElementById('code-input').value.trim();
+      if (!code) {
+        addLog('Por favor ingresa un código de autorización', 'error');
+        document.getElementById('exchange-result').innerHTML = '<div class="error">Código de autorización requerido</div>';
+        return;
+      }
+      
+      addLog(`Intercambiando código por tokens: ${code.substring(0, 10)}...`);
+      document.getElementById('exchange-result').innerHTML = 'Procesando...';
+      
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/exchange-code`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ code })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Error desconocido');
+        }
+        
+        addLog('Tokens recibidos correctamente', 'success');
+        document.getElementById('exchange-result').innerHTML = `
+          <div class="success">Tokens recibidos correctamente</div>
+          <pre>${JSON.stringify(data, null, 2)}</pre>
+        `;
+      } catch (error) {
+        addLog(`Error al intercambiar código: ${error.message}`, 'error');
+        document.getElementById('exchange-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+      }
+    }
+    
+    // Verificar tokens en base de datos
+    async function checkTokens() {
+      const advisorId = document.getElementById('advisor-id').value.trim();
+      if (!advisorId) {
+        addLog('Por favor ingresa el ID del asesor', 'error');
+        document.getElementById('check-result').innerHTML = '<div class="error">ID del asesor requerido</div>';
+        return;
+      }
+      
+      addLog(`Verificando tokens para el asesor: ${advisorId}`);
+      document.getElementById('check-result').innerHTML = 'Verificando...';
+      
+      try {
+        // Esta es una llamada a una API que deberías implementar para verificar los tokens
+        const response = await fetch(`${apiBaseUrl}/api/check-tokens?advisorId=${advisorId}`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Error desconocido');
+        }
+        
+        if (data.hasTokens) {
+          addLog('Tokens encontrados en la base de datos', 'success');
+          document.getElementById('check-result').innerHTML = `
+            <div class="success">Tokens encontrados en la base de datos</div>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        } else {
+          addLog('No se encontraron tokens para este asesor', 'error');
+          document.getElementById('check-result').innerHTML = `
+            <div class="error">No se encontraron tokens para este asesor</div>
+            <pre>${JSON.stringify(data, null, 2)}</pre>
+          `;
+        }
+      } catch (error) {
+        addLog(`Error al verificar tokens: ${error.message}`, 'error');
+        document.getElementById('check-result').innerHTML = `<div class="error">Error: ${error.message}</div>`;
+      }
+    }
+    
+    // Verificar si hay un código en la URL (redirección desde Google)
+    function checkUrlForCode() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const error = urlParams.get('error');
+      
+      if (code) {
+        addLog(`Código de autorización recibido: ${code.substring(0, 10)}...`, 'success');
+        document.getElementById('code-input').value = code;
+        // Opcionalmente, intercambiar el código automáticamente
+        // exchangeCode();
+      } else if (error) {
+        addLog(`Error en la autorización: ${error}`, 'error');
+      }
+    }
+    
+    // Configurar event listeners
+    document.addEventListener('DOMContentLoaded', () => {
+      // Inicializar la página
+      addLog('Página de diagnóstico cargada');
+      loadEnvironmentInfo();
+      checkUrlForCode();
+      
+      // Configurar botones
+      document.getElementById('auth-button').addEventListener('click', startAuthFlow);
+      document.getElementById('exchange-button').addEventListener('click', exchangeCode);
+      document.getElementById('check-button').addEventListener('click', checkTokens);
+    });
     // Variables globales
     const apiBaseUrl = window.location.origin;
     
