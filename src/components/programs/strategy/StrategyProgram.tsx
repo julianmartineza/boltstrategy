@@ -289,7 +289,8 @@ const StrategyProgram: React.FC = () => {
                     console.error(`Error al cargar actividad ${registry.content_id}:`, error);
                   } else if (data && data.length > 0) {
                     const activityData = data[0];
-                    console.log(`Actividad cargada:`, activityData);
+                    // Evitamos mostrar datos sensibles de la actividad
+                    console.log(`Actividad cargada: ${activityData.id} - ${activityData.title}`);
                     
                     // Asignar contenido y datos de actividad
                     content.content = activityData.description || '';
@@ -310,10 +311,8 @@ const StrategyProgram: React.FC = () => {
                       }
                     };
                     
-                    console.log('Contenido de actividad actualizado:', {
-                      content: content.content,
-                      activity_data: content.activity_data
-                    });
+                    // Evitamos mostrar datos sensibles
+                    console.log('Contenido de actividad actualizado');
                   } else {
                     console.log(`No se encontró la actividad con ID ${registry.content_id}`);
                     
@@ -334,7 +333,7 @@ const StrategyProgram: React.FC = () => {
             }
           }
           
-          console.log('Contenidos formateados:', formattedContents);
+          console.log(`Contenidos formateados: ${formattedContents.length} elementos`);
           
           // Actualizar el estado
           setStageContent(formattedContents);
@@ -343,22 +342,8 @@ const StrategyProgram: React.FC = () => {
             [currentStage.id]: formattedContents
           }));
           
-          // Agregar logs detallados para depuración
-          console.log('========== DATOS DE CONTENIDO ==========');
-          console.log('Contenidos formateados completos:', JSON.stringify(formattedContents, null, 2));
-          console.log('Primer contenido:', formattedContents[0]);
-          if (formattedContents[0]?.content_type === 'video') {
-            console.log('Datos de video:', {
-              content: formattedContents[0].content,
-              metadata: formattedContents[0].metadata
-            });
-          } else if (formattedContents[0]?.content_type === 'activity') {
-            console.log('Datos de actividad:', {
-              content: formattedContents[0].content,
-              activity_data: formattedContents[0].activity_data
-            });
-          }
-          console.log('========================================');
+          // Logs básicos sin información sensible
+          // console.log('Contenidos cargados correctamente');
           
           // Asegurarse de que el índice de contenido actual es válido
           if (currentContentIndex >= formattedContents.length) {

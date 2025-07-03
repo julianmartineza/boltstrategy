@@ -111,24 +111,11 @@ export function StageContent({
     
     fetchAdvisorySessionId();
   }, [currentContent]);
-  // Logs detallados para depuración
   
   // Logs detallados para depuración
-  console.log('========== DATOS EN STAGECOMPONENT ==========');
-  console.log('Contenido actual:', currentContent);
-  if (currentContent?.content_type === 'video') {
-    console.log('Datos de video en componente:', {
-      content: currentContent.content,
-      metadata: currentContent.metadata,
-      poster_url: currentContent.metadata?.poster_url
-    });
-  } else if (currentContent?.content_type === 'activity') {
-    console.log('Datos de actividad en componente:', {
-      content: currentContent.content,
-      activity_data: currentContent.activity_data
-    });
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`Renderizando contenido tipo: ${currentContent?.content_type || 'desconocido'} (ID: ${currentContent?.id || 'sin ID'})`);
   }
-  console.log('===========================================');
 
   const isFirstContent = currentIndex === 0;
   const isLastContent = currentIndex === content.length - 1;
@@ -173,7 +160,6 @@ export function StageContent({
           
           {currentContent?.content_type === 'video' ? (
             <div className="relative w-full">
-              {(() => { console.log('Renderizando video, content:', currentContent.content); return null; })()}
               {currentContent.content ? (
                 <VideoPlayer 
                   src={currentContent.content} 
@@ -192,7 +178,6 @@ export function StageContent({
             </div>
           ) : currentContent?.content_type === 'activity' ? (
             <div className="mt-6 w-full">
-              {(() => { console.log('Renderizando actividad, activity_data:', currentContent.activity_data); return null; })()}
               <div className="prose max-w-none mb-6 w-full">
                 <p>{currentContent.content}</p>
               </div>
