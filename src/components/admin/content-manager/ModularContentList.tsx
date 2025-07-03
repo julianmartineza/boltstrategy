@@ -1,11 +1,10 @@
 import React from 'react';
 import { Edit, Trash2, Video, FileText, MessageSquare } from 'lucide-react';
-import { StageContent } from './types';
-import { UnifiedContent } from '../../../services/contentRegistryService';
+import { ActivityContent } from '../../../types/index';
 
 interface ModularContentListProps {
-  contents: (StageContent | UnifiedContent)[];
-  onEdit: (content: StageContent | UnifiedContent) => void;
+  contents: ActivityContent[];
+  onEdit: (content: ActivityContent) => void;
   onDelete: (contentId: string) => void;
 }
 
@@ -16,11 +15,11 @@ const ModularContentList: React.FC<ModularContentListProps> = ({
 }) => {
   // Función para ordenar contenidos por posición/orden
   const sortedContents = [...contents].sort((a, b) => {
-    // Usar order_num si está disponible, de lo contrario usar position
-    const orderA = 'order_num' in a && a.order_num !== undefined ? a.order_num : 
-                  ('position' in a ? a.position : 0);
-    const orderB = 'order_num' in b && b.order_num !== undefined ? b.order_num : 
-                  ('position' in b ? b.position : 0);
+    // Usar order_num si está disponible, de lo contrario usar order
+    const orderA = 'order_num' in a && a.order_num !== undefined ? Number(a.order_num) : 
+                  ('order' in a && a.order !== undefined ? Number(a.order) : 0);
+    const orderB = 'order_num' in b && b.order_num !== undefined ? Number(b.order_num) : 
+                  ('order' in b && b.order !== undefined ? Number(b.order) : 0);
     return orderA - orderB;
   });
 
@@ -47,28 +46,29 @@ const ModularContentList: React.FC<ModularContentListProps> = ({
   };
 
   // Función para obtener el título del contenido
-  const getContentTitle = (content: StageContent | UnifiedContent) => {
+  const getContentTitle = (content: ActivityContent) => {
     return content.title;
   };
 
   // Función para obtener el ID del contenido
-  const getContentId = (content: StageContent | UnifiedContent) => {
+  const getContentId = (content: ActivityContent) => {
     return content.id;
   };
 
   // Función para obtener el orden o posición
-  const getContentOrder = (content: StageContent | UnifiedContent) => {
+  const getContentOrder = (content: ActivityContent) => {
     if ('order_num' in content && content.order_num !== undefined) {
       return `Orden: ${content.order_num}`;
-    } else if ('position' in content) {
-      return `Posición: ${content.position}`;
+    } else if ('order' in content && content.order !== undefined) {
+      return `Posición: ${content.order}`;
     }
     return 'Sin orden';
   };
 
   // Función para determinar si es estructura nueva o antigua
-  const isNewStructure = (content: StageContent | UnifiedContent) => {
-    return 'registry_id' in content && content.registry_id !== undefined;
+  const isNewStructure = (content: ActivityContent) => {
+    // En ActivityContent no existe registry_id, usamos otra propiedad para determinar
+    return 'content_metadata' in content && content.content_metadata !== undefined;
   };
 
   return (

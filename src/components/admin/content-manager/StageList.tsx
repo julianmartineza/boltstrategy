@@ -2,17 +2,17 @@ import React from 'react';
 import { Edit, Trash2, ChevronDown, ChevronUp, PlusCircle } from 'lucide-react';
 import { Stage } from './types';
 import ContentList from './ContentList';
-import { StageContent } from './types';
+import { ActivityContent } from '../../../types/index';
 
 interface StageListProps {
   stages: Stage[];
-  contents: StageContent[];
+  contents: ActivityContent[];
   expandedStages: Record<string, boolean>;
   onToggleStage: (stageId: string) => void;
   onEditStage: (stage: Stage) => void;
   onDeleteStage: (stageId: string) => void;
   onAddContent: (stageId: string) => void;
-  onEditContent: (content: StageContent) => void;
+  onEditContent: (content: ActivityContent) => void;
   onDeleteContent: (contentId: string, stageId: string) => void;
   loading: boolean;
   contentLoading: boolean;

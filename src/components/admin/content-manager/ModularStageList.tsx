@@ -1,18 +1,18 @@
 import React from 'react';
 import { Edit, Trash2, ChevronDown, ChevronUp, PlusCircle, Loader2 } from 'lucide-react';
-import { Stage, StageContent } from './types';
-import { UnifiedContent } from '../../../services/contentRegistryService';
+import { Stage } from './types';
+import { ActivityContent } from '../../../types/index';
 import ModularContentList from './ModularContentList';
 
 interface ModularStageListProps {
   stages: Stage[];
-  contents: (StageContent | UnifiedContent)[];
+  contents: ActivityContent[];
   expandedStages: Record<string, boolean>;
   onToggleExpand: (stageId: string) => void;
   onEdit: (stage: Stage) => void;
   onDelete: (stageId: string) => void;
   onAddContent: (stageId: string) => void;
-  onEditContent: (content: StageContent | UnifiedContent) => void;
+  onEditContent: (content: ActivityContent) => void;
   onDeleteContent: (contentId: string) => void;
   contentLoading: boolean;
 }
@@ -37,15 +37,11 @@ const ModularStageList: React.FC<ModularStageListProps> = ({
     );
   }
 
-  // Función para filtrar contenidos por etapa, compatible con ambas estructuras
-  const getStageContents = (stageId: string) => {
+  // Función para filtrar contenidos por etapa
+  const getStageContents = (stageId: string): ActivityContent[] => {
     return contents.filter(content => {
-      if ('stage_id' in content) {
-        return content.stage_id === stageId;
-      } else if ('program_module_id' in content) {
-        return content.program_module_id === stageId;
-      }
-      return false;
+      // En ActivityContent solo existe stage_id
+      return content.stage_id === stageId;
     });
   };
 

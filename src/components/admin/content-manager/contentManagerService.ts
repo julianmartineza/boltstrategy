@@ -1,5 +1,5 @@
 import { supabase } from '../../../lib/supabase';
-import { Stage, Program, StageContent, ActivityData } from './types';
+import { Stage, Program } from './types';
 import { UnifiedContent } from '../../../services/contentRegistryService';
 
 // Funciones para programas
